@@ -1,147 +1,118 @@
-# 📐 STRX Fibo Scanner Pro
-### Streamlit + Supabase Production Edition
+# 📐 STRX Automatic Fibo Scanner Pro
 
-基于 STRX Automatic Fibo Pine Script 指标的自动化 Fibonacci 黄金区间扫描系统。
+**Streamlit Cloud 原生版 · JSON 文件存储 · 零配置部署**
 
----
-
-## 🗂️ 项目结构
-
+Fibonacci 黄金区间自动扫描工具，公式与 STRX Pine Script 完全对应：
 ```
-strx_fibo_app/
-├── app.py                      # Streamlit 主入口
-├── run_scan_only.py            # 独立扫描脚本（GitHub Actions / Cron 用）
-├── requirements.txt
-├── .streamlit/
-│   └── secrets.toml.example    # 密钥配置模板
-├── core/
-│   ├── supabase_client.py      # Supabase 数据库 CRUD + 配置管理
-│   ├── scanner.py              # Fibonacci 扫描引擎（对应 Pine Script 公式）
-│   ├── alerts.py               # 钉钉 / Telegram 告警发送
-│   └── scheduler.py            # APScheduler 后台定时任务
-└── pages/
-    ├── page_scanner.py         # 实时扫描页
-    ├── page_confluence.py      # 多框架共振检测
-    ├── page_history.py         # 历史记录 + CSV 下载
-    ├── page_alerts.py          # 告警配置 + 告警日志
-    ├── page_schedule.py        # 定时任务配置
-    ├── page_settings.py        # 数据源 + Fibo 参数 + Supabase 配置
-    └── page_roadmap.py         # 功能路线图
+fp(r) = swingHigh − r × (swingHigh − swingLow)
+黄金区间：fp(0.618) ≤ 当前价格 ≤ fp(0.500)
 ```
 
 ---
 
-## ⚡ 快速启动
+## 🚀 部署到 Streamlit Cloud（3 步）
 
-### 步骤 1：安装依赖
-```bash
-pip install -r requirements.txt
+### 第一步：Fork / Push 到 GitHub
+
+将以下文件推送到你的 GitHub 仓库（**全部放在根目录**，无子文件夹）：
+
+```
+your-repo/
+├── app.py              ← 主入口
+├── scanner.py          ← Fibonacci 扫描引擎
+├── alerts.py           ← 钉钉 / Telegram 告警
+├── storage.py          ← JSON 存储层
+├── page_scanner.py     ← 实时扫描页面
+├── page_confluence.py  ← 共振检测页面
+├── page_history.py     ← 历史记录页面
+├── page_alerts.py      ← 告警配置页面
+├── page_settings.py    ← 系统设置页面
+├── requirements.txt    ← 依赖清单
+└── .gitignore
 ```
 
-### 步骤 2：配置 Supabase
+### 第二步：Streamlit Cloud 部署
 
-1. 注册 [supabase.com](https://supabase.com)（免费 Free tier 足够）
-2. 新建项目 → **Settings → API** → 复制 Project URL 和 anon key
-3. 创建 `.streamlit/secrets.toml`：
-   ```toml
-   [supabase]
-   url = "https://xxxxxxxxxxxx.supabase.co"
-   key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-   ```
-4. 在 Supabase **SQL Editor** 执行数据库初始化（在 app 设置页可复制 DDL）
+1. 登录 [share.streamlit.io](https://share.streamlit.io)
+2. New App → 选择你的 GitHub 仓库
+3. Main file path: `app.py`
+4. 点击 **Deploy**
 
-### 步骤 3：运行
-```bash
-streamlit run app.py
-```
+### 第三步：完成 ✅
 
-浏览器打开 `http://localhost:8501`
+无需任何环境变量或 Secrets 配置，直接可用！
 
 ---
 
-## ☁️ Streamlit Cloud 部署
+## 📁 文件结构说明
 
-1. 将项目推送到 GitHub（**确保 `secrets.toml` 已在 `.gitignore` 中！**）
-2. 登录 [share.streamlit.io](https://share.streamlit.io) → New app → 选择仓库
-3. 在 App **Settings → Secrets** 粘贴：
-   ```toml
-   [supabase]
-   url = "https://xxxxxxxxxxxx.supabase.co"
-   key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-   ```
-4. Deploy ✅
-
----
-
-## 🗄️ 数据库表结构（Supabase PostgreSQL）
-
-| 表名 | 说明 |
+| 文件 | 说明 |
 |------|------|
-| `scan_sessions` | 扫描批次记录，命名格式：`YYYYMMDD_总检查数_区间内数_来源` |
-| `scan_results`  | 每个资产×时间框架的扫描结果，关联 session |
-| `alert_log`     | 钉钉/Telegram 告警发送记录 |
-| `app_config`    | 应用配置键值对，在 Web 界面修改后实时生效 |
+| `app.py` | Streamlit 入口，导航路由 |
+| `scanner.py` | Fibo 计算引擎 + 资产列表 + yfinance/TwelveData 数据获取 |
+| `alerts.py` | 钉钉 / Telegram 告警，带冷却机制 |
+| `storage.py` | JSON 文件读写（替代 Supabase） |
+| `page_*.py` | 各功能页面（单层，直接 import） |
+| `data_*.json` | 运行时自动生成（不需要提交 GitHub） |
 
 ---
 
-## 📐 Fibonacci 公式（与 Pine Script 完全对应）
+## ⚙️ 功能页面
 
-```
-swingHigh = ta.highest(high, lookback)   ← Python: df["High"].max()
-swingLow  = ta.lowest(low,  lookback)    ← Python: df["Low"].min()
-
-fp(r) = swingHigh - r × (swingHigh - swingLow)
-
-黄金区间（IN ZONE）：fp(0.618) ≤ close ≤ fp(0.500)
-```
-
----
-
-## ⏰ 生产环境定时扫描方案
-
-### 方案 A：GitHub Actions（推荐免费方案）
-```yaml
-# .github/workflows/daily_scan.yml
-on:
-  schedule:
-    - cron: '0 1 * * *'   # UTC 01:00 = 北京时间 09:00
-jobs:
-  scan:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - run: pip install -r requirements.txt
-      - run: python run_scan_only.py
-    env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-```
-
-### 方案 B：Supabase pg_cron（数据库层触发）
-```sql
--- 需在 Supabase Dashboard 开启 pg_cron 扩展
-SELECT cron.schedule('daily-scan', '0 1 * * *',
-  $$ SELECT net.http_post('https://YOUR.supabase.co/functions/v1/scan', '{}') $$
-);
-```
-
-### 方案 C：APScheduler（适合自托管服务器）
-在 Web 界面的「定时任务」页开启，Streamlit 后台线程每天自动执行。
+| 页面 | 功能 |
+|------|------|
+| 📊 实时扫描 | 一键扫描 36 资产 × 3 框架，实时进度 |
+| 🔥 共振检测 | 多时间框架共振排行，识别最强信号 |
+| 📂 历史记录 | 查看最近 30 次扫描，CSV 下载 |
+| 🔔 告警配置 | 钉钉 / Telegram 配置与测试 |
+| ⚙️ 系统设置 | Fibo 参数、数据源、存储管理 |
 
 ---
 
-## 🚀 可扩展的后续功能
+## 📊 监控资产（36 个）
 
-见应用内「功能路线图」页面，共 15 个计划功能，分三个阶段：
-
-- **Phase 1（近期）**：自定义 Watchlist、更多告警层级、企业微信/飞书、多频扫描
-- **Phase 2（中期）**：K线可视化、历史回测、每日摘要报告、突破告警
-- **Phase 3（高级）**：AI 评论生成、多用户登录、TradingView Webhook、策略规则引擎
+- **大宗商品**：黄金、白银、原油、天然气、铜、小麦、玉米
+- **外汇**：EUR/USD, GBP/USD, USD/JPY, USD/CNH, AUD/USD, USD/CAD
+- **指数**：S&P500, NASDAQ100, 道琼斯, 上证, 深证, 恒生
+- **美股**：AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA
+- **中概/港股**：百度, PDD, 京东, 阿里HK, 腾讯HK
+- **加密**：BTC, ETH, SOL, BNB
 
 ---
 
-## 🔐 安全注意事项
+## 💾 存储架构
 
-- `.streamlit/secrets.toml` 必须加入 `.gitignore`
-- Supabase 使用 `anon` key，不要使用 `service_role` key
-- 钉钉 Secret 和 Telegram Token 建议仅存储在 Supabase，不写入代码
+```
+当前：JSON 文件（Streamlit Cloud 本地）
+         ↓  后期升级只需替换 storage.py
+未来：Supabase PostgreSQL（云端持久化）
+```
+
+**⚠️ 注意**：Streamlit Cloud 容器重启时本地 JSON 文件会丢失，
+适合演示和日常使用。如需持久存储，升级到 Supabase 即可。
+
+---
+
+## 🔮 后期升级到 Supabase
+
+只需替换 `storage.py` 中的以下函数，其余代码**完全不变**：
+- `load_config()` / `save_config()`
+- `save_scan()` / `load_sessions()` / `load_results()`
+- `log_alert()` / `load_alert_log()`
+
+---
+
+## 📐 Fibonacci 参数说明
+
+| 级别 | 含义 |
+|------|------|
+| 0.0 | 结构高点（Swing High） |
+| 0.136 | 机构算法入场 |
+| 0.236 | 浅回撤 |
+| 0.382 | 标准回撤 |
+| **0.500** | **黄金区上沿** |
+| **0.618** | **黄金区下沿（黄金分割）** |
+| 0.705 | OTE 最优交易入场 |
+| 0.786 | 深度回撤 |
+| 0.886 | Shark/深度机构 |
+| 1.0 | 结构低点（Swing Low） |

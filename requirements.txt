@@ -1,21 +1,4 @@
-# STRX Fibo Scanner Pro — Python Dependencies
-# pip install -r requirements.txt
-
-# ── Core UI ──────────────────────────────────────────────────────
 streamlit>=1.32.0
-
-# ── Database ─────────────────────────────────────────────────────
-supabase>=2.3.0          # Supabase Python SDK
-
-# ── Market Data ──────────────────────────────────────────────────
-yfinance>=0.2.40         # Yahoo Finance (free, no key needed)
+yfinance>=0.2.38
 pandas>=2.0.0
-
-# ── Scheduler ────────────────────────────────────────────────────
-apscheduler>=3.10.0      # Background cron jobs
-
-# ── HTTP (for DingTalk / Telegram alerts) ────────────────────────
 requests>=2.31.0
-
-# ── Optional: Twelve Data ────────────────────────────────────────
-# (no extra lib needed — uses requests)
