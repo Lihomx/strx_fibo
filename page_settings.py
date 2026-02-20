@@ -2,194 +2,139 @@
 page_settings.py — 系统设置
 """
 import streamlit as st
-
 import storage
+from assets import ASSET_GROUPS, ASSETS, TIMEFRAMES
 
 
 def render():
     st.markdown("## ⚙️ 系统设置")
-
     cfg = storage.load_config()
 
-    tab1, tab2, tab3 = st.tabs(["📐 Fibonacci 参数", "📡 数据源", "💾 存储说明"])
+    tab1, tab2, tab3 = st.tabs(["📐 Fibonacci 参数", "📡 数据源", "💾 存储 & 缓存"])
 
-    # ── Fibonacci 参数 ────────────────────────────────────────────────
+    # ── Tab1: Fibo 参数 ───────────────────────────────────────────────
     with tab1:
-        st.markdown("#### Fibonacci 计算参数")
-        st.markdown("""
-        <div class="n-info">
-        公式与 STRX Pine Script 完全对应：<br>
-        <code>fp(r) = swingHigh − r × (swingHigh − swingLow)</code><br>
-        黄金区间：<code>fp(0.618) ≤ 当前价格 ≤ fp(0.500)</code>
-        </div>""", unsafe_allow_html=True)
-
-        with st.form("fibo_form"):
-            lookback = st.slider(
-                "Lookback（回望K线数）",
-                min_value=20, max_value=500,
-                value=int(cfg.get("lookback", 100)),
-                step=10,
-                help="计算摆动高低点所用的K线数量，对应 Pine Script i_lookback"
-            )
-            col1, col2 = st.columns(2)
-            with col1:
-                fibo_low = st.number_input(
-                    "黄金区上沿（Fibo 比例）",
-                    min_value=0.1, max_value=0.9,
-                    value=float(cfg.get("fibo_low", 0.5)),
-                    step=0.001, format="%.3f",
-                    help="默认 0.500（对应价格较高一端）"
-                )
-            with col2:
-                fibo_high = st.number_input(
-                    "黄金区下沿（Fibo 比例）",
-                    min_value=0.1, max_value=0.99,
-                    value=float(cfg.get("fibo_high", 0.618)),
-                    step=0.001, format="%.3f",
-                    help="默认 0.618（对应价格较低一端）"
-                )
-            watch_dist = st.slider(
-                "「接近区间」判断阈值 (%)",
-                min_value=1.0, max_value=20.0,
-                value=float(cfg.get("watch_dist", 5.0)),
-                step=0.5,
-                help="价格距黄金区间的距离小于此值时，标记为「👀 接近」"
-            )
-
-            if st.form_submit_button("💾 保存 Fibonacci 参数", use_container_width=True):
-                storage.save_config({
-                    "lookback":    lookback,
-                    "fibo_low":    fibo_low,
-                    "fibo_high":   fibo_high,
-                    "watch_dist":  watch_dist,
-                })
-                st.success("✅ 参数已保存，下次扫描生效")
-
-        # 预览
-        with st.expander("📊 当前 Fibo 参数预览"):
-            import scanner as sc
-            example_h, example_l = 100.0, 75.0
-            rng = example_h - example_l
-            fp  = lambda r: example_h - r * rng
-            levels = [0.0,0.136,0.236,0.382,0.5,0.618,0.705,0.786,0.886,1.0]
-            rows = [{"Fibo 比例": r, "价格示例 (H=100, L=75)": f"{fp(r):.2f}",
-                     "说明": "🟠 结构高点" if r==0 else
-                             "🟠 结构低点" if r==1 else
-                             "✅ 黄金区上沿" if r==float(cfg.get("fibo_low",0.5)) else
-                             "✅ 黄金区下沿" if r==float(cfg.get("fibo_high",0.618)) else ""}
-                    for r in levels]
-            import pandas as pd
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-
-    # ── 数据源 ────────────────────────────────────────────────────────
-    with tab2:
-        st.markdown("#### 数据源配置")
-
-        with st.form("datasource_form"):
-            data_src = st.radio(
-                "选择数据源",
-                options=["yfinance", "twelvedata"],
-                index=0 if cfg.get("data_source","yfinance")=="yfinance" else 1,
-                help="yfinance 免费无限制；Twelve Data 免费版 800次/天"
-            )
-
-            td_key = st.text_input(
-                "Twelve Data API Key（仅选 Twelve Data 时需要）",
-                value=cfg.get("twelvedata_key",""),
-                type="password",
-                placeholder="your_api_key_here"
-            )
-
-            if st.form_submit_button("💾 保存数据源", use_container_width=True):
-                storage.save_config({
-                    "data_source":    data_src,
-                    "twelvedata_key": td_key,
-                })
-                st.success("✅ 数据源已保存")
-
-        st.markdown("""
-        | 数据源 | 费用 | 限制 | 覆盖 |
-        |--------|------|------|------|
-        | **yfinance** | 完全免费 | 无正式限制 | 全球股票/指数/期货/外汇/加密 |
-        | **Twelve Data** | 免费 800次/天 | 每分钟有限 | 全球市场（覆盖更广） |
-
-        > 💡 推荐先用 **yfinance**，稳定且免费。如需更高可靠性可切换 Twelve Data。
-        """)
-
-        if st.button("🔧 测试 yfinance 连接", use_container_width=False):
-            with st.spinner("测试 AAPL 日线数据…"):
-                df = sc_test()
-            if df is not None:
-                st.success(f"✅ yfinance 正常！获取 AAPL {len(df)} 条记录")
-            else:
-                st.error("❌ yfinance 获取失败，请检查网络")
-
-    # ── 存储说明 ──────────────────────────────────────────────────────
-    with tab3:
-        st.markdown("#### 💾 存储架构说明")
-        st.markdown("""
-        <div class="n-info">
-        当前使用 <b>JSON 本地文件存储</b>，适合 Streamlit Cloud 开发/演示阶段。
-        </div>""", unsafe_allow_html=True)
-
-        st.markdown("""
-        #### 数据文件
-
-        | 文件 | 内容 | 大小限制 |
-        |------|------|----------|
-        | `data_config.json` | 系统配置（Fibo参数/告警设置） | ~5KB |
-        | `data_history.json` | 扫描历史（最近30次） | ~2MB |
-        | `data_alerts.json` | 告警日志（最近200条） | ~100KB |
-
-        #### ⚠️ Streamlit Cloud 注意事项
-
-        - **重启后数据重置**：Streamlit Cloud 容器重启时，本地文件会丢失
-        - **适合演示**：当前架构足够用于功能验证和日常使用
-        - **升级路径**：后期迁移到 Supabase 只需替换 `storage.py` 即可，其他代码不变
-
-        #### 🔮 后期升级到 Supabase
-
-        ```python
-        # 只需在 storage.py 中替换以下函数实现：
-        # - load_config() / save_config()
-        # - save_scan() / load_sessions() / load_results()
-        # - log_alert() / load_alert_log()
-        # 其余所有页面代码完全不变
-        ```
-        """)
-
+        st.markdown("### Fibonacci 计算参数")
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("🗑️ 清空扫描历史", use_container_width=True):
-                import os
-                f = storage.F_HIST
-                if os.path.exists(f):
-                    os.remove(f)
-                    st.success("✅ 扫描历史已清空")
-                    st.rerun()
+            lookback = st.slider("Lookback（观察周期）", 20, 500,
+                                 int(cfg.get("lookback", 100)), 5,
+                                 help="用于确定摆动高低点的K线数量")
+            zone_lo = st.slider("黄金区间上沿 (0.5)", 0.3, 0.6,
+                                float(cfg.get("fibo_low", 0.5)), 0.01)
         with col2:
-            if st.button("🔄 重置系统配置", use_container_width=True):
-                storage.reset_config()
-                st.success("✅ 配置已重置为默认值")
+            zone_hi = st.slider("黄金区间下沿 (0.618)", 0.5, 0.9,
+                                float(cfg.get("fibo_high", 0.618)), 0.01)
+            watch_dist = st.slider("接近区间阈值 (%)", 1.0, 20.0,
+                                   float(cfg.get("watch_dist", 5.0)), 0.5)
+        st.markdown("""
+        **公式（与 STRX Pine Script 完全一致）：**
+        ```
+        swingHigh = ta.highest(high, lookback)
+        swingLow  = ta.lowest(low, lookback)
+        fp(r)     = swingHigh - r × (swingHigh - swingLow)
+        黄金区间  = fp(0.618) ≤ close ≤ fp(0.500)
+        ```
+        """)
+        if st.button("💾 保存参数", type="primary"):
+            cfg.update({"lookback": lookback, "fibo_low": zone_lo,
+                        "fibo_high": zone_hi, "watch_dist": watch_dist})
+            if storage.save_config(cfg):
+                st.success("✅ 参数已保存")
+
+    # ── Tab2: 数据源 ─────────────────────────────────────────────────
+    with tab2:
+        st.markdown("### 数据源配置")
+        src = st.radio("数据源", ["yfinance（免费）", "Twelve Data（需API Key）"],
+                       index=0 if cfg.get("data_source", "yfinance") == "yfinance" else 1)
+        ds = "yfinance" if "yfinance" in src else "twelvedata"
+
+        if ds == "twelvedata":
+            tdkey = st.text_input("Twelve Data API Key",
+                                  value=cfg.get("twelvedata_key", ""),
+                                  type="password")
+            st.caption("免费版：800次/天 | https://twelvedata.com")
+        else:
+            tdkey = cfg.get("twelvedata_key", "")
+            st.markdown("""
+            **yfinance（默认推荐）**
+            - 完全免费，无需注册
+            - 支持：美股 / ETF / 期货 / 外汇 / 指数 / 港股 / 加密货币
+            - A股支持：需使用 `600519.SS` / `000858.SZ` 格式
+            - 限制：批量请求较慢（每品种约0.5-1秒）
+            """)
+
+        if st.button("🔗 测试连接"):
+            try:
+                import yfinance as yf
+                t = yf.Ticker("AAPL")
+                h = t.history(period="5d")
+                if not h.empty:
+                    st.success(f"✅ 连接成功！AAPL 最新收盘价 ${float(h['Close'].iloc[-1]):.2f}")
+                else:
+                    st.warning("⚠️ 连接成功但无数据")
+            except Exception as e:
+                st.error(f"❌ 连接失败：{e}")
+
+        if st.button("💾 保存数据源设置", type="primary"):
+            cfg.update({"data_source": ds, "twelvedata_key": tdkey})
+            if storage.save_config(cfg): st.success("✅ 已保存")
+
+    # ── Tab3: 存储 & 缓存 ────────────────────────────────────────────
+    with tab3:
+        st.markdown("### 存储 & 缓存管理")
+        stats = storage.storage_stats()
+        total_symbols = sum(len(g) for g in ASSET_GROUPS.values())
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("缓存品种数", stats["unique_tickers"])
+        c2.metric("总检查条目", stats["total_cached_results"])
+        c3.metric("扫描会话数", stats["sessions"])
+        c4.metric("数据大小", f"{stats['allres_kb']} KB")
+
+        # 已扫描组
+        scanned = stats.get("scanned_groups", [])
+        unscanned = [g for g in ASSET_GROUPS if g not in scanned]
+        all_groups = list(ASSET_GROUPS.keys())
+
+        st.markdown(f"""
+        #### 分批扫描进度
+        - 总组数：**{len(all_groups)}** 组（共 {total_symbols} 个品种）
+        - 已扫描：**{len(scanned)}** 组 ✅
+        - 未扫描：**{len(unscanned)}** 组
+        """)
+
+        if scanned:
+            st.markdown("**已扫描组：**")
+            cols = st.columns(4)
+            for i, g in enumerate(scanned):
+                cols[i % 4].markdown(f"✅ {g[:20]}")
+        if unscanned:
+            st.markdown("**未扫描组：**")
+            cols = st.columns(4)
+            for i, g in enumerate(unscanned):
+                cols[i % 4].markdown(f"⬜ {g[:20]}")
+
+        st.markdown("---")
+        st.markdown("**缓存升级路径**")
+        st.markdown("""
+        当前：JSON 文件（Streamlit Cloud 临时存储）  
+        升级：替换 `storage.py` 中 7 个函数即可切换至 Supabase / PostgreSQL，
+        其他所有文件无需修改。
+        """)
+
+        col_clr1, col_clr2, col_clr3 = st.columns(3)
+        with col_clr1:
+            if st.button("🗑️ 清空所有缓存", type="secondary"):
+                storage.clear_all_data()
+                st.success("✅ 已清空")
                 st.rerun()
-
-
-def sc_test():
-    """测试 yfinance 连接"""
-    try:
-        import warnings
-        import yfinance as yf
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            df = yf.download("AAPL", interval="1d", period="1mo",
-                             progress=False, auto_adjust=True)
-        return df if not df.empty else None
-    except Exception:
-        return None
-
-
-# 避免循环导入（settings 页内 import scanner 只用于测试）
-try:
-    import scanner as _sc_ref
-except Exception:
-    pass
+        with col_clr2:
+            if st.button("🔄 重置已扫描记录"):
+                storage.clear_scanned_groups()
+                st.success("✅ 已重置，下次扫描将视为全新")
+                st.rerun()
+        with col_clr3:
+            if st.button("🔧 重置参数为默认"):
+                if storage.save_config({}):
+                    st.success("✅ 已重置"); st.rerun()
