@@ -204,45 +204,46 @@ def _render_batch_selector(cfg):
     # 快捷选组 — 两行
     r1c1,r1c2,r1c3,r1c4,r1c5 = st.columns(5)
     with r1c1:
-        if st.button("☑️ 全选(40组)", use_container_width=True):
+        if st.button("☑️ 全选(40组)", width="stretch"):
             st.session_state.scan_groups = group_names[:]
     with r1c2:
-        if st.button("🥇 期货+指数", use_container_width=True):
+        if st.button("🥇 期货+指数", width="stretch"):
             st.session_state.scan_groups = [g for g in group_names
                 if any(k in g for k in ["期货","指数","全球","ETF"])]
     with r1c3:
-        if st.button("🇺🇸 美股+ETF", use_container_width=True):
+        if st.button("🇺🇸 美股+ETF", width="stretch"):
             st.session_state.scan_groups = [g for g in group_names if "美股" in g or "ETF" in g]
     with r1c4:
-        if st.button("🇨🇳 中股全部", use_container_width=True):
+        if st.button("🇨🇳 中股全部", width="stretch"):
             st.session_state.scan_groups = [g for g in group_names
                 if any(k in g for k in ["中概","港股","A股","中国"])]
     with r1c5:
-        if st.button("💱 外汇+期货", use_container_width=True):
+        if st.button("💱 外汇+期货", width="stretch"):
             st.session_state.scan_groups = [g for g in group_names
                 if any(k in g for k in ["外汇","期货"])]
     r2c1,r2c2,r2c3,r2c4,r2c5 = st.columns(5)
     with r2c1:
-        if st.button("🌏 亚太全部", use_container_width=True):
+        if st.button("🌏 亚太全部", width="stretch"):
             st.session_state.scan_groups = [g for g in group_names
                 if any(k in g for k in ["日本","韩国","台湾","印度","澳大利亚","东南亚"])]
     with r2c2:
-        if st.button("🌍 欧洲全部", use_container_width=True):
+        if st.button("🌍 欧洲全部", width="stretch"):
             st.session_state.scan_groups = [g for g in group_names
                 if any(k in g for k in ["英国","德国","法国","北欧","欧洲"])]
     with r2c3:
-        if st.button("🌎 新兴市场", use_container_width=True):
+        if st.button("🌎 新兴市场", width="stretch"):
             st.session_state.scan_groups = [g for g in group_names
                 if any(k in g for k in ["加拿大","拉美","新兴","非洲","中东"])]
     with r2c4:
-        if st.button("₿ 加密全部", use_container_width=True):
+        if st.button("₿ 加密全部", width="stretch"):
             st.session_state.scan_groups = [g for g in group_names if "加密" in g]
     with r2c5:
-        if st.button("🔲 清空", use_container_width=True):
+        if st.button("🔲 清空", width="stretch"):
             st.session_state.scan_groups = []
 
-    # 多选框
-    default_sel = st.session_state.get("scan_groups", [group_names[0]])
+    # 多选框 — 过滤掉session_state中可能残留的旧组名
+    raw_default = st.session_state.get("scan_groups", [group_names[0]])
+    default_sel = [g for g in raw_default if g in group_names] or [group_names[0]]
     selected = st.multiselect(
         "选择要扫描的品种组（可多选）：",
         options=group_names,
@@ -282,7 +283,7 @@ def _render_batch_selector(cfg):
     with col_btn:
         do_scan = st.button(
             f"🚀 扫描选中 {len(sel_assets)} 品种",
-            type="primary", use_container_width=True
+            type="primary", width="stretch"
         )
 
     if do_scan:

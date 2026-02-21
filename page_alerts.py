@@ -35,9 +35,9 @@ def render():
                                    type="password")
             col1, col2 = st.columns(2)
             with col1:
-                save_dt = st.form_submit_button("💾 保存", use_container_width=True)
+                save_dt = st.form_submit_button("💾 保存", width="stretch")
             with col2:
-                test_dt = st.form_submit_button("🧪 测试发送", use_container_width=True)
+                test_dt = st.form_submit_button("🧪 测试发送", width="stretch")
 
         if save_dt:
             storage.save_config({
@@ -81,9 +81,9 @@ def render():
                                    placeholder="-100123456789")
             col1, col2 = st.columns(2)
             with col1:
-                save_tg = st.form_submit_button("💾 保存", use_container_width=True)
+                save_tg = st.form_submit_button("💾 保存", width="stretch")
             with col2:
-                test_tg = st.form_submit_button("🧪 测试发送", use_container_width=True)
+                test_tg = st.form_submit_button("🧪 测试发送", width="stretch")
 
         if save_tg:
             storage.save_config({
@@ -117,7 +117,7 @@ def render():
                        value=int(cfg.get("alert_cooldown", 240)),
                        step=30,
                        help="同一资产同一框架两次告警之间的最短间隔")
-        if st.form_submit_button("💾 保存冷却设置", use_container_width=True):
+        if st.form_submit_button("💾 保存冷却设置", width="stretch"):
             storage.save_config({"alert_cooldown": cd})
             st.success(f"✅ 冷却时间已设为 {cd} 分钟")
 
@@ -131,10 +131,10 @@ def render():
             df = pd.DataFrame(logs)
             show_cols = ["time","ticker","name","timeframe","channel","status","message"]
             show_df   = df[[c for c in show_cols if c in df.columns]]
-            st.dataframe(show_df, use_container_width=True, height=400)
+            st.dataframe(show_df, width="stretch", height=400)
             col1, col2 = st.columns([1,3])
             with col1:
-                if st.button("🗑️ 清空日志", use_container_width=True):
+                if st.button("🗑️ 清空日志", width="stretch"):
                     storage.clear_alert_log()
                     st.success("已清空")
                     st.rerun()

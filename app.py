@@ -89,7 +89,7 @@ def sidebar():
         ]
         p = st.session_state.get("page", "scanner")
         for icon, label, key in NAV:
-            if st.button(f"{icon}  {label}", key=f"nav_{key}", use_container_width=True):
+            if st.button(f"{icon}  {label}", key=f"nav_{key}", width="stretch"):
                 st.session_state.page = key
                 st.rerun()
 

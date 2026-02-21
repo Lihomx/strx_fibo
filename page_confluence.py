@@ -64,7 +64,7 @@ def render():
     signal = []
     for t, info in ticker_info.items():
         has_signal = any(
-            v["in_zone"] or v["dist_pct"] < 5
+            v["in_zone"] or (v["dist_pct"] is not None and v["dist_pct"] < 5)
             for v in info["tfs"].values()
         )
         if has_signal:
@@ -138,7 +138,7 @@ def render():
             return "<td style='text-align:center;color:#d1d5db;padding:8px 6px'>·</td>"
         if tf_data["in_zone"]:
             return "<td style='text-align:center;padding:8px 6px'>✅</td>"
-        if tf_data["dist_pct"] < 5:
+        if tf_data.get("dist_pct") is not None and tf_data["dist_pct"] < 5:
             return "<td style='text-align:center;padding:8px 6px'>👀</td>"
         return "<td style='text-align:center;color:#d1d5db;padding:8px 6px'>·</td>"
 

@@ -16,6 +16,13 @@ def render():
                     unsafe_allow_html=True)
         return
 
+    # 过滤确保每个 session 是 dict 且有 session_id
+    sessions = [s for s in sessions if isinstance(s, dict) and s.get("session_id")]
+    if not sessions:
+        st.markdown('<div class="n-info">💡 暂无有效历史记录，请先执行扫描。</div>',
+                    unsafe_allow_html=True)
+        return
+
     st.markdown(f'<div class="n-ok">共 {len(sessions)} 次扫描记录（最多保留 30 次）</div>',
                 unsafe_allow_html=True)
 
@@ -59,7 +66,9 @@ def render():
                                ["全部","commodity","forex","index","stock","crypto"],
                                key="hist_cat", label_visibility="collapsed")
 
-    rows = storage.load_results(session_id=selected_sid, inzone_only=zone_only)
+    rows = storage.load_session_results(session_id=selected_sid)
+    if zone_only:
+        rows = [r for r in rows if r.get("in_zone")]
     df   = pd.DataFrame(rows)
 
     if df.empty:
@@ -102,7 +111,7 @@ def render():
                 lambda x: f"{x:,.4f}" if x is not None else "—"
             )
 
-    st.dataframe(show_df, use_container_width=True, height=420)
+    st.dataframe(show_df, width="stretch", height=420)
     st.caption(f"共 {len(df)} 条")
 
     # ── CSV 下载 ─────────────────────────────────────────────────────
