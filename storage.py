@@ -198,41 +198,154 @@ def clear_alerts() -> bool:
 
 # ── 自选收藏夹 ──────────────────────────────────────────────────────
 F_WATCHLIST = os.path.join(_BASE, "data_watchlist.json")
+F_WATCHLIST_ARCHIVE = os.path.join(_BASE, "data_watchlist_archive.json")
+
 
 def load_watchlist() -> List[Dict]:
-    """返回收藏夹列表，每项: {ticker, name, note, added_at}"""
+    """返回收藏夹列表，每项: {ticker, name, notes:[], added_at}"""
     items = _load(F_WATCHLIST, [])
-    # 过滤损坏数据
+    if not isinstance(items, list):
+        items = []
     return [i for i in items if isinstance(i, dict) and i.get("ticker")]
+
 
 def save_watchlist(items: List[Dict]) -> bool:
     return _save(F_WATCHLIST, items)
 
-def add_to_watchlist(ticker: str, name: str = "", note: str = "") -> bool:
-    items = load_watchlist()
-    tickers = [i["ticker"].upper() for i in items]
+
+def load_watchlist_archive() -> List[Dict]:
+    """返回已软删除的品种存档"""
+    items = _load(F_WATCHLIST_ARCHIVE, [])
+    if not isinstance(items, list):
+        items = []
+    return [i for i in items if isinstance(i, dict) and i.get("ticker")]
+
+
+def save_watchlist_archive(items: List[Dict]) -> bool:
+    return _save(F_WATCHLIST_ARCHIVE, items)
+
+
+def _now_str() -> str:
+    return time.strftime("%Y-%m-%d %H:%M")
+
+
+def add_to_watchlist(ticker: str, name: str = "", note: str = "",
+                     img_url: str = "") -> bool:
+    """添加品种到收藏夹。notes 字段为列表，每条含 {text, img_url, ts}。
+    若品种已在存档中，自动恢复。"""
     ticker = ticker.strip().upper()
-    if not ticker or ticker in tickers:
+    if not ticker:
         return False
-    items.append({
-        "ticker":   ticker,
-        "name":     name.strip(),
-        "note":     note.strip(),
-        "added_at": time.strftime("%Y-%m-%d %H:%M"),
-    })
-    return save_watchlist(items)
+
+    items = load_watchlist()
+    existing = [i for i in items if i["ticker"].upper() == ticker]
+    if existing:
+        return False  # 已存在
+
+    # 检查是否在存档中，如在则恢复
+    archive = load_watchlist_archive()
+    restored = next((a for a in archive if a["ticker"].upper() == ticker), None)
+
+    if restored:
+        entry = restored.copy()
+        entry["deleted_at"] = None
+        # 更新名称（如有）
+        if name.strip():
+            entry["name"] = name.strip()
+    else:
+        entry = {
+            "ticker":   ticker,
+            "name":     name.strip(),
+            "notes":    [],
+            "added_at": _now_str(),
+        }
+
+    # 追加首条备注
+    if note.strip():
+        entry.setdefault("notes", []).append({
+            "text":    note.strip(),
+            "img_url": img_url.strip(),
+            "ts":      _now_str(),
+        })
+
+    items.append(entry)
+    ok = save_watchlist(items)
+
+    # 从存档移除（已恢复）
+    if restored and ok:
+        new_archive = [a for a in archive if a["ticker"].upper() != ticker]
+        save_watchlist_archive(new_archive)
+
+    return ok
+
 
 def remove_from_watchlist(ticker: str) -> bool:
+    """软删除：将品种移入存档，保留所有历史备注。"""
+    ticker = ticker.strip().upper()
+    items   = load_watchlist()
+    target  = next((i for i in items if i["ticker"].upper() == ticker), None)
+    if not target:
+        return False
+
+    # 写入存档
+    archive = load_watchlist_archive()
+    # 更新或追加
+    new_archive = [a for a in archive if a["ticker"].upper() != ticker]
+    archived_entry = target.copy()
+    archived_entry["deleted_at"] = _now_str()
+    new_archive.append(archived_entry)
+    save_watchlist_archive(new_archive)
+
+    # 从活跃列表移除
+    new_items = [i for i in items if i["ticker"].upper() != ticker]
+    return save_watchlist(new_items)
+
+
+def restore_from_archive(ticker: str) -> bool:
+    """从存档恢复品种到收藏夹。"""
+    ticker  = ticker.strip().upper()
+    archive = load_watchlist_archive()
+    target  = next((a for a in archive if a["ticker"].upper() == ticker), None)
+    if not target:
+        return False
+
     items = load_watchlist()
-    new = [i for i in items if i["ticker"].upper() != ticker.strip().upper()]
-    return save_watchlist(new)
+    if any(i["ticker"].upper() == ticker for i in items):
+        return False  # 已在活跃列表
+
+    entry = target.copy()
+    entry["deleted_at"] = None
+    items.append(entry)
+    ok = save_watchlist(items)
+
+    if ok:
+        new_archive = [a for a in archive if a["ticker"].upper() != ticker]
+        save_watchlist_archive(new_archive)
+
+    return ok
+
+
+def add_watchlist_note(ticker: str, note_text: str,
+                       img_url: str = "") -> bool:
+    """向已收藏品种追加一条带时间戳的备注。"""
+    ticker = ticker.strip().upper()
+    if not note_text.strip():
+        return False
+    items = load_watchlist()
+    for item in items:
+        if item["ticker"].upper() == ticker:
+            item.setdefault("notes", []).append({
+                "text":    note_text.strip(),
+                "img_url": img_url.strip(),
+                "ts":      _now_str(),
+            })
+            return save_watchlist(items)
+    return False
+
 
 def update_watchlist_note(ticker: str, note: str) -> bool:
-    items = load_watchlist()
-    for i in items:
-        if i["ticker"].upper() == ticker.strip().upper():
-            i["note"] = note.strip()
-    return save_watchlist(items)
+    """兼容旧接口：等同于追加一条备注。"""
+    return add_watchlist_note(ticker, note)
 
 
 # ── 存储统计 ─────────────────────────────────────────────────────────

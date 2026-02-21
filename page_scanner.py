@@ -227,6 +227,132 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
 
 
 # ════════════════════════════════════════════════════════════════════
+# Ticker 自动修正建议
+# ════════════════════════════════════════════════════════════════════
+
+# 常见格式错误规则：(pattern, 修正函数, 说明)
+_CORRECTION_RULES = [
+    # A 股：6位数字 → 加 .SS 或 .SZ
+    (r"^(\d{6})$",         lambda m: [f"{m.group(1)}.SS", f"{m.group(1)}.SZ"],
+     "A股代码需加交易所后缀（上交所 .SS / 深交所 .SZ）"),
+    # 港股：去掉 .HK 前导零不够4位
+    (r"^(\d{1,3})\.HK$",   lambda m: [f"{int(m.group(1)):04d}.HK"],
+     "港股代码需补全为4位数字（如 700.HK → 0700.HK）"),
+    # 港股：纯数字 1-4 位没有 .HK 后缀
+    (r"^(\d{1,4})$",       lambda m: [f"{int(m.group(1)):04d}.HK"],
+     "纯数字可能是港股，建议加 .HK 后缀"),
+    # 外汇：EURUSD 没有 =X
+    (r"^([A-Z]{6})$",      lambda m: [f"{m.group(1)}=X"],
+     "外汇品种代码通常需在末尾加 =X（如 EURUSD=X）"),
+    # 加密：BTC/ETH 没有 -USD（需先于通用2-3字母规则）
+    (r"^(BTC|ETH|BNB|SOL|ADA|XRP|DOGE|AVAX|DOT|LINK)$",
+     lambda m: [f"{m.group(1)}-USD"],
+     "加密货币代码通常需加 -USD（如 BTC-USD）"),
+    # 期货：GC / CL / SI 没有 =F
+    (r"^([A-Z]{2,3})$",    lambda m: [f"{m.group(1)}=F"],
+     "期货品种代码通常需在末尾加 =F（如 GC=F / CL=F）"),
+]
+
+# 常见品种名称/别名 → yfinance ticker 映射
+_NAME_ALIAS: dict[str, tuple[str, str]] = {
+    "黄金": ("GC=F", "黄金期货"),
+    "GOLD": ("GC=F", "黄金期货"),
+    "白银": ("SI=F", "白银期货"),
+    "SILVER": ("SI=F", "白银期货"),
+    "原油": ("CL=F", "原油期货"),
+    "OIL": ("CL=F", "原油期货"),
+    "比特币": ("BTC-USD", "比特币"),
+    "BITCOIN": ("BTC-USD", "比特币"),
+    "以太坊": ("ETH-USD", "以太坊"),
+    "ETHEREUM": ("ETH-USD", "以太坊"),
+    "纳斯达克": ("^IXIC", "纳斯达克综合"),
+    "NASDAQ": ("^IXIC", "纳斯达克综合"),
+    "标普": ("^GSPC", "标普500"),
+    "SP500": ("^GSPC", "标普500"),
+    "S&P": ("^GSPC", "标普500"),
+    "道琼斯": ("^DJI", "道琼斯"),
+    "DJI": ("^DJI", "道琼斯"),
+    "上证": ("000001.SS", "上证指数"),
+    "沪深300": ("000300.SS", "沪深300"),
+    "恒生": ("^HSI", "恒生指数"),
+    "HSI": ("^HSI", "恒生指数"),
+    "欧元美元": ("EURUSD=X", "欧元/美元"),
+    "EURUSD": ("EURUSD=X", "欧元/美元"),
+    "美元日元": ("USDJPY=X", "美元/日元"),
+    "USDJPY": ("USDJPY=X", "美元/日元"),
+    "VIX": ("^VIX", "VIX恐慌指数"),
+    "苹果": ("AAPL", "苹果"),
+    "特斯拉": ("TSLA", "特斯拉"),
+    "英伟达": ("NVDA", "英伟达"),
+    "NVIDIA": ("NVDA", "英伟达"),
+    "腾讯": ("0700.HK", "腾讯控股"),
+    "茅台": ("600519.SS", "贵州茅台"),
+}
+
+
+import re
+
+def _suggest_corrections(raw: str) -> list[dict]:
+    """返回修正建议列表，每项 {ticker, reason}"""
+    raw = raw.strip().upper()
+    suggestions = []
+
+    # 1. 名称/别名匹配
+    alias_match = _NAME_ALIAS.get(raw) or _NAME_ALIAS.get(raw.upper())
+    if alias_match:
+        suggestions.append({
+            "ticker": alias_match[0],
+            "name":   alias_match[1],
+            "reason": f"识别为「{alias_match[1]}」的常用名称",
+        })
+
+    # 2. 格式规则匹配
+    for pattern, fix_fn, reason in _CORRECTION_RULES:
+        m = re.match(pattern, raw)
+        if m:
+            try:
+                candidates = fix_fn(m)
+                for c in candidates:
+                    if c != raw and not any(s["ticker"] == c for s in suggestions):
+                        suggestions.append({"ticker": c, "name": "", "reason": reason})
+            except Exception:
+                pass
+
+    # 3. 从品种库中模糊匹配
+    try:
+        from assets import ASSETS
+        kw = raw.lower()
+        for tk, (nm, _cat) in ASSETS.items():
+            if (kw in tk.lower() or kw in nm.lower()) and tk != raw:
+                if not any(s["ticker"] == tk for s in suggestions):
+                    suggestions.append({
+                        "ticker": tk,
+                        "name":   nm,
+                        "reason": f"品种库中找到相似品种：{nm}",
+                    })
+                if len(suggestions) >= 5:
+                    break
+    except Exception:
+        pass
+
+    return suggestions[:5]
+
+
+def _try_fetch_ticker(ticker: str) -> bool:
+    """尝试用 yfinance 获取该 ticker 最近1条数据，判断是否有效。"""
+    try:
+        import yfinance as yf
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            df = yf.download(ticker, period="5d", interval="1d",
+                             progress=False, auto_adjust=True)
+        return df is not None and not df.empty
+    except Exception:
+        return False
+
+
+# ════════════════════════════════════════════════════════════════════
 # 自定义品种扫描
 # ════════════════════════════════════════════════════════════════════
 def _render_custom_scan(cfg):
@@ -242,11 +368,12 @@ def _render_custom_scan(cfg):
     col_ticker, col_name, col_btn = st.columns([3, 3, 2])
 
     with col_ticker:
-        custom_ticker = st.text_input(
+        raw_input = st.text_input(
             "品种代码",
-            placeholder="如：TSLA / 600519.SS / GC=F",
+            placeholder="如：TSLA / 600519.SS / GC=F / 腾讯",
             key="custom_ticker_input",
-        ).strip().upper()
+        ).strip()
+        custom_ticker = raw_input.upper()
 
     with col_name:
         custom_name = st.text_input(
@@ -260,63 +387,136 @@ def _render_custom_scan(cfg):
         do_custom = st.button("🔍 立即扫描", type="primary",
                               width="stretch", key="custom_scan_btn")
 
-    if do_custom:
-        if not custom_ticker:
-            st.warning("请输入品种代码"); return
+    # ── 实时修正提示（输入时即显示建议，无需点扫描）──────────────
+    confirmed_ticker = custom_ticker  # 最终使用的 ticker
 
-        display_name  = custom_name or custom_ticker
-        custom_assets = {custom_ticker: (display_name, "custom")}
-
-        pb  = st.progress(0, "准备中…")
-        msg = st.empty()
-
-        def cb(pct, text):
-            pb.progress(min(float(pct), 1.0), text)
-            msg.caption(text)
-
-        with st.spinner(""):
-            summary, err = sc.run_full_scan(
-                cfg=cfg,
-                assets=custom_assets,
-                note=f"custom:{custom_ticker}",
-                progress_callback=cb,
+    if custom_ticker and not do_custom:
+        suggestions = _suggest_corrections(custom_ticker)
+        if suggestions:
+            st.markdown(
+                '<div style="background:#fffbeb;border:1px solid #fde68a;'
+                'border-radius:8px;padding:10px 14px;margin:6px 0;">'
+                '<b style="color:#92400e">💡 格式建议</b>',
+                unsafe_allow_html=True,
             )
+            for i, sug in enumerate(suggestions):
+                c1, c2 = st.columns([5, 2])
+                with c1:
+                    name_part = f" — {sug['name']}" if sug.get("name") else ""
+                    st.markdown(
+                        f'<span style="font-family:monospace;font-weight:600;color:#1d4ed8">'
+                        f'{sug["ticker"]}</span>{name_part}'
+                        f'<br><span style="color:#6b7280;font-size:11px">{sug["reason"]}</span>',
+                        unsafe_allow_html=True,
+                    )
+                with c2:
+                    if st.button(f"使用 {sug['ticker']}", key=f"use_sug_{i}_{sug['ticker']}"):
+                        st.session_state["custom_ticker_confirmed"] = sug["ticker"]
+                        st.session_state["custom_name_confirmed"]   = sug.get("name", "")
+                        st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
 
-        pb.empty(); msg.empty()
+    # 使用确认的 ticker（若用户点击了建议）
+    if st.session_state.get("custom_ticker_confirmed"):
+        confirmed_ticker = st.session_state["custom_ticker_confirmed"]
+        if not custom_name and st.session_state.get("custom_name_confirmed"):
+            custom_name = st.session_state["custom_name_confirmed"]
+        st.info(f"ℹ️ 将使用修正后的代码：**{confirmed_ticker}**　"
+                f"[点此取消](# '取消修正')")
 
-        if err:
-            st.error(f"扫描失败：{err}"); return
+    if not do_custom:
+        return
 
-        inzone  = summary.get("inzone_count", 0)
-        elapsed = summary.get("elapsed_ms", 0) / 1000
+    # ── 执行扫描 ────────────────────────────────────────────────
+    final_ticker = confirmed_ticker or custom_ticker
+    if not final_ticker:
+        st.warning("请输入品种代码"); return
 
-        if inzone > 0:
-            st.success(
-                f"✅ **{display_name}** ({custom_ticker}) 扫描完成！"
-                f"黄金区命中 **{inzone}** 个框架 | 耗时 {elapsed:.1f}s"
-            )
-        else:
-            st.info(
-                f"✅ **{display_name}** ({custom_ticker}) 扫描完成，"
-                f"当前未在黄金区间。耗时 {elapsed:.1f}s"
-            )
+    display_name  = custom_name or final_ticker
 
-        # 一键加入自选
-        watchlist    = storage.load_watchlist()
-        wl_tickers   = {w["ticker"] for w in watchlist if isinstance(w, dict)}
-        if custom_ticker not in wl_tickers:
-            _, col_add = st.columns([5, 2])
-            with col_add:
-                if st.button("⭐ 加入自选收藏", key="custom_add_watchlist"):
-                    storage.add_to_watchlist(ticker=custom_ticker,
-                                              name=display_name,
-                                              note="自定义扫描添加")
-                    st.toast(f"已添加到自选：{display_name}", icon="⭐")
-                    st.rerun()
-        else:
-            st.caption(f"✅ {display_name} 已在您的自选收藏中")
+    # 先验证 ticker 是否可以取到数据
+    with st.spinner(f"🔍 验证品种代码 {final_ticker}…"):
+        valid = _try_fetch_ticker(final_ticker)
 
-        st.rerun()
+    if not valid:
+        suggestions = _suggest_corrections(final_ticker)
+        st.error(
+            f"❌ 无法获取 **{final_ticker}** 的数据（可能是代码格式错误或已退市）"
+        )
+        if suggestions:
+            st.markdown("**💡 您是否想扫描以下品种？**")
+            for i, sug in enumerate(suggestions):
+                c1, c2 = st.columns([6, 2])
+                with c1:
+                    name_part = f" — {sug['name']}" if sug.get("name") else ""
+                    st.markdown(
+                        f'**{sug["ticker"]}**{name_part}  '
+                        f'<span style="color:#6b7280;font-size:12px">{sug["reason"]}</span>',
+                        unsafe_allow_html=True,
+                    )
+                with c2:
+                    if st.button(f"扫描 {sug['ticker']}", key=f"err_sug_{i}_{sug['ticker']}",
+                                 type="primary"):
+                        st.session_state["custom_ticker_confirmed"] = sug["ticker"]
+                        st.session_state["custom_name_confirmed"]   = sug.get("name", "")
+                        st.rerun()
+        return
+
+    # 清除确认状态
+    st.session_state.pop("custom_ticker_confirmed", None)
+    st.session_state.pop("custom_name_confirmed", None)
+
+    custom_assets = {final_ticker: (display_name, "custom")}
+    pb  = st.progress(0, "准备中…")
+    msg = st.empty()
+
+    def cb(pct, text):
+        pb.progress(min(float(pct), 1.0), text)
+        msg.caption(text)
+
+    with st.spinner(""):
+        summary, err = sc.run_full_scan(
+            cfg=cfg,
+            assets=custom_assets,
+            note=f"custom:{final_ticker}",
+            progress_callback=cb,
+        )
+
+    pb.empty(); msg.empty()
+
+    if err:
+        st.error(f"扫描失败：{err}"); return
+
+    inzone  = summary.get("inzone_count", 0)
+    elapsed = summary.get("elapsed_ms", 0) / 1000
+
+    if inzone > 0:
+        st.success(
+            f"✅ **{display_name}** ({final_ticker}) 扫描完成！"
+            f"黄金区命中 **{inzone}** 个框架 | 耗时 {elapsed:.1f}s"
+        )
+    else:
+        st.info(
+            f"✅ **{display_name}** ({final_ticker}) 扫描完成，"
+            f"当前未在黄金区间。耗时 {elapsed:.1f}s"
+        )
+
+    # 一键加入自选
+    watchlist  = storage.load_watchlist()
+    wl_tickers = {w["ticker"] for w in watchlist if isinstance(w, dict)}
+    if final_ticker not in wl_tickers:
+        _, col_add = st.columns([5, 2])
+        with col_add:
+            if st.button("⭐ 加入自选收藏", key="custom_add_watchlist"):
+                storage.add_to_watchlist(
+                    ticker=final_ticker, name=display_name, note="自定义扫描添加"
+                )
+                st.toast(f"已添加到自选：{display_name}", icon="⭐")
+                st.rerun()
+    else:
+        st.caption(f"✅ {display_name} 已在您的自选收藏中")
+
+    st.rerun()
 
 
 # ════════════════════════════════════════════════════════════════════
