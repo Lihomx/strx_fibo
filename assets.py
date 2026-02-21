@@ -33,7 +33,7 @@ _TV_MAP: Dict[str, str] = {
     "^KS11":"KRX:KOSPI","^TWII":"TWSE:TAIEX","^HSI":"TVC:HSI",
     "^BSESN":"BSE:SENSEX","^NSEI":"NSE:NIFTY",
     "000001.SS":"SSE:000001","399001.SZ":"SZSE:399001","000300.SS":"SSE:000300",
-    "9988.HK":"HKEX:9988","700.HK":"HKEX:700","3690.HK":"HKEX:3690",
+    "9988.HK":"HKEX:9988","0700.HK":"HKEX:700","3690.HK":"HKEX:3690",
     "BTC-USD":"BINANCE:BTCUSDT","ETH-USD":"BINANCE:ETHUSDT",
     "SOL-USD":"BINANCE:SOLUSDT","BNB-USD":"BINANCE:BNBUSDT",
     "XRP-USD":"BINANCE:XRPUSDT",
@@ -69,7 +69,6 @@ ASSET_GROUPS: Dict[str, Dict[str, Tuple[str, str]]] = {
 "🥇 贵金属 & 能源期货": {
     "GC=F":("黄金 Gold","futures"),"SI=F":("白银 Silver","futures"),
     "PL=F":("铂金 Platinum","futures"),"PA=F":("钯金 Palladium","futures"),
-    "XAUUSD=X":("现货黄金","forex"),"XAGUSD=X":("现货白银","forex"),
     "CL=F":("原油 WTI","futures"),"BZ=F":("布伦特原油","futures"),
     "NG=F":("天然气","futures"),"RB=F":("汽油 RBOB","futures"),
     "HO=F":("取暖油","futures"),"HG=F":("铜","futures"),
@@ -93,7 +92,7 @@ ASSET_GROUPS: Dict[str, Dict[str, Tuple[str, str]]] = {
     "YM=F":("E-mini DOW","futures"),"RTY=F":("E-mini Russell","futures"),
     "ZB=F":("30Y美国国债","futures"),"ZN=F":("10Y美国国债","futures"),
     "ZF=F":("5Y美国国债","futures"),"ZT=F":("2Y美国国债","futures"),
-    "VX=F":("VIX期货","futures"),"NKD=F":("日经期货","futures"),
+    "^VIX":("VIX波动率","index"),"NKD=F":("日经期货","futures"),
     "6E=F":("欧元期货","futures"),"6J=F":("日元期货","futures"),
     "6B=F":("英镑期货","futures"),"6A=F":("澳元期货","futures"),
     "6C=F":("加元期货","futures"),"6S=F":("瑞郎期货","futures"),
@@ -523,7 +522,7 @@ ASSET_GROUPS: Dict[str, Dict[str, Tuple[str, str]]] = {
 
 # ━━━ 24. 港股 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 "🇭🇰 港股 (HKEX)": {
-    "9988.HK":("阿里巴巴","hk_stock"),"700.HK":("腾讯","hk_stock"),
+    "9988.HK":("阿里巴巴","hk_stock"),"0700.HK":("腾讯","hk_stock"),
     "3690.HK":("美团","hk_stock"),"9618.HK":("京东","hk_stock"),
     "1810.HK":("小米","hk_stock"),"9999.HK":("网易","hk_stock"),
     "2318.HK":("中国平安","hk_stock"),"1299.HK":("友邦保险","hk_stock"),

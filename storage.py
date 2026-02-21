@@ -79,8 +79,11 @@ def save_scan(session_row: Dict, result_rows: List[Dict]) -> bool:
     _save(F_RES, result_rows)
 
     # 合并到全量缓存（按 ticker+timeframe 去重，保留最新）
-    allres: List[Dict] = _load(F_ALLRES, [])
-    existing = {(r["ticker"], r["timeframe"]): r for r in allres}
+    allres = _load(F_ALLRES, [])
+    if not isinstance(allres, list):
+        allres = []
+    existing = {(r["ticker"], r["timeframe"]): r
+                for r in allres if isinstance(r, dict) and r.get("ticker")}
     for r in result_rows:
         key = (r["ticker"], r["timeframe"])
         existing[key] = r
@@ -89,8 +92,10 @@ def save_scan(session_row: Dict, result_rows: List[Dict]) -> bool:
         merged = merged[-_MAX_ALLRES:]
     _save(F_ALLRES, merged)
 
-    # 保存会话摘要
-    hist: List[Dict] = _load(F_HIST, [])
+    # 保存会话摘要（防御：旧数据可能是dict格式，强制转为list）
+    hist = _load(F_HIST, [])
+    if not isinstance(hist, list):
+        hist = []
     hist.append(session_row)
     if len(hist) > _MAX_HIST:
         hist = hist[-_MAX_HIST:]
@@ -99,14 +104,24 @@ def save_scan(session_row: Dict, result_rows: List[Dict]) -> bool:
 
 def load_sessions(limit: int = 10) -> List[Dict]:
     hist = _load(F_HIST, [])
+    if not isinstance(hist, list):
+        hist = []
+    # 只保留有效的dict记录
+    hist = [s for s in hist if isinstance(s, dict) and s.get("session_id")]
     return list(reversed(hist))[:limit]
 
 
 def load_latest_results(inzone_only: bool = False) -> List[Dict]:
-    # 优先返回全量合并缓存
+    # 优先返回全量合并缓存（防御：确保是list of dict）
     allres = _load(F_ALLRES, [])
+    if not isinstance(allres, list):
+        allres = []
     if not allres:
         allres = _load(F_RES, [])
+        if not isinstance(allres, list):
+            allres = []
+    # 只保留有效dict记录
+    allres = [r for r in allres if isinstance(r, dict) and r.get("ticker")]
     if inzone_only:
         return [r for r in allres if r.get("in_zone")]
     return allres
@@ -115,11 +130,17 @@ def load_latest_results(inzone_only: bool = False) -> List[Dict]:
 def load_session_results(session_id: str) -> List[Dict]:
     """读取全量缓存中属于特定会话的记录"""
     allres = _load(F_ALLRES, [])
+    if not isinstance(allres, list):
+        allres = []
+    allres = [r for r in allres if isinstance(r, dict)]
     filtered = [r for r in allres if r.get("session_id") == session_id]
     if not filtered:
         # 降级：读最新明细
         results = _load(F_RES, [])
-        filtered = [r for r in results if r.get("session_id") == session_id]
+        if not isinstance(results, list):
+            results = []
+        filtered = [r for r in results
+                    if isinstance(r, dict) and r.get("session_id") == session_id]
     return filtered
 
 

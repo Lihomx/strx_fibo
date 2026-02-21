@@ -124,7 +124,7 @@ def render():
 
     # ── 所有历史合并下载 ─────────────────────────────────────────────
     with st.expander("📦 下载全部历史数据"):
-        all_rows = storage.load_results(inzone_only=False)
+        all_rows = storage.load_latest_results(inzone_only=False)
         if all_rows:
             all_df  = pd.DataFrame(all_rows)
             st.download_button(

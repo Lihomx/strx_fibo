@@ -243,12 +243,17 @@ def _render_batch_selector(cfg):
 
     # 多选框 — 过滤掉session_state中可能残留的旧组名
     raw_default = st.session_state.get("scan_groups", [group_names[0]])
-    default_sel = [g for g in raw_default if g in group_names] or [group_names[0]]
+    if not isinstance(raw_default, list):
+        raw_default = [group_names[0]]
+    default_sel = [g for g in raw_default if g in group_names]
+    if not default_sel:
+        default_sel = [group_names[0]]
+
+    # 注意：不使用 key 参数，避免 session_state 中的旧值覆盖 default
     selected = st.multiselect(
         "选择要扫描的品种组（可多选）：",
         options=group_names,
         default=default_sel,
-        key="scan_groups_widget",
     )
     st.session_state.scan_groups = selected
 
