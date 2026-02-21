@@ -1,20 +1,29 @@
 """
-page_confluence.py — 多框架共振检测（修复版）
-Bug修复：安全访问 dist_pct，避免 None 比较 TypeError
+page_confluence.py — 多框架共振检测
+新增：当前价格列 + 每行添加到自选收藏按钮
 """
 import pandas as pd
 import streamlit as st
 
 import storage
+from assets import CATEGORY_LABELS
 
 
 def _safe_dist(r: dict) -> float:
-    """安全获取 dist_pct，返回 float，None → 999.0"""
     v = r.get("dist_pct")
     try:
         return float(v) if v is not None else 999.0
     except (TypeError, ValueError):
         return 999.0
+
+
+def _cat_label(cat: str) -> str:
+    mapping = {
+        "futures": "期货", "index": "指数", "forex": "外汇",
+        "us_stock": "美股", "cn_stock": "中港股", "a_stock": "A股",
+        "crypto": "加密", "custom": "自定义",
+    }
+    return mapping.get(cat, CATEGORY_LABELS.get(cat, cat))
 
 
 def render():
@@ -38,27 +47,34 @@ def render():
         f"品种: {last_sess.get('asset_count', '?')}  |  {note}"
     )
 
-    # ── 按 ticker 分组 ───────────────────────────────────────────────
+    # ── 按 ticker 分组，同时采集当前价格 ────────────────────────────
     ticker_info: dict = {}
     for r in rows:
-        t = r.get("ticker","")
+        t = r.get("ticker", "")
         if not t:
             continue
         if t not in ticker_info:
             ticker_info[t] = {
-                "name":       r.get("name",""),
-                "category":   r.get("category",""),
-                "tv_url":     r.get("tv_url","#"),
-                "conf_label": r.get("confluence_label","—") or "—",
-                "conf_score": int(r.get("confluence_score") or 0),
-                "tfs":        {},
+                "name":          r.get("name", ""),
+                "category":      r.get("category", ""),
+                "tv_url":        r.get("tv_url", "#"),
+                "conf_label":    r.get("confluence_label", "—") or "—",
+                "conf_score":    int(r.get("confluence_score") or 0),
+                "current_price": None,
+                "tfs":           {},
             }
-        tf = r.get("timeframe","")
+        tf = r.get("timeframe", "")
         if tf:
             ticker_info[t]["tfs"][tf] = {
                 "in_zone":  bool(r.get("in_zone", False)),
                 "dist_pct": _safe_dist(r),
             }
+        # 取日线价格作为当前价格（或任意一个非空的）
+        price = r.get("current_price")
+        if price is not None and ticker_info[t]["current_price"] is None:
+            ticker_info[t]["current_price"] = price
+        if tf == "Daily" and price is not None:
+            ticker_info[t]["current_price"] = price
 
     # ── 过滤：有信号的品种 ──────────────────────────────────────────
     signal = []
@@ -76,10 +92,7 @@ def render():
         st.markdown('<div class="n-warn">⚠️ 当前扫描结果中没有处于黄金区间或接近区间的品种。'
                     '请扩大扫描范围或等待价格靠近 Fibo 区间。</div>',
                     unsafe_allow_html=True)
-
-        # 仍展示摘要统计
-        total_tickers = len(ticker_info)
-        st.markdown(f"共扫描 **{total_tickers}** 个品种，暂无信号。")
+        st.markdown(f"共扫描 **{len(ticker_info)}** 个品种，暂无信号。")
         return
 
     # ── 统计卡 ──────────────────────────────────────────────────────
@@ -113,11 +126,13 @@ def render():
     with col2:
         cat_filter = st.selectbox(
             "品种类别",
-            ["全部","futures","index","forex","us_stock","cn_stock","a_stock","crypto"],
+            ["全部", "futures", "index", "forex", "us_stock",
+             "cn_stock", "a_stock", "crypto"],
             label_visibility="collapsed",
         )
     with col3:
-        kw = st.text_input("搜索", placeholder="名称/代码…", label_visibility="collapsed")
+        kw = st.text_input("搜索", placeholder="名称/代码…",
+                           label_visibility="collapsed")
 
     filtered = [
         (t, i) for t, i in signal
@@ -130,10 +145,39 @@ def render():
         st.info("过滤后无结果")
         return
 
-    # ── 共振表 ───────────────────────────────────────────────────────
+    # 加载自选收藏状态
+    watchlist         = storage.load_watchlist()
+    watchlist_tickers = {w["ticker"] for w in watchlist if isinstance(w, dict)}
+
     TFS = ["Daily", "Weekly", "Monthly"]
 
-    def tf_cell(tf_data):
+    # ── 表头 HTML ────────────────────────────────────────────────────
+    st.markdown("""
+    <style>
+    .conf-table {width:100%;border-collapse:collapse;font-size:13px}
+    .conf-table th {
+        padding:9px 8px;background:#f9fafb;
+        border-bottom:2px solid #e5e7eb;white-space:nowrap;
+    }
+    .conf-table td {padding:8px 8px;border-bottom:1px solid #f3f4f6;vertical-align:middle}
+    </style>
+    <table class="conf-table">
+    <thead><tr>
+      <th style="text-align:left">资产</th>
+      <th style="text-align:left">类别</th>
+      <th style="text-align:right">当前价格</th>
+      <th style="text-align:center">日线</th>
+      <th style="text-align:center">周线</th>
+      <th style="text-align:center">月线</th>
+      <th style="text-align:left">共振信号</th>
+      <th style="text-align:left">评分</th>
+      <th style="text-align:left">TV</th>
+    </tr></thead>
+    </table>
+    """, unsafe_allow_html=True)
+
+    # ── 逐行渲染（含收藏按钮）───────────────────────────────────────
+    def _tf_cell(tf_data):
         if not tf_data:
             return "<td style='text-align:center;color:#d1d5db;padding:8px 6px'>·</td>"
         if tf_data["in_zone"]:
@@ -142,81 +186,77 @@ def render():
             return "<td style='text-align:center;padding:8px 6px'>👀</td>"
         return "<td style='text-align:center;color:#d1d5db;padding:8px 6px'>·</td>"
 
-    def score_bar(score):
+    def _score_bar(score):
         pct   = score * 10
         color = "#dc2626" if pct >= 90 else "#f59e0b" if pct >= 60 else "#10b981"
-        return (f"<div style='background:#f3f4f6;border-radius:4px;height:6px;margin-top:4px'>"
-                f"<div style='background:{color};width:{pct}%;height:6px;border-radius:4px'></div>"
-                f"</div>")
-
-    def cat_label(cat: str) -> str:
-        mapping = {
-            "futures":"期货","index":"指数","forex":"外汇",
-            "us_stock":"美股","cn_stock":"中港股","a_stock":"A股","crypto":"加密",
-        }
-        return mapping.get(cat, cat)
-
-    rows_html = []
-    for ticker, info in filtered:
-        tfs   = info["tfs"]
-        score = info["conf_score"]
-        label = info["conf_label"]
-        rows_html.append(
-            f"<tr style='border-bottom:1px solid #f3f4f6'>"
-            f"<td style='padding:10px 10px'>"
-            f"  <b>{info['name']}</b><br>"
-            f"  <small style='color:#9ca3af;font-family:monospace'>{ticker}</small>"
-            f"</td>"
-            f"<td style='padding:8px 8px'>"
-            f"  <span class='badge b-gray'>{cat_label(info['category'])}</span>"
-            f"</td>"
-            + "".join(tf_cell(tfs.get(tf)) for tf in TFS) +
-            f"<td style='padding:8px 10px'>{label}</td>"
-            f"<td style='padding:8px 10px;min-width:90px'>"
-            f"  <span style='font-family:monospace;font-size:12px'>{score}/10</span>"
-            f"  {score_bar(score)}"
-            f"</td>"
-            f"<td style='padding:8px 10px'>"
-            f"  <a href='{info['tv_url']}' target='_blank' "
-            f"  style='color:#e85d04;font-size:12px'>📈 TV</a>"
-            f"</td>"
-            f"</tr>"
+        return (
+            f"<div style='background:#f3f4f6;border-radius:4px;height:6px;margin-top:4px'>"
+            f"<div style='background:{color};width:{pct}%;height:6px;border-radius:4px'></div>"
+            f"</div>"
         )
 
-    st.markdown(f"""
-    <div style="overflow-x:auto">
-    <table style="width:100%;border-collapse:collapse;font-size:13px">
-    <thead>
-    <tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb">
-      <th style="padding:10px 10px;text-align:left">资产</th>
-      <th style="padding:8px 8px;text-align:left">类别</th>
-      <th style="padding:8px 10px;text-align:center">日线</th>
-      <th style="padding:8px 10px;text-align:center">周线</th>
-      <th style="padding:8px 10px;text-align:center">月线</th>
-      <th style="padding:8px 10px;text-align:left">共振信号</th>
-      <th style="padding:8px 10px;text-align:left">评分</th>
-      <th style="padding:8px 10px;text-align:left">图表</th>
-    </tr>
-    </thead>
-    <tbody>
-    {''.join(rows_html)}
-    </tbody>
-    </table>
-    </div>
+    for idx, (ticker, info) in enumerate(filtered):
+        tfs    = info["tfs"]
+        score  = info["conf_score"]
+        label  = info["conf_label"]
+        price  = info["current_price"]
+        is_fav = ticker in watchlist_tickers
+
+        price_s = f"{float(price):,.4f}" if price is not None else "—"
+
+        col_row, col_fav = st.columns([11, 1])
+
+        with col_row:
+            st.markdown(
+                f'<table class="conf-table"><tbody><tr>'
+                f'<td style="width:20%"><b>{info["name"]}</b><br>'
+                f'<small style="color:#9ca3af;font-family:monospace">{ticker}</small></td>'
+                f'<td style="width:7%"><span class="badge b-gray">{_cat_label(info["category"])}</span></td>'
+                f'<td style="width:12%;font-family:monospace;text-align:right;font-size:12px">{price_s}</td>'
+                + "".join(_tf_cell(tfs.get(tf)) for tf in TFS) +
+                f'<td style="width:12%">{label}</td>'
+                f'<td style="width:10%">'
+                f'<span style="font-family:monospace;font-size:12px">{score}/10</span>'
+                f'{_score_bar(score)}</td>'
+                f'<td style="width:7%"><a href="{info["tv_url"]}" target="_blank" '
+                f'style="color:#e85d04;font-size:12px">📈 TV</a></td>'
+                f'</tr></tbody></table>',
+                unsafe_allow_html=True,
+            )
+
+        with col_fav:
+            if is_fav:
+                if st.button("★", key=f"cf_unfav_{ticker}_{idx}",
+                             help=f"从自选移除：{info['name']}", type="secondary"):
+                    storage.remove_from_watchlist(ticker)
+                    st.toast(f"已移除：{info['name']}", icon="🗑️")
+                    st.rerun()
+            else:
+                if st.button("☆", key=f"cf_fav_{ticker}_{idx}",
+                             help=f"添加到自选：{info['name']}", type="secondary"):
+                    storage.add_to_watchlist(ticker=ticker, name=info["name"],
+                                             note="共振检测添加")
+                    st.toast(f"已收藏：{info['name']}", icon="⭐")
+                    st.rerun()
+
+    st.markdown("""
     <p style="font-size:11px;color:#9ca3af;margin-top:8px">
     ✅ 黄金区间 (0.500–0.618) &nbsp;·&nbsp; 👀 接近区间 (&lt;5%) &nbsp;·&nbsp; · 区间外
+    &nbsp;｜&nbsp; ☆ 点击收藏 / ★ 点击取消收藏
     </p>
     """, unsafe_allow_html=True)
     st.caption(f"显示 {len(filtered)} 个有信号品种")
 
-    # CSV 下载
+    # ── CSV 下载 ─────────────────────────────────────────────────────
     export_rows = []
     for ticker, info in filtered:
         row = {
-            "ticker": ticker, "name": info["name"],
-            "category": info["category"],
-            "conf_score": info["conf_score"],
-            "conf_label": info["conf_label"],
+            "ticker":        ticker,
+            "name":          info["name"],
+            "category":      info["category"],
+            "current_price": info["current_price"],
+            "conf_score":    info["conf_score"],
+            "conf_label":    info["conf_label"],
         }
         for tf in TFS:
             td = info["tfs"].get(tf, {})

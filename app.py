@@ -119,8 +119,60 @@ def sidebar():
         """, unsafe_allow_html=True)
 
 
+# ── 密码门禁 ───────────────────────────────────────────────────────
+def _check_password() -> bool:
+    """
+    读取 secrets.toml 中的 APP_PASSWORD 字段做简单密码验证。
+    Streamlit Cloud 部署：在 App Settings → Secrets 中添加：
+        APP_PASSWORD = "your_password_here"
+    本地开发：在项目根目录创建 .streamlit/secrets.toml 写入同样内容。
+    若未配置 APP_PASSWORD，则跳过密码验证（方便本地开发）。
+    """
+    # 未配置密码时直接放行
+    try:
+        required_pw = st.secrets.get("APP_PASSWORD", "")
+    except Exception:
+        required_pw = ""
+
+    if not required_pw:
+        return True
+
+    # 已通过验证
+    if st.session_state.get("_authenticated"):
+        return True
+
+    # 显示登录界面
+    st.markdown("""
+    <div style="max-width:360px;margin:100px auto 0;text-align:center;">
+      <div style="background:linear-gradient(135deg,#e85d04,#f97316);color:#fff;
+           width:56px;height:56px;border-radius:14px;display:flex;align-items:center;
+           justify-content:center;font-weight:900;font-size:24px;margin:0 auto 16px;">F↗</div>
+      <div style="font-size:20px;font-weight:800;color:#111;margin-bottom:4px">STRX Fibo Scanner</div>
+      <div style="font-size:13px;color:#6b7280;margin-bottom:28px">请输入访问密码</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col_l, col_c, col_r = st.columns([1, 2, 1])
+    with col_c:
+        pw_input = st.text_input(
+            "密码", type="password", label_visibility="collapsed",
+            placeholder="请输入访问密码…", key="_pw_input"
+        )
+        if st.button("🔓 进入", type="primary", width="stretch", key="_pw_btn"):
+            if pw_input == required_pw:
+                st.session_state["_authenticated"] = True
+                st.rerun()
+            else:
+                st.error("❌ 密码错误，请重试")
+
+    st.stop()
+    return False
+
+
 # ── 路由 ──────────────────────────────────────────────────────────
 def main():
+    _check_password()
+
     if "page" not in st.session_state:
         st.session_state.page = "scanner"
 
