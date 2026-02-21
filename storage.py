@@ -175,6 +175,45 @@ def clear_alerts() -> bool:
     return _save(F_ALERTS, [])
 
 
+# ── 自选收藏夹 ──────────────────────────────────────────────────────
+F_WATCHLIST = os.path.join(_BASE, "data_watchlist.json")
+
+def load_watchlist() -> List[Dict]:
+    """返回收藏夹列表，每项: {ticker, name, note, added_at}"""
+    items = _load(F_WATCHLIST, [])
+    # 过滤损坏数据
+    return [i for i in items if isinstance(i, dict) and i.get("ticker")]
+
+def save_watchlist(items: List[Dict]) -> bool:
+    return _save(F_WATCHLIST, items)
+
+def add_to_watchlist(ticker: str, name: str = "", note: str = "") -> bool:
+    items = load_watchlist()
+    tickers = [i["ticker"].upper() for i in items]
+    ticker = ticker.strip().upper()
+    if not ticker or ticker in tickers:
+        return False
+    items.append({
+        "ticker":   ticker,
+        "name":     name.strip(),
+        "note":     note.strip(),
+        "added_at": time.strftime("%Y-%m-%d %H:%M"),
+    })
+    return save_watchlist(items)
+
+def remove_from_watchlist(ticker: str) -> bool:
+    items = load_watchlist()
+    new = [i for i in items if i["ticker"].upper() != ticker.strip().upper()]
+    return save_watchlist(new)
+
+def update_watchlist_note(ticker: str, note: str) -> bool:
+    items = load_watchlist()
+    for i in items:
+        if i["ticker"].upper() == ticker.strip().upper():
+            i["note"] = note.strip()
+    return save_watchlist(items)
+
+
 # ── 存储统计 ─────────────────────────────────────────────────────────
 def storage_stats() -> Dict[str, Any]:
     def fsize(p):
