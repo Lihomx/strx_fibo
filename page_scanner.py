@@ -1,12 +1,12 @@
 """
-page_scanner.py — 实时扫描（支持 20 组分批扫描 + 结果缓存合并）
+page_scanner.py — 实时扫描（支持 20 组分批扫描 + 自定义品种 + 结果收藏）
 """
 import pandas as pd
 import streamlit as st
 
 import storage
 import scanner as sc
-from assets import ASSET_GROUPS, TIMEFRAMES, CATEGORY_LABELS
+from assets import ASSET_GROUPS, ASSETS, TIMEFRAMES, CATEGORY_LABELS, tv_url
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -29,6 +29,7 @@ def _conf_badge(label: str) -> str:
 def _cat_label(cat: str) -> str:
     return CATEGORY_LABELS.get(cat, cat)
 
+
 # ════════════════════════════════════════════════════════════════════
 # 主渲染
 # ════════════════════════════════════════════════════════════════════
@@ -39,6 +40,10 @@ def render():
     # ── 分批扫描控制区 ──────────────────────────────────────────────
     with st.expander("📦 选择扫描批次（点击展开/收起）", expanded=True):
         _render_batch_selector(cfg)
+
+    # ── 自定义品种扫描区 ────────────────────────────────────────────
+    with st.expander("🔎 自定义品种扫描（输入单个品种代码）", expanded=False):
+        _render_custom_scan(cfg)
 
     # ── 工具栏 ──────────────────────────────────────────────────────
     col_kw, col_tf, col_cat, col_zone, col_sort = st.columns([3, 2, 2, 2, 2])
@@ -60,7 +65,7 @@ def render():
 
     # ── 数据展示区 ───────────────────────────────────────────────────
     if not storage.has_scan_data():
-        st.markdown('<div class="n-info">💡 尚无数据，请选择右侧品种组后点击「🚀 扫描选中组」。</div>',
+        st.markdown('<div class="n-info">💡 尚无数据，请选择品种组后点击「🚀 扫描选中组」，或在上方「自定义品种扫描」中输入品种代码。</div>',
                     unsafe_allow_html=True)
         _metrics(0, 0, 0, 0)
         return
@@ -97,7 +102,7 @@ def render():
 
     # ── 过滤 ─────────────────────────────────────────────────────────
     df = pd.DataFrame(merged_rows)
-    if zone_only:     df = df[df["in_zone"]]
+    if zone_only:           df = df[df["in_zone"]]
     if tf_sel != "全部":    df = df[df["timeframe"] == tf_sel]
     if cat_sel != "全部":   df = df[df["category"]  == cat_sel]
     if kw:
@@ -124,64 +129,194 @@ def render():
     if df.empty:
         st.info("没有符合条件的结果"); return
 
-    # ── 渲染表格 ─────────────────────────────────────────────────────
-    rows_html = []
-    for _, r in df.iterrows():
-        in_zone = bool(r.get("in_zone", False))
-        dist    = safe_float(r.get("dist_pct"))
-        price   = r.get("current_price")
-        retrace = r.get("retrace_pct")
-        conf_l  = r.get("confluence_label","—") or "—"
-        tv_lnk  = r.get("tv_url","#")
-        cat     = r.get("category","")
+    _render_results_table(df, last_s, safe_float)
 
-        price_s   = f"{float(price):,.4f}"   if price   is not None else "—"
-        retrace_s = f"{float(retrace):.1f}%" if retrace is not None else "—"
+
+# ════════════════════════════════════════════════════════════════════
+# 结果表（含逐行收藏按钮）
+# ════════════════════════════════════════════════════════════════════
+def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
+    watchlist        = storage.load_watchlist()
+    watchlist_tickers = {w["ticker"] for w in watchlist if isinstance(w, dict)}
+
+    # 表头
+    st.markdown("""
+    <style>
+    .res-table {width:100%;border-collapse:collapse;font-size:13px}
+    .res-table th {padding:7px 8px;background:#f9fafb;border-bottom:2px solid #e5e7eb;white-space:nowrap}
+    .res-table td {padding:6px 8px;border-bottom:1px solid #f3f4f6;vertical-align:middle}
+    </style>
+    <table class="res-table">
+    <thead><tr>
+      <th style="text-align:left">资产</th>
+      <th style="text-align:left">类别</th>
+      <th style="text-align:left">框架</th>
+      <th style="text-align:left">状态</th>
+      <th style="text-align:right">当前价格</th>
+      <th style="text-align:right">回撤%</th>
+      <th style="text-align:right">距区间</th>
+      <th style="text-align:left">共振</th>
+      <th style="text-align:left">TV</th>
+    </tr></thead>
+    </table>
+    """, unsafe_allow_html=True)
+
+    seen_tickers: set = set()
+
+    for idx, r in df.iterrows():
+        in_zone  = bool(r.get("in_zone", False))
+        dist     = safe_float(r.get("dist_pct"))
+        price    = r.get("current_price")
+        retrace  = r.get("retrace_pct")
+        conf_l   = r.get("confluence_label", "—") or "—"
+        tv_lnk   = r.get("tv_url", "#")
+        cat      = r.get("category", "")
+        ticker   = r.get("ticker", "")
+        name     = r.get("name", "")
+
+        price_s   = f"{float(price):,.4f}"    if price   is not None else "—"
+        retrace_s = f"{float(retrace):.1f}%"  if retrace is not None else "—"
         dist_s    = "区间内" if in_zone else (f"{dist:.1f}%" if dist < 999 else "—")
 
-        rows_html.append(
-            f"<tr style='border-bottom:1px solid #f3f4f6'>"
-            f"<td style='padding:8px 10px'><b>{r.get('name','')}</b><br>"
-            f"<small style='color:#9ca3af;font-family:monospace'>{r.get('ticker','')}</small></td>"
-            f"<td style='padding:8px 6px'><span class='badge b-gray'>{_cat_label(cat)}</span></td>"
-            f"<td style='padding:8px 6px'><span class='badge b-gray'>{r.get('timeframe','')}</span></td>"
-            f"<td style='padding:8px 6px'>{_badge(in_zone, dist)}</td>"
-            f"<td style='padding:8px 10px;font-family:monospace;text-align:right'>{price_s}</td>"
-            f"<td style='padding:8px 10px;text-align:right'>{retrace_s}</td>"
-            f"<td style='padding:8px 10px;text-align:right'>{dist_s}</td>"
-            f"<td style='padding:8px 6px'>{_conf_badge(conf_l)}</td>"
-            f"<td style='padding:8px 10px'>"
-            f"<a href='{tv_lnk}' target='_blank' style='color:#e85d04;font-size:12px'>📈 TV</a></td>"
-            f"</tr>"
-        )
+        is_first  = ticker not in seen_tickers
+        seen_tickers.add(ticker)
+        is_fav    = ticker in watchlist_tickers
 
-    st.markdown(f"""
-    <div style="overflow-x:auto;margin-top:12px">
-    <table style="width:100%;border-collapse:collapse;font-size:13px">
-    <thead>
-    <tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb">
-      <th style="padding:8px 10px;text-align:left">资产</th>
-      <th style="padding:8px 6px;text-align:left">类别</th>
-      <th style="padding:8px 6px;text-align:left">框架</th>
-      <th style="padding:8px 6px;text-align:left">状态</th>
-      <th style="padding:8px 10px;text-align:right">当前价格</th>
-      <th style="padding:8px 10px;text-align:right">回撤%</th>
-      <th style="padding:8px 10px;text-align:right">距区间</th>
-      <th style="padding:8px 6px;text-align:left">共振</th>
-      <th style="padding:8px 10px;text-align:left">TV图表</th>
-    </tr>
-    </thead>
-    <tbody>{''.join(rows_html)}</tbody>
-    </table>
-    </div>
-    """, unsafe_allow_html=True)
-    st.caption(f"共 {len(df)} 条记录（含缓存合并）")
+        # 每行：[宽列(表格内容) | 窄列(收藏按钮)]
+        col_row, col_btn = st.columns([11, 1])
 
+        with col_row:
+            st.markdown(
+                f'<table class="res-table"><tbody><tr>'
+                f'<td style="width:18%"><b>{name}</b><br>'
+                f'<small style="color:#9ca3af;font-family:monospace">{ticker}</small></td>'
+                f'<td style="width:8%"><span class="badge b-gray">{_cat_label(cat)}</span></td>'
+                f'<td style="width:7%"><span class="badge b-gray">{r.get("timeframe","")}</span></td>'
+                f'<td style="width:9%">{_badge(in_zone, dist)}</td>'
+                f'<td style="width:12%;font-family:monospace;text-align:right">{price_s}</td>'
+                f'<td style="width:8%;text-align:right">{retrace_s}</td>'
+                f'<td style="width:8%;text-align:right">{dist_s}</td>'
+                f'<td style="width:12%">{_conf_badge(conf_l)}</td>'
+                f'<td style="width:8%"><a href="{tv_lnk}" target="_blank" '
+                f'style="color:#e85d04;font-size:12px">📈 TV</a></td>'
+                f'</tr></tbody></table>',
+                unsafe_allow_html=True,
+            )
+
+        with col_btn:
+            if is_first:
+                if is_fav:
+                    if st.button("★", key=f"unfav_{ticker}_{idx}",
+                                 help=f"从自选移除：{name}", type="secondary"):
+                        storage.remove_from_watchlist(ticker)
+                        st.toast(f"已移除：{name}", icon="🗑️")
+                        st.rerun()
+                else:
+                    if st.button("☆", key=f"fav_{ticker}_{idx}",
+                                 help=f"添加到自选：{name}", type="secondary"):
+                        storage.add_to_watchlist(ticker=ticker, name=name)
+                        st.toast(f"已收藏：{name}", icon="⭐")
+                        st.rerun()
+
+    st.caption(f"共 {len(df)} 条  ｜  ☆ 点击收藏 / ★ 点击取消收藏")
     csv = df.drop(columns=[c for c in ["_r","_d"] if c in df.columns],
                   errors="ignore").to_csv(index=False).encode("utf-8-sig")
-    st.download_button("⬇️ 下载 CSV",csv,
+    st.download_button("⬇️ 下载 CSV", csv,
                        file_name=f"strx_fibo_{last_s.get('scan_date','today')}.csv",
                        mime="text/csv")
+
+
+# ════════════════════════════════════════════════════════════════════
+# 自定义品种扫描
+# ════════════════════════════════════════════════════════════════════
+def _render_custom_scan(cfg):
+    st.markdown("""
+    <div class="n-info">
+    💡 输入任意 <b>yfinance 品种代码</b>进行单独扫描。<br>
+    示例：<code>AAPL</code>（苹果）、<code>BTC-USD</code>（比特币）、
+    <code>000001.SS</code>（上证指数）、<code>0700.HK</code>（腾讯）、
+    <code>EURUSD=X</code>（欧元/美元）、<code>GC=F</code>（黄金期货）
+    </div>
+    """, unsafe_allow_html=True)
+
+    col_ticker, col_name, col_btn = st.columns([3, 3, 2])
+
+    with col_ticker:
+        custom_ticker = st.text_input(
+            "品种代码",
+            placeholder="如：TSLA / 600519.SS / GC=F",
+            key="custom_ticker_input",
+        ).strip().upper()
+
+    with col_name:
+        custom_name = st.text_input(
+            "自定义名称（可选）",
+            placeholder="如：特斯拉 / 贵州茅台 / 黄金",
+            key="custom_name_input",
+        ).strip()
+
+    with col_btn:
+        st.markdown("<br>", unsafe_allow_html=True)
+        do_custom = st.button("🔍 立即扫描", type="primary",
+                              width="stretch", key="custom_scan_btn")
+
+    if do_custom:
+        if not custom_ticker:
+            st.warning("请输入品种代码"); return
+
+        display_name  = custom_name or custom_ticker
+        custom_assets = {custom_ticker: (display_name, "custom")}
+
+        pb  = st.progress(0, "准备中…")
+        msg = st.empty()
+
+        def cb(pct, text):
+            pb.progress(min(float(pct), 1.0), text)
+            msg.caption(text)
+
+        with st.spinner(""):
+            summary, err = sc.run_full_scan(
+                cfg=cfg,
+                assets=custom_assets,
+                note=f"custom:{custom_ticker}",
+                progress_callback=cb,
+            )
+
+        pb.empty(); msg.empty()
+
+        if err:
+            st.error(f"扫描失败：{err}"); return
+
+        inzone  = summary.get("inzone_count", 0)
+        elapsed = summary.get("elapsed_ms", 0) / 1000
+
+        if inzone > 0:
+            st.success(
+                f"✅ **{display_name}** ({custom_ticker}) 扫描完成！"
+                f"黄金区命中 **{inzone}** 个框架 | 耗时 {elapsed:.1f}s"
+            )
+        else:
+            st.info(
+                f"✅ **{display_name}** ({custom_ticker}) 扫描完成，"
+                f"当前未在黄金区间。耗时 {elapsed:.1f}s"
+            )
+
+        # 一键加入自选
+        watchlist    = storage.load_watchlist()
+        wl_tickers   = {w["ticker"] for w in watchlist if isinstance(w, dict)}
+        if custom_ticker not in wl_tickers:
+            _, col_add = st.columns([5, 2])
+            with col_add:
+                if st.button("⭐ 加入自选收藏", key="custom_add_watchlist"):
+                    storage.add_to_watchlist(ticker=custom_ticker,
+                                              name=display_name,
+                                              note="自定义扫描添加")
+                    st.toast(f"已添加到自选：{display_name}", icon="⭐")
+                    st.rerun()
+        else:
+            st.caption(f"✅ {display_name} 已在您的自选收藏中")
+
+        st.rerun()
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -200,8 +335,6 @@ def _render_batch_selector(cfg):
     </div>
     """, unsafe_allow_html=True)
 
-    # 快捷选择按钮
-    # 快捷选组 — 两行
     r1c1,r1c2,r1c3,r1c4,r1c5 = st.columns(5)
     with r1c1:
         if st.button("☑️ 全选(40组)", width="stretch"):
@@ -221,6 +354,7 @@ def _render_batch_selector(cfg):
         if st.button("💱 外汇+期货", width="stretch"):
             st.session_state.scan_groups = [g for g in group_names
                 if any(k in g for k in ["外汇","期货"])]
+
     r2c1,r2c2,r2c3,r2c4,r2c5 = st.columns(5)
     with r2c1:
         if st.button("🌏 亚太全部", width="stretch"):
@@ -241,7 +375,6 @@ def _render_batch_selector(cfg):
         if st.button("🔲 清空", width="stretch"):
             st.session_state.scan_groups = []
 
-    # 多选框 — 过滤掉session_state中可能残留的旧组名
     raw_default = st.session_state.get("scan_groups", [group_names[0]])
     if not isinstance(raw_default, list):
         raw_default = [group_names[0]]
@@ -249,7 +382,6 @@ def _render_batch_selector(cfg):
     if not default_sel:
         default_sel = [group_names[0]]
 
-    # 注意：不使用 key 参数，避免 session_state 中的旧值覆盖 default
     selected = st.multiselect(
         "选择要扫描的品种组（可多选）：",
         options=group_names,
@@ -258,16 +390,14 @@ def _render_batch_selector(cfg):
     st.session_state.scan_groups = selected
 
     if not selected:
-        st.warning("请至少选择一组品种")
-        return
+        st.warning("请至少选择一组品种"); return
 
     sel_assets = {}
     for g in selected:
         sel_assets.update(ASSET_GROUPS[g])
     checks = len(sel_assets) * 3
 
-    # 已扫描组标记
-    scanned = storage.load_scanned_groups()
+    scanned   = storage.load_scanned_groups()
     unscanned = [g for g in selected if g not in scanned]
     already   = [g for g in selected if g in scanned]
 
@@ -275,8 +405,7 @@ def _render_batch_selector(cfg):
     with col_info:
         st.markdown(
             f"**选中：** {len(selected)} 组 · **{len(sel_assets)}** 个品种 · "
-            f"**{checks}** 次检查",
-            unsafe_allow_html=False
+            f"**{checks}** 次检查"
         )
         if already:
             st.caption(f"✅ 已缓存（可跳过）: {' · '.join(already[:4])}"
@@ -286,10 +415,8 @@ def _render_batch_selector(cfg):
                        + (f" 等{len(unscanned)}组" if len(unscanned)>4 else ""))
 
     with col_btn:
-        do_scan = st.button(
-            f"🚀 扫描选中 {len(sel_assets)} 品种",
-            type="primary", width="stretch"
-        )
+        do_scan = st.button(f"🚀 扫描选中 {len(sel_assets)} 品种",
+                            type="primary", width="stretch")
 
     if do_scan:
         pb  = st.progress(0, "准备中…")
@@ -314,7 +441,6 @@ def _render_batch_selector(cfg):
         if err:
             st.error(err)
         else:
-            # 记录已扫描组
             storage.save_scanned_groups(selected)
             st.success(
                 f"✅ 完成！品种 **{summary['asset_count']}** | "
