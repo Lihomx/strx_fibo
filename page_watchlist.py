@@ -72,14 +72,19 @@ def render():
         unsafe_allow_html=True,
     )
 
-    # ── Tab：收藏 / 存档 ────────────────────────────────────────
-    tab_main, tab_archive = st.tabs(["⭐ 当前收藏", "🗂️ 已删除存档"])
+    # ── Tab：收藏 / 存档 / 备份 ────────────────────────────────
+    tab_main, tab_archive, tab_backup = st.tabs(
+        ["⭐ 当前收藏", "🗂️ 已删除存档", "💾 备份与恢复"]
+    )
 
     with tab_main:
         _render_main()
 
     with tab_archive:
         _render_archive()
+
+    with tab_backup:
+        _render_backup()
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -460,3 +465,184 @@ def _render_archive():
             '<hr style="border:none;border-top:1px solid #f3f4f6;margin:6px 0">',
             unsafe_allow_html=True,
         )
+
+
+# ════════════════════════════════════════════════════════════════════
+# 备份与恢复
+# ════════════════════════════════════════════════════════════════════
+def _render_backup():
+    items = storage.load_watchlist()
+    n = len(items)
+
+    # ── 当前状态 ────────────────────────────────────────────────
+    st.markdown(f"### 📊 当前状态：共 **{n}** 个收藏品种")
+
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        st.markdown(
+            '<div class="m-card teal"><div class="m-lbl">当前收藏</div>'
+            f'<div class="m-val">{n}</div>'
+            '<div class="m-sub">个品种</div></div>',
+            unsafe_allow_html=True,
+        )
+    with col_b:
+        baks = storage.list_backups()
+        wl_baks = [b for b in baks if "data_watchlist" in b[0]]
+        st.markdown(
+            '<div class="m-card blue"><div class="m-lbl">本地备份</div>'
+            f'<div class="m-val">{len(wl_baks)}</div>'
+            '<div class="m-sub">个文件</div></div>',
+            unsafe_allow_html=True,
+        )
+    with col_c:
+        total_notes = sum(len(i.get("notes", [])) for i in items)
+        st.markdown(
+            '<div class="m-card gold"><div class="m-lbl">备注总数</div>'
+            f'<div class="m-val">{total_notes}</div>'
+            '<div class="m-sub">条备注</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ════════════════════════════════════════════════════════════
+    # 方案1：手动下载 JSON
+    # ════════════════════════════════════════════════════════════
+    st.markdown("### 📥 方案1：下载备份文件（推荐，最简单）")
+    st.markdown(
+        '<div class="n-info">'
+        '每次修改收藏夹后，点击下方按钮下载 JSON 文件保存到本地。'
+        '下次重启后可通过「导入」功能恢复。'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    json_str = storage.export_watchlist_json()
+    import time as _time
+    ts = _time.strftime("%Y%m%d_%H%M")
+    st.download_button(
+        label=f"⬇️ 下载收藏夹备份 JSON（{n}个品种）",
+        data=json_str.encode("utf-8"),
+        file_name=f"strx_watchlist_backup_{ts}.json",
+        mime="application/json",
+        type="primary",
+    )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ════════════════════════════════════════════════════════════
+    # 方案2：Streamlit Secrets 永久持久化
+    # ════════════════════════════════════════════════════════════
+    st.markdown("### 🔐 方案2：Streamlit Secrets 永久持久化（推荐，自动恢复）")
+    st.markdown(
+        '<div class="n-ok">'
+        '✅ <b>最佳方案</b>：将收藏夹编码存入 Streamlit Secrets，<br>'
+        '每次 App 重启时<b>自动恢复</b>，无需手动操作。'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    with st.expander("📋 查看操作步骤", expanded=True):
+        st.markdown("""
+**操作步骤：**
+1. 点击下方「生成 Secrets 配置」按钮
+2. 复制生成的内容
+3. 打开 Streamlit Cloud → 你的 App → 右上角 **⋮** → **Settings** → **Secrets**
+4. 粘贴内容（追加，不要删除已有的 `APP_PASSWORD` 行）
+5. 点击 **Save** → App 自动重启 → 收藏夹自动恢复 ✅
+
+> **注意**：每次修改收藏夹后，需重新执行一次此操作更新 Secrets。
+        """)
+
+        if st.button("🔧 生成 Secrets 配置", type="primary", key="gen_secrets"):
+            hint = storage.save_to_secrets_hint()
+            st.code(hint, language="toml")
+            st.info(
+                "⬆️ 复制以上内容，粘贴到 Streamlit Cloud Settings → Secrets 中保存。"
+            )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ════════════════════════════════════════════════════════════
+    # 方案3：从文件恢复
+    # ════════════════════════════════════════════════════════════
+    st.markdown("### 📤 导入备份文件（从之前下载的 JSON 恢复）")
+
+    uploaded = st.file_uploader(
+        "选择备份 JSON 文件",
+        type=["json"],
+        key="wl_import_file",
+        help="上传之前导出的 strx_watchlist_backup_*.json 文件",
+    )
+
+    if uploaded:
+        merge_mode = st.radio(
+            "导入方式",
+            ["合并（新增不存在的，保留已有的）", "替换（清空现有收藏，完全替换）"],
+            key="wl_import_mode",
+        )
+        merge = "合并" in merge_mode
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("✅ 确认导入", type="primary", key="wl_do_import"):
+                try:
+                    json_str_up = uploaded.read().decode("utf-8")
+                    ok, msg = storage.import_watchlist_json(json_str_up, merge=merge)
+                    if ok:
+                        st.success(f"✅ {msg}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {msg}")
+                except Exception as e:
+                    st.error(f"❌ 导入失败：{e}")
+        with col2:
+            # Preview
+            try:
+                import json
+                preview_str = uploaded.read()  # may already be read above
+            except Exception:
+                preview_str = b""
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ════════════════════════════════════════════════════════════
+    # 本地自动备份列表
+    # ════════════════════════════════════════════════════════════
+    st.markdown("### 🗄️ 本地自动备份记录（每次修改收藏夹自动创建）")
+    st.markdown(
+        '<div class="n-info">'
+        '每次添加/删除收藏品种时，系统自动在 <code>backups/</code> 目录'
+        '保留一份带时间戳的备份（最多保留30个）。'
+        '<br>⚠️ Streamlit Cloud 重启后本地文件会丢失，请优先使用「下载备份」或「Secrets 持久化」。'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    baks = storage.list_backups()
+    wl_baks = [b for b in baks if "data_watchlist" in b[0] and "archive" not in b[0]]
+
+    if not wl_baks:
+        st.info("暂无本地备份（添加或删除收藏品种后自动生成）")
+    else:
+        for fname, fpath, size_kb, mtime in wl_baks[:10]:
+            col_info, col_btn = st.columns([7, 2])
+            with col_info:
+                st.markdown(
+                    f'<span style="font-family:monospace;font-size:12px">{fname}</span>'
+                    f'<span style="color:#9ca3af;font-size:11px;margin-left:12px">'
+                    f'{mtime} · {max(size_kb,1)} KB</span>',
+                    unsafe_allow_html=True,
+                )
+            with col_btn:
+                if st.button(
+                    "🔄 从此备份恢复",
+                    key=f"bak_restore_{fname}",
+                    help=f"从 {fname} 合并恢复数据",
+                ):
+                    ok, msg = storage.restore_from_backup_file(fpath, merge=True)
+                    if ok:
+                        st.success(f"✅ {msg}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {msg}")

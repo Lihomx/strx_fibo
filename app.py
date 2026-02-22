@@ -175,6 +175,16 @@ def _check_password() -> bool:
 def main():
     _check_password()
 
+    # ── 启动时自动从 Streamlit Secrets 恢复收藏夹（跨重启持久化）──
+    if not st.session_state.get("_secrets_restored"):
+        try:
+            ok, msg = storage.restore_from_secrets()
+            if ok:
+                st.session_state["_secrets_restored"] = True
+        except Exception:
+            pass
+        st.session_state["_secrets_restored"] = True   # 无论成败，只尝试一次
+
     if "page" not in st.session_state:
         st.session_state.page = "scanner"
 

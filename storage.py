@@ -27,6 +27,13 @@ _MAX_HIST   = 50
 _MAX_ALERTS = 200
 _MAX_ALLRES = 5000   # 所有品种×框架合并缓存上限
 
+# ── 备份目录 ─────────────────────────────────────────────────────────
+_BACKUP_DIR = os.path.join(_BASE, "backups")
+
+
+def _ensure_backup_dir():
+    os.makedirs(_BACKUP_DIR, exist_ok=True)
+
 
 # ── 通用 IO ──────────────────────────────────────────────────────────
 def _load(path: str, default):
@@ -46,6 +53,31 @@ def _save(path: str, data) -> bool:
         return True
     except Exception:
         return False
+
+
+def _save_with_backup(path: str, data) -> bool:
+    """写入文件，同时在 backups/ 目录保留带时间戳的副本（仅限自选收藏相关文件）。"""
+    ok = _save(path, data)
+    if ok:
+        try:
+            _ensure_backup_dir()
+            ts       = time.strftime("%Y%m%d_%H%M%S")
+            basename = os.path.splitext(os.path.basename(path))[0]
+            bak_path = os.path.join(_BACKUP_DIR, f"{basename}_{ts}.json")
+            _save(bak_path, data)
+            # 只保留最近 30 个备份（按文件名倒序）
+            all_baks = sorted(
+                [f for f in os.listdir(_BACKUP_DIR) if f.startswith(basename)],
+                reverse=True,
+            )
+            for old_bak in all_baks[30:]:
+                try:
+                    os.remove(os.path.join(_BACKUP_DIR, old_bak))
+                except Exception:
+                    pass
+        except Exception:
+            pass   # 备份失败不影响主流程
+    return ok
 
 
 # ── 配置 ─────────────────────────────────────────────────────────────
@@ -346,6 +378,107 @@ def add_watchlist_note(ticker: str, note_text: str,
 def update_watchlist_note(ticker: str, note: str) -> bool:
     """兼容旧接口：等同于追加一条备注。"""
     return add_watchlist_note(ticker, note)
+
+# ── 备份 / 导出 / 导入 ──────────────────────────────────────────────
+
+def export_watchlist_json() -> str:
+    items   = load_watchlist()
+    archive = load_watchlist_archive()
+    payload = {
+        "exported_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "version":     2,
+        "watchlist":   items,
+        "archive":     archive,
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def import_watchlist_json(json_str: str, merge: bool = True):
+    try:
+        payload = json.loads(json_str)
+    except json.JSONDecodeError as e:
+        return False, f"JSON 格式错误：{e}"
+    if isinstance(payload, list):
+        imported_items = payload
+        imported_arch  = []
+    elif isinstance(payload, dict):
+        imported_items = payload.get("watchlist", [])
+        imported_arch  = payload.get("archive", [])
+    else:
+        return False, "不支持的 JSON 格式"
+    if not isinstance(imported_items, list):
+        return False, "watchlist 字段必须是列表"
+    if merge:
+        existing = load_watchlist()
+        existing_tickers = {i["ticker"].upper() for i in existing}
+        added = 0
+        for item in imported_items:
+            if isinstance(item, dict) and item.get("ticker"):
+                if item["ticker"].upper() not in existing_tickers:
+                    existing.append(item)
+                    existing_tickers.add(item["ticker"].upper())
+                    added += 1
+        ok = save_watchlist(existing)
+        return ok, f"合并完成：新增 {added} 个品种，已跳过重复 {len(imported_items)-added} 个"
+    else:
+        ok = save_watchlist(imported_items)
+        if ok and imported_arch:
+            save_watchlist_archive(imported_arch)
+        return ok, f"替换完成：导入 {len(imported_items)} 个品种"
+
+
+def list_backups() -> list:
+    _ensure_backup_dir()
+    result = []
+    try:
+        for fname in sorted(os.listdir(_BACKUP_DIR), reverse=True):
+            if not fname.endswith(".json"):
+                continue
+            fpath   = os.path.join(_BACKUP_DIR, fname)
+            size_kb = os.path.getsize(fpath) // 1024
+            mtime   = time.strftime("%Y-%m-%d %H:%M",
+                                    time.localtime(os.path.getmtime(fpath)))
+            result.append((fname, fpath, size_kb, mtime))
+    except Exception:
+        pass
+    return result
+
+
+def restore_from_backup_file(abs_path: str, merge: bool = True):
+    try:
+        with open(abs_path, "r", encoding="utf-8") as f:
+            json_str = f.read()
+        return import_watchlist_json(json_str, merge=merge)
+    except FileNotFoundError:
+        return False, "备份文件不存在"
+    except Exception as e:
+        return False, f"读取备份失败：{e}"
+
+
+def get_watchlist_b64() -> str:
+    import base64
+    return base64.b64encode(export_watchlist_json().encode("utf-8")).decode("ascii")
+
+
+def restore_from_secrets() -> tuple:
+    import base64
+    try:
+        import streamlit as st
+        b64 = st.secrets.get("WATCHLIST_BACKUP", "")
+        if not b64:
+            return False, "Secrets 中无 WATCHLIST_BACKUP"
+        json_str = base64.b64decode(b64.encode("ascii")).decode("utf-8")
+        return import_watchlist_json(json_str, merge=True)
+    except Exception as e:
+        return False, f"从 Secrets 恢复失败：{e}"
+
+
+def save_to_secrets_hint() -> str:
+    b64 = get_watchlist_b64()
+    line1 = "# 粘贴到 Streamlit Cloud → Settings → Secrets"
+    line2 = 'WATCHLIST_BACKUP = "' + b64 + '"'
+    return line1 + "\n" + line2
+
 
 
 # ── 存储统计 ─────────────────────────────────────────────────────────
