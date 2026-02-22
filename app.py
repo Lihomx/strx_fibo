@@ -64,6 +64,7 @@ import page_history
 import page_alerts
 import page_settings
 import page_watchlist
+import page_universe
 
 
 # ── 侧边栏 ─────────────────────────────────────────────────────────
@@ -82,11 +83,12 @@ def sidebar():
         """, unsafe_allow_html=True)
 
         NAV = [
-            ("📊", "实时扫描",  "scanner"),
-            ("🔥", "共振检测",  "confluence"),
-            ("⭐", "自选收藏",  "watchlist"),
-            ("📂", "历史记录",  "history"),
-            ("🔔", "告警配置",  "alerts"),
+            ("📊", "实时扫描",   "scanner"),
+            ("🔥", "共振检测",   "confluence"),
+            ("🌍", "全量品种库", "universe"),
+            ("⭐", "自选收藏",   "watchlist"),
+            ("📂", "历史记录",   "history"),
+            ("🔔", "告警配置",   "alerts"),
             ("⚙️", "系统设置",  "settings"),
         ]
         p = st.session_state.get("page", "scanner")
@@ -182,6 +184,7 @@ def main():
     dispatch = {
         "scanner":    page_scanner.render,
         "confluence": page_confluence.render,
+        "universe":   page_universe.render,
         "watchlist":  page_watchlist.render,
         "history":    page_history.render,
         "alerts":     page_alerts.render,
