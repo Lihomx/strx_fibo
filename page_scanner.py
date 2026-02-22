@@ -75,8 +75,9 @@ def render():
     last_s   = sessions[0] if sessions else {}
 
     # 合并多次扫描的最新数据（同一 ticker+timeframe 取最新）
+    # sessions 已按时间倒序，第一次遇到即为最新
     latest_map = {}
-    for sess in reversed(sessions):
+    for sess in sessions:   # sessions[0] = 最新，直接正序遍历覆盖即可
         sess_rows = storage.load_session_results(sess["session_id"])
         for r in sess_rows:
             key = (r["ticker"], r["timeframe"])
@@ -139,29 +140,23 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
     watchlist        = storage.load_watchlist()
     watchlist_tickers = {w["ticker"] for w in watchlist if isinstance(w, dict)}
 
-    # 表头
+    # ── 统一渲染完整表格（避免 st.columns 分段导致对齐错位）──────
     st.markdown("""
     <style>
-    .res-table {width:100%;border-collapse:collapse;font-size:13px}
-    .res-table th {padding:7px 8px;background:#f9fafb;border-bottom:2px solid #e5e7eb;white-space:nowrap}
-    .res-table td {padding:6px 8px;border-bottom:1px solid #f3f4f6;vertical-align:middle}
+    .res-table {width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
+    .res-table th {padding:8px 8px;background:#f9fafb;border-bottom:2px solid #e5e7eb;
+                   white-space:nowrap;overflow:hidden}
+    .res-table td {padding:7px 8px;border-bottom:1px solid #f3f4f6;vertical-align:middle;
+                   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     </style>
-    <table class="res-table">
-    <thead><tr>
-      <th style="text-align:left">资产</th>
-      <th style="text-align:left">类别</th>
-      <th style="text-align:left">框架</th>
-      <th style="text-align:left">状态</th>
-      <th style="text-align:right">当前价格</th>
-      <th style="text-align:right">回撤%</th>
-      <th style="text-align:right">距区间</th>
-      <th style="text-align:left">共振</th>
-      <th style="text-align:left">TV</th>
-    </tr></thead>
-    </table>
     """, unsafe_allow_html=True)
 
     seen_tickers: set = set()
+
+    # 先把所有行 HTML 和收藏按钮信息汇集，再一起渲染
+    # 表格整体一次性输出保证对齐，收藏按钮用 st.columns 叠加在表格下方
+    rows_html = []
+    fav_actions = []   # [(ticker, name, is_fav, is_first, idx)]
 
     for idx, r in df.iterrows():
         in_zone  = bool(r.get("in_zone", False))
@@ -174,51 +169,78 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
         ticker   = r.get("ticker", "")
         name     = r.get("name", "")
 
-        price_s   = f"{float(price):,.4f}"    if price   is not None else "—"
-        retrace_s = f"{float(retrace):.1f}%"  if retrace is not None else "—"
+        price_s   = f"{float(price):,.4f}"   if price   is not None else "—"
+        retrace_s = f"{float(retrace):.1f}%" if retrace is not None else "—"
         dist_s    = "区间内" if in_zone else (f"{dist:.1f}%" if dist < 999 else "—")
 
-        is_first  = ticker not in seen_tickers
+        is_first = ticker not in seen_tickers
         seen_tickers.add(ticker)
-        is_fav    = ticker in watchlist_tickers
+        is_fav   = ticker in watchlist_tickers
 
-        # 每行：[宽列(表格内容) | 窄列(收藏按钮)]
-        col_row, col_btn = st.columns([11, 1])
+        row_bg = "background:#fffbeb;" if in_zone else ""
+        rows_html.append(
+            f"<tr style='{row_bg}border-bottom:1px solid #f3f4f6'>"
+            f"<td style='width:18%'><b>{name}</b><br>"
+            f"<small style='color:#9ca3af;font-family:monospace'>{ticker}</small></td>"
+            f"<td style='width:8%'><span class='badge b-gray'>{_cat_label(cat)}</span></td>"
+            f"<td style='width:7%'><span class='badge b-gray'>{r.get('timeframe','')}</span></td>"
+            f"<td style='width:9%'>{_badge(in_zone, dist)}</td>"
+            f"<td style='width:12%;font-family:monospace;text-align:right'>{price_s}</td>"
+            f"<td style='width:8%;text-align:right'>{retrace_s}</td>"
+            f"<td style='width:8%;text-align:right'>{dist_s}</td>"
+            f"<td style='width:12%'>{_conf_badge(conf_l)}</td>"
+            f"<td style='width:8%'><a href='{tv_lnk}' target='_blank' "
+            f"style='color:#e85d04;font-size:12px'>📈 TV</a></td>"
+            f"<td style='width:6%;text-align:center'>"
+            f"{'★' if is_fav else '☆'} </td>"
+            f"</tr>"
+        )
+        fav_actions.append((ticker, name, is_fav, is_first, idx))
 
-        with col_row:
-            st.markdown(
-                f'<table class="res-table"><tbody><tr>'
-                f'<td style="width:18%"><b>{name}</b><br>'
-                f'<small style="color:#9ca3af;font-family:monospace">{ticker}</small></td>'
-                f'<td style="width:8%"><span class="badge b-gray">{_cat_label(cat)}</span></td>'
-                f'<td style="width:7%"><span class="badge b-gray">{r.get("timeframe","")}</span></td>'
-                f'<td style="width:9%">{_badge(in_zone, dist)}</td>'
-                f'<td style="width:12%;font-family:monospace;text-align:right">{price_s}</td>'
-                f'<td style="width:8%;text-align:right">{retrace_s}</td>'
-                f'<td style="width:8%;text-align:right">{dist_s}</td>'
-                f'<td style="width:12%">{_conf_badge(conf_l)}</td>'
-                f'<td style="width:8%"><a href="{tv_lnk}" target="_blank" '
-                f'style="color:#e85d04;font-size:12px">📈 TV</a></td>'
-                f'</tr></tbody></table>',
-                unsafe_allow_html=True,
-            )
+    # 整体输出完整表格（一次性渲染，列完全对齐）
+    st.markdown(
+        f'''<table class="res-table">
+        <thead><tr>
+          <th style="text-align:left;width:18%">资产</th>
+          <th style="text-align:left;width:8%">类别</th>
+          <th style="text-align:left;width:7%">框架</th>
+          <th style="text-align:left;width:9%">状态</th>
+          <th style="text-align:right;width:12%">当前价格</th>
+          <th style="text-align:right;width:8%">回撤%</th>
+          <th style="text-align:right;width:8%">距区间</th>
+          <th style="text-align:left;width:12%">共振</th>
+          <th style="text-align:left;width:8%">TV</th>
+          <th style="text-align:center;width:6%">收藏</th>
+        </tr></thead>
+        <tbody>{'\n'.join(rows_html)}</tbody>
+        </table>''',
+        unsafe_allow_html=True,
+    )
 
-        with col_btn:
-            if is_first:
-                if is_fav:
-                    if st.button("★", key=f"unfav_{ticker}_{idx}",
-                                 help=f"从自选移除：{name}", type="secondary"):
-                        storage.remove_from_watchlist(ticker)
-                        st.toast(f"已移除：{name}", icon="🗑️")
-                        st.rerun()
-                else:
-                    if st.button("☆", key=f"fav_{ticker}_{idx}",
-                                 help=f"添加到自选：{name}", type="secondary"):
-                        storage.add_to_watchlist(ticker=ticker, name=name)
-                        st.toast(f"已收藏：{name}", icon="⭐")
-                        st.rerun()
+    # ── 收藏按钮（独立行，紧跟表格下方）──────────────────────────
+    # 用极小的 st.columns 模拟每行收藏操作
+    st.markdown(
+        '<div style="display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 4px">',
+        unsafe_allow_html=True,
+    )
+    for ticker, name, is_fav, is_first, idx in fav_actions:
+        if not is_first:
+            continue
+        if is_fav:
+            if st.button(f"★ {ticker}", key=f"unfav_{ticker}_{idx}",
+                         help=f"从自选移除：{name}", type="secondary"):
+                storage.remove_from_watchlist(ticker)
+                st.toast(f"已移除：{name}", icon="🗑️")
+                st.rerun()
+        else:
+            if st.button(f"☆ {ticker}", key=f"fav_{ticker}_{idx}",
+                         help=f"添加到自选：{name}", type="secondary"):
+                storage.add_to_watchlist(ticker=ticker, name=name)
+                st.toast(f"已收藏：{name}", icon="⭐")
+                st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    st.caption(f"共 {len(df)} 条  ｜  ☆ 点击收藏 / ★ 点击取消收藏")
+    st.caption(f"共 {len(df)} 条  ｜  点击上方按钮收藏 / 取消收藏品种")
     csv = df.drop(columns=[c for c in ["_r","_d"] if c in df.columns],
                   errors="ignore").to_csv(index=False).encode("utf-8-sig")
     st.download_button("⬇️ 下载 CSV", csv,
@@ -232,9 +254,15 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
 
 # 常见格式错误规则：(pattern, 修正函数, 说明)
 _CORRECTION_RULES = [
-    # A 股：6位数字 → 加 .SS 或 .SZ
-    (r"^(\d{6})$",         lambda m: [f"{m.group(1)}.SS", f"{m.group(1)}.SZ"],
-     "A股代码需加交易所后缀（上交所 .SS / 深交所 .SZ）"),
+    # A 股：6位数字 → 根据首位数字自动判断交易所
+    # 6开头 = 上交所(SS)，0/3开头 = 深交所(SZ)，4/8/9开头 = 北交所(BJ)
+    (r"^(\d{6})$",
+     lambda m: (
+         [f"{m.group(1)}.SS"] if m.group(1)[0] == "6"
+         else [f"{m.group(1)}.SZ"] if m.group(1)[0] in ("0","3")
+         else [f"{m.group(1)}.BJ"]
+     ),
+     "A股代码自动识别交易所（6开头→上交所.SS / 0/3开头→深交所.SZ / 4/8/9开头→北交所.BJ）"),
     # 港股：去掉 .HK 前导零不够4位
     (r"^(\d{1,3})\.HK$",   lambda m: [f"{int(m.group(1)):04d}.HK"],
      "港股代码需补全为4位数字（如 700.HK → 0700.HK）"),
@@ -368,6 +396,9 @@ def _render_custom_scan(cfg):
     col_ticker, col_name, col_btn = st.columns([3, 3, 2])
 
     with col_ticker:
+        # 若用户刚点了建议代码，将其预填入输入框
+        if "custom_ticker_prefill" in st.session_state:
+            st.session_state["custom_ticker_input"] = st.session_state.pop("custom_ticker_prefill")
         raw_input = st.text_input(
             "品种代码",
             placeholder="如：TSLA / 600519.SS / GC=F / 腾讯",
@@ -411,18 +442,29 @@ def _render_custom_scan(cfg):
                     )
                 with c2:
                     if st.button(f"使用 {sug['ticker']}", key=f"use_sug_{i}_{sug['ticker']}"):
-                        st.session_state["custom_ticker_confirmed"] = sug["ticker"]
-                        st.session_state["custom_name_confirmed"]   = sug.get("name", "")
+                        # 将选定代码写入 prefill，下次 rerun 时自动填入输入框
+                        st.session_state["custom_ticker_prefill"]  = sug["ticker"]
+                        st.session_state["custom_name_confirmed"]  = sug.get("name", "")
+                        # 清除之前的确认状态
+                        st.session_state.pop("custom_ticker_confirmed", None)
                         st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
-    # 使用确认的 ticker（若用户点击了建议）
+    # 检查是否有已确认的修正代码（来自扫描失败后点击建议）
+    confirmed_ticker = custom_ticker
     if st.session_state.get("custom_ticker_confirmed"):
         confirmed_ticker = st.session_state["custom_ticker_confirmed"]
         if not custom_name and st.session_state.get("custom_name_confirmed"):
             custom_name = st.session_state["custom_name_confirmed"]
-        st.info(f"ℹ️ 将使用修正后的代码：**{confirmed_ticker}**　"
-                f"[点此取消](# '取消修正')")
+        col_info, col_cancel = st.columns([6, 2])
+        with col_info:
+            st.info(f"ℹ️ 将使用修正后的代码：**{confirmed_ticker}**")
+        with col_cancel:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("✖ 取消修正", key="cancel_correction"):
+                st.session_state.pop("custom_ticker_confirmed", None)
+                st.session_state.pop("custom_name_confirmed", None)
+                st.rerun()
 
     if not do_custom:
         return

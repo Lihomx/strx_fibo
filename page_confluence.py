@@ -152,31 +152,19 @@ def render():
     TFS = ["Daily", "Weekly", "Monthly"]
 
     # ── 表头 HTML ────────────────────────────────────────────────────
+    # ── 先把所有行汇聚成完整 HTML 表格，确保列完全对齐 ─────────────
     st.markdown("""
     <style>
-    .conf-table {width:100%;border-collapse:collapse;font-size:13px}
-    .conf-table th {
-        padding:9px 8px;background:#f9fafb;
-        border-bottom:2px solid #e5e7eb;white-space:nowrap;
-    }
-    .conf-table td {padding:8px 8px;border-bottom:1px solid #f3f4f6;vertical-align:middle}
+    .conf-table {width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
+    .conf-table th {padding:8px 8px;background:#f9fafb;border-bottom:2px solid #e5e7eb;
+                    white-space:nowrap;overflow:hidden}
+    .conf-table td {padding:7px 8px;border-bottom:1px solid #f3f4f6;vertical-align:middle;
+                    overflow:hidden;text-overflow:ellipsis}
     </style>
-    <table class="conf-table">
-    <thead><tr>
-      <th style="text-align:left">资产</th>
-      <th style="text-align:left">类别</th>
-      <th style="text-align:right">当前价格</th>
-      <th style="text-align:center">日线</th>
-      <th style="text-align:center">周线</th>
-      <th style="text-align:center">月线</th>
-      <th style="text-align:left">共振信号</th>
-      <th style="text-align:left">评分</th>
-      <th style="text-align:left">TV</th>
-    </tr></thead>
-    </table>
     """, unsafe_allow_html=True)
 
-    # ── 逐行渲染（含收藏按钮）───────────────────────────────────────
+    rows_html_cf  = []
+    fav_cf        = []   # (ticker, name, is_fav, idx)
     def _tf_cell(tf_data):
         if not tf_data:
             return "<td style='text-align:center;color:#d1d5db;padding:8px 6px'>·</td>"
@@ -202,43 +190,63 @@ def render():
         price  = info["current_price"]
         is_fav = ticker in watchlist_tickers
 
-        price_s = f"{float(price):,.4f}" if price is not None else "—"
+        price_s  = f"{float(price):,.4f}" if price is not None else "—"
+        fav_icon = "★" if is_fav else "☆"
 
-        col_row, col_fav = st.columns([11, 1])
+        rows_html_cf.append(
+            f"<tr style='border-bottom:1px solid #f3f4f6'>"
+            f"<td style='width:18%'><b>{info['name']}</b><br>"
+            f"<small style='color:#9ca3af;font-family:monospace'>{ticker}</small></td>"
+            f"<td style='width:7%'><span class='badge b-gray'>{_cat_label(info['category'])}</span></td>"
+            f"<td style='width:11%;font-family:monospace;text-align:right;font-size:12px'>{price_s}</td>"
+            + "".join(_tf_cell(tfs.get(tf)) for tf in TFS) +
+            f"<td style='width:12%'>{label}</td>"
+            f"<td style='width:9%'>"
+            f"<span style='font-family:monospace;font-size:12px'>{score}/10</span>"
+            f"{_score_bar(score)}</td>"
+            f"<td style='width:6%'><a href='{info['tv_url']}' target='_blank' "
+            f"style='color:#e85d04;font-size:12px'>📈 TV</a></td>"
+            f"<td style='width:5%;text-align:center'>{fav_icon}</td>"
+            f"</tr>"
+        )
+        fav_cf.append((ticker, info["name"], is_fav, idx))
 
-        with col_row:
-            st.markdown(
-                f'<table class="conf-table"><tbody><tr>'
-                f'<td style="width:20%"><b>{info["name"]}</b><br>'
-                f'<small style="color:#9ca3af;font-family:monospace">{ticker}</small></td>'
-                f'<td style="width:7%"><span class="badge b-gray">{_cat_label(info["category"])}</span></td>'
-                f'<td style="width:12%;font-family:monospace;text-align:right;font-size:12px">{price_s}</td>'
-                + "".join(_tf_cell(tfs.get(tf)) for tf in TFS) +
-                f'<td style="width:12%">{label}</td>'
-                f'<td style="width:10%">'
-                f'<span style="font-family:monospace;font-size:12px">{score}/10</span>'
-                f'{_score_bar(score)}</td>'
-                f'<td style="width:7%"><a href="{info["tv_url"]}" target="_blank" '
-                f'style="color:#e85d04;font-size:12px">📈 TV</a></td>'
-                f'</tr></tbody></table>',
-                unsafe_allow_html=True,
-            )
+    # 整体输出完整表格（保证列对齐）
+    st.markdown(
+        f'''<table class="conf-table">
+        <thead><tr>
+          <th style="text-align:left;width:18%">资产</th>
+          <th style="text-align:left;width:7%">类别</th>
+          <th style="text-align:right;width:11%">当前价格</th>
+          <th style="text-align:center;width:7%">日线</th>
+          <th style="text-align:center;width:7%">周线</th>
+          <th style="text-align:center;width:7%">月线</th>
+          <th style="text-align:left;width:12%">共振信号</th>
+          <th style="text-align:left;width:9%">评分</th>
+          <th style="text-align:left;width:6%">TV</th>
+          <th style="text-align:center;width:5%">收藏</th>
+        </tr></thead>
+        <tbody>{'\n'.join(rows_html_cf)}</tbody>
+        </table>''',
+        unsafe_allow_html=True,
+    )
 
-        with col_fav:
+    # 收藏按钮行（统一显示在表格下方）
+    btn_cols = st.columns(min(len(fav_cf), 8))
+    for i, (ticker, name, is_fav, idx) in enumerate(fav_cf):
+        with btn_cols[i % len(btn_cols)]:
             if is_fav:
-                if st.button("★", key=f"cf_unfav_{ticker}_{idx}",
-                             help=f"从自选移除：{info['name']}", type="secondary"):
+                if st.button(f"★ {ticker}", key=f"cf_unfav_{ticker}_{idx}",
+                             help=f"从自选移除：{name}", type="secondary"):
                     storage.remove_from_watchlist(ticker)
-                    st.toast(f"已移除：{info['name']}", icon="🗑️")
+                    st.toast(f"已移除：{name}", icon="🗑️")
                     st.rerun()
             else:
-                if st.button("☆", key=f"cf_fav_{ticker}_{idx}",
-                             help=f"添加到自选：{info['name']}", type="secondary"):
-                    storage.add_to_watchlist(ticker=ticker, name=info["name"],
-                                             note="共振检测添加")
-                    st.toast(f"已收藏：{info['name']}", icon="⭐")
+                if st.button(f"☆ {ticker}", key=f"cf_fav_{ticker}_{idx}",
+                             help=f"添加到自选：{name}", type="secondary"):
+                    storage.add_to_watchlist(ticker=ticker, name=name, note="共振检测添加")
+                    st.toast(f"已收藏：{name}", icon="⭐")
                     st.rerun()
-
     st.markdown("""
     <p style="font-size:11px;color:#9ca3af;margin-top:8px">
     ✅ 黄金区间 (0.500–0.618) &nbsp;·&nbsp; 👀 接近区间 (&lt;5%) &nbsp;·&nbsp; · 区间外
