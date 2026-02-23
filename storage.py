@@ -513,3 +513,15 @@ def storage_stats() -> Dict[str, Any]:
         "alerts_kb": fsize(F_ALERTS) // 1024,
         "scanned_groups": load_scanned_groups(),
     }
+
+
+def toggle_pin_watchlist(ticker: str) -> bool:
+    """切换品种置顶状态（pinned=True/False）。返回操作后的 pinned 值。"""
+    ticker = ticker.strip().upper()
+    items  = load_watchlist()
+    for item in items:
+        if item["ticker"].upper() == ticker:
+            item["pinned"] = not item.get("pinned", False)
+            save_watchlist(items)
+            return item["pinned"]
+    return False

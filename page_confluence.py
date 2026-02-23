@@ -259,7 +259,7 @@ def render():
     N = 8
     for row_start in range(0, len(fav_cf), N):
         batch = fav_cf[row_start:row_start + N]
-        cols  = st.columns(N)
+        cols  = st.columns(len(batch))          # ← 按实际数量建列，不留空列
         for i, (ticker, name, is_fav, _) in enumerate(batch):
             lbl = f"★ {ticker}" if is_fav else f"☆ {ticker}"
             tip = f"{'取消收藏' if is_fav else '收藏'}：{name}"

@@ -95,7 +95,7 @@ def _render_main():
 
     # ── 添加新品种 ──────────────────────────────────────────────
     with st.expander("➕ 添加新品种", expanded=len(items) == 0):
-        c1, c2, c3 = st.columns([2, 2, 1])
+        c1, c2 = st.columns([2, 2])
         with c1:
             new_ticker = st.text_input(
                 "Ticker 代码 *", placeholder="例: AAPL  600519.SS  0700.HK",
@@ -103,12 +103,9 @@ def _render_main():
             ).strip().upper()
         with c2:
             new_name = st.text_input(
-                "简称（可选）", placeholder="例: 苹果 / 茅台",
+                "品种全称（可选）", placeholder="例: 苹果公司 / 贵州茅台",
                 key="wl_new_name",
             )
-        with c3:
-            st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-
         note_text = st.text_input(
             "📝 备注 *（必填）", placeholder="例: 关注 0.618 支撑，等待回踩确认",
             key="wl_new_note_text",
@@ -117,8 +114,6 @@ def _render_main():
             "🖼️ 图片链接（选填）", placeholder="https://...图片URL",
             key="wl_new_img_url",
         ).strip()
-
-        # 图片预览
         if img_url:
             st.markdown(_thumb_html(img_url, 200), unsafe_allow_html=True)
 
@@ -128,16 +123,13 @@ def _render_main():
             elif not note_text.strip():
                 st.warning("备注为必填项，请输入备注内容")
             else:
-                ok = storage.add_to_watchlist(
-                    new_ticker, new_name, note_text.strip(), img_url
-                )
+                ok = storage.add_to_watchlist(new_ticker, new_name, note_text.strip(), img_url)
                 if ok:
                     st.success(f"✅ 已添加 {new_ticker}")
                     st.rerun()
                 else:
                     st.warning(f"⚠️ {new_ticker} 已在收藏夹中")
 
-        # 批量导入
         st.markdown("---")
         st.markdown("**批量导入**（每行一个 Ticker，可附简称，用空格分隔）")
         bulk_text = st.text_area(
@@ -216,9 +208,15 @@ def _render_main():
             if q in i["ticker"].upper() or q in i.get("name", "").upper()
         ]
 
+    # ── 置顶排序：pinned=True 的排在前面 ──────────────────────
+    display_items = sorted(display_items, key=lambda x: (0 if x.get("pinned") else 1))
+
+    pinned_cnt = sum(1 for i in display_items if i.get("pinned"))
     st.markdown(
         f"<div style='color:#6b7280;font-size:12px;margin-bottom:8px'>"
-        f"共 {len(items)} 个品种 · 显示 {len(display_items)} 个</div>",
+        f"共 {len(items)} 个品种 · 显示 {len(display_items)} 个"
+        + (f" · 📌 {pinned_cnt} 个置顶" if pinned_cnt else "")
+        + "</div>",
         unsafe_allow_html=True,
     )
 
@@ -232,14 +230,15 @@ def _render_main():
     with exp_col1:
         rows = []
         for item in items:
-            tk = item["ticker"]
+            tk     = item["ticker"]
             results = result_map.get(tk, [])
-            latest = _latest_note(item)
+            latest  = _latest_note(item)
             rows.append({
                 "ticker":      tk,
                 "name":        item.get("name", ""),
                 "latest_note": latest["text"] if latest else "",
                 "added_at":    item.get("added_at", ""),
+                "pinned":      item.get("pinned", False),
                 "in_zone_any": any(r.get("in_zone") for r in results),
             })
         df = pd.DataFrame(rows)
@@ -247,7 +246,6 @@ def _render_main():
         st.download_button("⬇️ 导出收藏夹 CSV", csv,
                            file_name="strx_watchlist.csv", mime="text/csv",
                            key="wl_dl")
-
     with exp_col2:
         ticker_list = "\n".join(i["ticker"] for i in items)
         st.text_area("Ticker 列表（可复制）", value=ticker_list, height=80,
@@ -256,46 +254,78 @@ def _render_main():
 
 # ════════════════════════════════════════════════════════════════════
 # 单张品种卡片
+# 修改：
+#   1. 第一行优先显示品种全称（name），再显示 ticker
+#   2. 置顶按钮
+#   3. 最新备注移到最后（添加备注按钮之前）
 # ════════════════════════════════════════════════════════════════════
 def _render_card(item: dict, idx: int, result_map: dict):
     ticker  = item["ticker"]
     name    = item.get("name", "")
     added   = item.get("added_at", "")
+    pinned  = item.get("pinned", False)
     results = result_map.get(ticker, [])
     notes   = _all_notes(item)
     latest  = notes[-1] if notes else None
     tv_link = _tv_link(ticker)
 
+    # 卡片边框：置顶时高亮
+    border_color = "#f59e0b" if pinned else "#e5e7eb"
+    pin_bg       = "background:#fffbeb;" if pinned else ""
+
     with st.container():
         st.markdown(
-            '<div style="background:#fff;border:1px solid #e5e7eb;'
-            'border-radius:10px;padding:14px 18px 12px;margin-bottom:10px;">',
+            f'<div style="background:#fff;border:1.5px solid {border_color};'
+            f'border-radius:10px;padding:14px 18px 12px;margin-bottom:10px;{pin_bg}">',
             unsafe_allow_html=True,
         )
 
-        # ── 标题行 ────────────────────────────────────────────
-        col_title, col_actions = st.columns([8, 2])
+        # ── 标题行：全称 优先，Ticker 次之 ──────────────────────
+        col_title, col_actions = st.columns([7, 3])
 
         with col_title:
-            name_part = f"  <span style='color:#6b7280;font-size:13px'>{name}</span>" if name else ""
-            st.markdown(
-                f"<b style='font-size:15px'>{ticker}</b>{name_part}"
-                f"<span style='color:#9ca3af;font-size:11px;margin-left:10px'>收藏于 {added}</span>",
-                unsafe_allow_html=True,
-            )
+            # 优先显示全称，没有全称时显示 ticker
+            if name:
+                # 有全称：大字显示全称，小字显示 ticker
+                pin_icon = "📌 " if pinned else ""
+                st.markdown(
+                    f"<div style='margin-bottom:2px'>"
+                    f"<span style='font-size:16px;font-weight:700;color:#111'>{pin_icon}{name}</span>&nbsp;&nbsp;"
+                    f"<span style='font-family:monospace;font-size:12px;color:#9ca3af;"
+                    f"background:#f3f4f6;padding:2px 6px;border-radius:4px'>{ticker}</span>"
+                    f"</div>"
+                    f"<span style='color:#9ca3af;font-size:11px'>收藏于 {added}</span>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                # 没有全称：直接显示 ticker
+                pin_icon = "📌 " if pinned else ""
+                st.markdown(
+                    f"<div style='margin-bottom:2px'>"
+                    f"<span style='font-size:16px;font-weight:700;font-family:monospace;color:#111'>{pin_icon}{ticker}</span>"
+                    f"</div>"
+                    f"<span style='color:#9ca3af;font-size:11px'>收藏于 {added}</span>",
+                    unsafe_allow_html=True,
+                )
 
         with col_actions:
-            # 操作按钮行：TV链接 + 扫描 + 删除
-            btn_c1, btn_c2, btn_c3 = st.columns(3)
+            # 操作按钮：置顶 + TV + 扫描 + 删除
+            btn_c1, btn_c2, btn_c3, btn_c4 = st.columns(4)
             with btn_c1:
-                st.link_button("📈", tv_link, help=f"在 TradingView 查看 {ticker}")
+                pin_label = "📌" if not pinned else "🔓"
+                pin_help  = "置顶此品种" if not pinned else "取消置顶"
+                if st.button(pin_label, key=f"wl_pin_{ticker}_{idx}", help=pin_help):
+                    storage.toggle_pin_watchlist(ticker)
+                    st.rerun()
             with btn_c2:
+                st.link_button("📈", tv_link, help=f"在 TradingView 查看 {ticker}")
+            with btn_c3:
                 if st.button("🔍", key=f"wl_scan_{ticker}_{idx}",
                              help=f"跳转扫描 {ticker}"):
                     st.session_state["page"] = "scanner"
                     st.session_state["wl_jump_ticker"] = ticker
                     st.rerun()
-            with btn_c3:
+            with btn_c4:
                 if st.button("🗑", key=f"wl_del_{ticker}_{idx}",
                              help=f"删除（移入存档）{ticker}"):
                     storage.remove_from_watchlist(ticker)
@@ -332,24 +362,10 @@ def _render_card(item: dict, idx: int, result_map: dict):
                 unsafe_allow_html=True,
             )
 
-        st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
-
-        # ── 最新备注（标红） ────────────────────────────────────
-        if latest:
-            thumb = _thumb_html(latest.get("img_url", ""), 140)
-            st.markdown(
-                f'<div style="background:#fff1f2;border-left:3px solid #ef4444;'
-                f'border-radius:0 6px 6px 0;padding:7px 12px;margin:4px 0 2px;">'
-                f'<span style="color:#ef4444;font-size:11px;font-weight:600">'
-                f'最新备注 · {latest.get("ts","")}</span><br>'
-                f'<span style="color:#1f2937;font-size:13px">{latest["text"]}</span>'
-                f'{("<br>" + thumb) if thumb else ""}'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+        st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
         # ── 历史备注（折叠展示） ──────────────────────────────────
-        older = notes[:-1]
+        older = notes[:-1]  # 除最后一条之外的历史备注
         if older:
             with st.expander(f"📋 查看历史备注（共 {len(older)} 条）"):
                 for n in reversed(older):
@@ -357,14 +373,14 @@ def _render_card(item: dict, idx: int, result_map: dict):
                     st.markdown(
                         f'<div style="border-left:2px solid #e5e7eb;'
                         f'padding:5px 10px;margin:4px 0;font-size:12px;">'
-                        f'<span style="color:#9ca3af">{n.get("ts","")}</span>  '
+                        f'<span style="color:#9ca3af">{n.get("ts","")}</span>&nbsp;&nbsp;'
                         f'<span style="color:#374151">{n["text"]}</span>'
                         f'{("<br>" + thumb) if thumb else ""}'
                         f'</div>',
                         unsafe_allow_html=True,
                     )
 
-        # ── 添加新备注 ──────────────────────────────────────────
+        # ── 添加新备注按钮 ──────────────────────────────────────
         if st.button("✏️ 添加备注", key=f"wl_edit_btn_{ticker}_{idx}",
                      use_container_width=False):
             st.session_state[f"wl_adding_{ticker}"] = True
@@ -382,7 +398,6 @@ def _render_card(item: dict, idx: int, result_map: dict):
             ).strip()
             if new_img:
                 st.markdown(_thumb_html(new_img, 180), unsafe_allow_html=True)
-
             sc1, sc2 = st.columns(2)
             with sc1:
                 if st.button("💾 保存备注", key=f"wl_note_save_{ticker}_{idx}",
@@ -399,12 +414,23 @@ def _render_card(item: dict, idx: int, result_map: dict):
                     st.session_state[f"wl_adding_{ticker}"] = False
                     st.rerun()
 
+        # ── 最新备注（标红，放在最后）─────────────────────────────
+        if latest:
+            thumb = _thumb_html(latest.get("img_url", ""), 140)
+            st.markdown(
+                f'<div style="background:#fff1f2;border-left:3px solid #ef4444;'
+                f'border-radius:0 6px 6px 0;padding:7px 12px;margin:6px 0 2px;">'
+                f'<span style="color:#ef4444;font-size:11px;font-weight:600">'
+                f'📝 最新备注 · {latest.get("ts","")}</span><br>'
+                f'<span style="color:#1f2937;font-size:13px">{latest["text"]}</span>'
+                f'{("<br>" + thumb) if thumb else ""}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
         st.markdown("</div>", unsafe_allow_html=True)
 
 
-# ════════════════════════════════════════════════════════════════════
-# 存档页（已删除）
-# ════════════════════════════════════════════════════════════════════
 def _render_archive():
     archive = storage.load_watchlist_archive()
 
