@@ -136,10 +136,12 @@ def render():
 # ════════════════════════════════════════════════════════════════════
 # 结果表（含逐行收藏按钮）
 # ════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════
+# 结果表 — st.columns 逐行渲染，收藏按钮与数据天然同行同高，彻底解决错位
+# ════════════════════════════════════════════════════════════════════
 def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
-    import urllib.parse as _up
 
-    # ── 处理收藏操作（通过 session_state 标志，在表格渲染前执行）──
+    # ── 处理收藏操作（渲染前执行）──────────────────────────────
     _pending = st.session_state.pop("_fav_action", None)
     if _pending:
         act, tk, nm = _pending
@@ -154,18 +156,30 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
     watchlist         = storage.load_watchlist()
     watchlist_tickers = {w["ticker"] for w in watchlist if isinstance(w, dict)}
 
-    # ── CSS ──────────────────────────────────────────────────────
-    st.markdown("""<style>
-    .rt{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
-    .rt th{padding:8px 6px;background:#f9fafb;border-bottom:2px solid #e5e7eb;
-           font-size:12px;color:#374151;font-weight:600;white-space:nowrap;overflow:hidden}
-    .rt td{padding:7px 6px;border-bottom:1px solid #f3f4f6;vertical-align:middle;
-           overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .rt tr.zone td{background:#fffbeb}
-    </style>""", unsafe_allow_html=True)
+    # ── CSS（徽章 + 行分隔线）──────────────────────────────────
+    st.markdown("""
+    <style>
+    .rt-hdr{font-size:12px;color:#6b7280;font-weight:600;
+            padding:5px 0 5px;border-bottom:2px solid #e5e7eb;
+            white-space:nowrap;overflow:hidden}
+    .rt-cell{font-size:13px;padding:5px 0;
+             border-bottom:1px solid #f3f4f6;
+             min-height:38px;display:flex;align-items:center;flex-wrap:wrap}
+    .rt-mono{font-family:monospace;font-size:12px}
+    </style>
+    """, unsafe_allow_html=True)
 
-    rows_html = []
-    fav_rows  = []   # (ticker, name, is_fav) — unique tickers only
+    # 列宽比例 (合计 = 100%)
+    # 资产  类别  框架  状态  价格  回撤  距区  共振  TV  收藏
+    W = [3.0, 1.1, 0.9, 1.4, 1.8, 1.0, 1.0, 2.0, 0.9, 0.9]
+
+    # ── 表头 ────────────────────────────────────────────────────
+    HDRS = ["资产", "类别", "框架", "状态", "当前价格", "回撤%", "距区间", "共振", "TV", "收藏"]
+    hcols = st.columns(W)
+    for c, h in zip(hcols, HDRS):
+        c.markdown(f'<div class="rt-hdr">{h}</div>', unsafe_allow_html=True)
+
+    # ── 数据行 ──────────────────────────────────────────────────
     seen: set = set()
 
     for _, r in df.iterrows():
@@ -184,95 +198,79 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
         retrace_s = f"{float(retrace):.1f}%" if retrace is not None else "—"
         dist_s    = "区间内" if in_zone else (f"{dist:.1f}%" if dist < 999 else "—")
 
-        unique = ticker not in seen
+        is_first = ticker not in seen
         seen.add(ticker)
-        is_fav = ticker in watchlist_tickers
+        is_fav   = ticker in watchlist_tickers
 
-        if unique:
-            fav_rows.append((ticker, name, is_fav))
-            fav_icon = "★" if is_fav else "☆"
-            fav_color = "color:#f59e0b" if is_fav else "color:#d1d5db"
-            fav_cell = (
-                f"<td style='width:6%;text-align:center;{fav_color};"
-                f"font-size:18px'>{fav_icon}</td>"
-            )
-        else:
-            fav_cell = "<td style='width:6%'></td>"
+        bg = "background:#fffbeb;" if in_zone else ""
 
-        zone_cls = ' class="zone"' if in_zone else ""
-        rows_html.append(
-            f"<tr{zone_cls}>"
-            f"<td style='width:20%'><b>{name}</b>"
-            f"<br><small style='color:#9ca3af;font-family:monospace'>{ticker}</small></td>"
-            f"<td style='width:8%'><span class='badge b-gray'>{_cat_label(cat)}</span></td>"
-            f"<td style='width:7%'><span class='badge b-gray'>{tf}</span></td>"
-            f"<td style='width:9%'>{_badge(in_zone, dist)}</td>"
-            f"<td style='width:12%;font-family:monospace;text-align:right'>{price_s}</td>"
-            f"<td style='width:8%;text-align:right'>{retrace_s}</td>"
-            f"<td style='width:8%;text-align:right'>{dist_s}</td>"
-            f"<td style='width:13%'>{_conf_badge(conf_l)}</td>"
-            f"<td style='width:7%'><a href='{tv_lnk}' target='_blank' "
-            f"style='color:#e85d04;font-size:12px'>📈 TV</a></td>"
-            f"{fav_cell}"
-            f"</tr>"
-        )
+        rc = st.columns(W)
 
-    # ── 完整 HTML 表格（一次渲染，列完全对齐）──────────────────
-    thead = (
-        "<tr>"
-        "<th style='width:20%'>资产</th>"
-        "<th style='width:8%'>类别</th>"
-        "<th style='width:7%'>框架</th>"
-        "<th style='width:9%'>状态</th>"
-        "<th style='width:12%;text-align:right'>当前价格</th>"
-        "<th style='width:8%;text-align:right'>回撤%</th>"
-        "<th style='width:8%;text-align:right'>距区间</th>"
-        "<th style='width:13%'>共振</th>"
-        "<th style='width:7%'>TV</th>"
-        "<th style='width:6%;text-align:center'>收藏</th>"
-        "</tr>"
-    )
-    st.markdown(
-        f"<table class='rt'><thead>{thead}</thead>"
-        f"<tbody>{''.join(rows_html)}</tbody></table>",
-        unsafe_allow_html=True,
-    )
+        rc[0].markdown(
+            f'<div class="rt-cell" style="{bg}">'
+            f'<div><b>{name}</b><br>'
+            f'<span style="color:#9ca3af;font-size:11px;font-family:monospace">{ticker}</span>'
+            f'</div></div>', unsafe_allow_html=True)
 
-    # ── 收藏操作区（紧贴表格下方，每 ticker 一个按钮，整齐排列）──
-    # 每行8个，使用 st.columns 均匀分布
-    st.markdown(
-        f'<div style="color:#6b7280;font-size:11px;margin:8px 0 4px">'
-        f'共 {len(df)} 条 &nbsp;｜&nbsp; 点击下方按钮收藏 / 取消收藏</div>',
-        unsafe_allow_html=True,
-    )
+        rc[1].markdown(
+            f'<div class="rt-cell" style="{bg}">'
+            f'<span class="badge b-gray">{_cat_label(cat)}</span></div>',
+            unsafe_allow_html=True)
 
-    N = 8  # 每行最多几个按钮
-    for row_start in range(0, len(fav_rows), N):
-        batch = fav_rows[row_start:row_start + N]
-        cols  = st.columns(len(batch))          # ← 关键：按实际数量建列，不留空列
-        for i, (ticker, name, is_fav) in enumerate(batch):
-            lbl = f"★ {ticker}" if is_fav else f"☆ {ticker}"
+        rc[2].markdown(
+            f'<div class="rt-cell" style="{bg}">'
+            f'<span class="badge b-gray">{tf}</span></div>',
+            unsafe_allow_html=True)
+
+        rc[3].markdown(
+            f'<div class="rt-cell" style="{bg}">{_badge(in_zone, dist)}</div>',
+            unsafe_allow_html=True)
+
+        rc[4].markdown(
+            f'<div class="rt-cell rt-mono" style="{bg};justify-content:flex-end">'
+            f'{price_s}</div>', unsafe_allow_html=True)
+
+        rc[5].markdown(
+            f'<div class="rt-cell" style="{bg};justify-content:flex-end">'
+            f'{retrace_s}</div>', unsafe_allow_html=True)
+
+        rc[6].markdown(
+            f'<div class="rt-cell" style="{bg};justify-content:flex-end">'
+            f'{dist_s}</div>', unsafe_allow_html=True)
+
+        rc[7].markdown(
+            f'<div class="rt-cell" style="{bg}">{_conf_badge(conf_l)}</div>',
+            unsafe_allow_html=True)
+
+        rc[8].markdown(
+            f'<div class="rt-cell" style="{bg}">'
+            f'<a href="{tv_lnk}" target="_blank" '
+            f'style="color:#e85d04;font-size:12px">📈 TV</a></div>',
+            unsafe_allow_html=True)
+
+        # 收藏列：每个 ticker 只在第一行显示按钮
+        if is_first:
+            lbl = "★" if is_fav else "☆"
             tip = f"{'取消收藏' if is_fav else '收藏'}：{name}"
-            if cols[i].button(lbl, key=f"scn_fav_{ticker}", help=tip):
+            if rc[9].button(lbl, key=f"scn_fav_{ticker}",
+                            help=tip, use_container_width=True):
                 st.session_state["_fav_action"] = (
-                    "del" if is_fav else "add",
-                    ticker, name,
-                )
+                    "del" if is_fav else "add", ticker, name)
                 st.rerun()
+        else:
+            rc[9].markdown('<div class="rt-cell"></div>', unsafe_allow_html=True)
 
-    # ── CSV 下载 ────────────────────────────────────────────────
-    csv = df.drop(
-        columns=[c for c in ["_r", "_d"] if c in df.columns],
-        errors="ignore",
-    ).to_csv(index=False).encode("utf-8-sig")
-    st.download_button(
-        "⬇️ 下载 CSV", csv,
-        file_name=f"strx_fibo_{last_s.get('scan_date', 'today')}.csv",
-        mime="text/csv",
-    )
+    st.markdown(
+        f'<hr style="border:none;border-top:1px solid #e5e7eb;margin:4px 0">'
+        f'<div style="color:#9ca3af;font-size:11px">共 {len(df)} 条 &nbsp;｜&nbsp;'
+        f'点击收藏列 ☆/★ 按钮即可收藏/取消</div>',
+        unsafe_allow_html=True)
 
-
-
+    csv = df.drop(columns=[c for c in ["_r","_d"] if c in df.columns],
+                  errors="ignore").to_csv(index=False).encode("utf-8-sig")
+    st.download_button("⬇️ 下载 CSV", csv,
+                       file_name=f"strx_fibo_{last_s.get('scan_date','today')}.csv",
+                       mime="text/csv")
 
 # ════════════════════════════════════════════════════════════════════
 # Ticker 自动修正建议

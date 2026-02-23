@@ -107,18 +107,23 @@ def save_config(cfg: Dict) -> bool:
 
 # ── 扫描会话 ─────────────────────────────────────────────────────────
 def save_scan(session_row: Dict, result_rows: List[Dict]) -> bool:
+    # 给每条结果打扫描时间戳
+    scan_ts = _now_str()
+    for r in result_rows:
+        r.setdefault("scan_time", scan_ts)
+
     # 保存最新明细
     _save(F_RES, result_rows)
 
-    # 合并到全量缓存（按 ticker+timeframe 去重，保留最新）
+    # 合并到全量缓存（同 ticker+timeframe 只保留最新，新结果无条件覆盖旧结果）
     allres = _load(F_ALLRES, [])
     if not isinstance(allres, list):
         allres = []
     existing = {(r["ticker"], r["timeframe"]): r
                 for r in allres if isinstance(r, dict) and r.get("ticker")}
     for r in result_rows:
-        key = (r["ticker"], r["timeframe"])
-        existing[key] = r
+        if isinstance(r, dict) and r.get("ticker") and r.get("timeframe"):
+            existing[(r["ticker"], r["timeframe"])] = r  # 新结果覆盖旧结果
     merged = list(existing.values())
     if len(merged) > _MAX_ALLRES:
         merged = merged[-_MAX_ALLRES:]
