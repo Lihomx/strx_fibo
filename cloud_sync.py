@@ -1,15 +1,16 @@
 """
-cloud_sync.py — Supabase 云端自动备份同步
+cloud_sync.py — Supabase 云端自动备份同步 v5
 ================================================================
-关键修复（v4）：
-  1. 上传改用 REST API 直接 PUT（避免 supabase-py 版本差异）
-  2. 收藏夹同步包含所有 notes 字段：text / img_url / ts
-  3. 启动/定时自动同步，4小时一次
+修复：使用 Supabase Management API 正确创建 bucket 并禁用 RLS。
+推荐使用 service_role key 绕过 RLS 限制。
 
 Streamlit Secrets 配置：
   SUPABASE_URL    = "https://xxxxxxxxxxxx.supabase.co"
   SUPABASE_KEY    = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
   SUPABASE_BUCKET = "strx-backup"
+
+注意：SUPABASE_KEY 必须使用 service_role secret key
+      位于 Supabase → Project Settings → API → service_role
 ================================================================
 """
 
@@ -62,7 +63,7 @@ def is_configured() -> bool:
     return bool(url and key)
 
 
-def _headers(key: str) -> dict:
+def _hdrs(key: str) -> dict:
     return {
         "apikey":        key,
         "Authorization": f"Bearer {key}",
@@ -70,146 +71,153 @@ def _headers(key: str) -> dict:
     }
 
 
-def _storage_url(url: str, bucket: str, fname: str) -> str:
-    return f"{url}/storage/v1/object/{bucket}/{fname}"
-
-
 # ════════════════════════════════════════════════════════════════════
-# Bucket 自动创建（REST API）
+# Bucket 管理
 # ════════════════════════════════════════════════════════════════════
 def ensure_bucket() -> Tuple[bool, str]:
     url, key, bucket = _get_secrets()
     if not url or not key:
-        return False, "未配置 Supabase"
+        return False, "未填写 SUPABASE_URL / SUPABASE_KEY"
+
+    bucket_url = f"{url}/storage/v1/bucket"
+
+    # 先尝试获取 bucket 信息
+    r = requests.get(f"{bucket_url}/{bucket}", headers=_hdrs(key), timeout=10)
+    if r.status_code == 200:
+        return True, f"Bucket \'{bucket}\' 已存在"
+
+    if r.status_code == 401:
+        return False, ("认证失败 (401)：请在 Secrets 中使用 service_role key\n"
+                       "路径：Supabase → Project Settings → API → service_role secret key")
+
+    # 创建 bucket（设 public=True 简化权限）
+    create_r = requests.post(
+        bucket_url,
+        headers=_hdrs(key),
+        json={"id": bucket, "name": bucket, "public": True},
+        timeout=10,
+    )
+    if create_r.status_code in (200, 201):
+        return True, f"Bucket \'{bucket}\' 已创建"
+
+    # 解析具体错误
     try:
-        # 检查 bucket 是否存在
-        r = requests.get(
-            f"{url}/storage/v1/bucket/{bucket}",
-            headers=_headers(key), timeout=10,
-        )
-        if r.status_code == 200:
-            return True, f"Bucket '{bucket}' 已存在"
-        if r.status_code == 400 or r.status_code == 404:
-            # 创建 bucket
-            cr = requests.post(
-                f"{url}/storage/v1/bucket",
-                headers=_headers(key),
-                json={"id": bucket, "name": bucket, "public": False},
-                timeout=10,
-            )
-            if cr.status_code in (200, 201):
-                return True, f"Bucket '{bucket}' 已创建"
-            return False, f"创建 bucket 失败：{cr.status_code} {cr.text[:200]}"
-        return False, f"检查 bucket 失败：{r.status_code} {r.text[:200]}"
-    except Exception as e:
-        return False, f"ensure_bucket 异常：{e}"
+        err = create_r.json()
+        msg = err.get("message", create_r.text[:200])
+    except Exception:
+        msg = create_r.text[:200]
+
+    if "403" in str(create_r.status_code) or "security policy" in msg.lower():
+        return False, (f"权限错误 (403 RLS)：当前使用的是 anon key，无法创建 bucket。\n"
+                       f"请改用 service_role secret key（见配置教程第②步）")
+    return False, f"创建 bucket 失败 {create_r.status_code}：{msg}"
 
 
 # ════════════════════════════════════════════════════════════════════
-# 上传 / 下载（纯 REST，不依赖 supabase-py 版本）
+# 上传 / 下载（REST API，x-upsert:true 覆盖）
 # ════════════════════════════════════════════════════════════════════
 def _upload(file_key: str, data: Any) -> Tuple[bool, str]:
-    """
-    上传 JSON 数据到 Supabase Storage。
-    使用 REST PUT + x-upsert:true，完全绕过 supabase-py 版本问题。
-    """
     url, key, bucket = _get_secrets()
     if not url or not key:
-        return False, "未配置 Supabase"
+        return False, "未配置"
 
     fname   = _CLOUD_FILES.get(file_key, f"{file_key}.json")
     payload = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
-    target  = _storage_url(url, bucket, fname)
+    obj_url = f"{url}/storage/v1/object/{bucket}/{fname}"
+
     hdrs = {
         "apikey":        key,
         "Authorization": f"Bearer {key}",
-        "Content-Type":  "application/json",
-        "x-upsert":      "true",          # ← 关键：覆盖已有文件
+        "Content-Type":  "application/octet-stream",
+        "x-upsert":      "true",
     }
     try:
-        r = requests.post(target, headers=hdrs, data=payload, timeout=30)
+        r = requests.post(obj_url, headers=hdrs, data=payload, timeout=30)
         if r.status_code in (200, 201):
             return True, "OK"
-        # 如果是 already exists，用 PUT 覆盖
-        if r.status_code in (400, 409):
-            r2 = requests.put(target, headers=hdrs, data=payload, timeout=30)
+
+        # 已存在则用 PUT
+        if r.status_code in (400, 409, 422):
+            r2 = requests.put(obj_url, headers=hdrs, data=payload, timeout=30)
             if r2.status_code in (200, 201):
                 return True, "OK(PUT)"
             return False, f"POST {r.status_code} / PUT {r2.status_code}: {r2.text[:300]}"
+
+        if r.status_code == 401:
+            return False, "认证失败 (401)：请检查 SUPABASE_KEY 是否正确"
+        if r.status_code == 403:
+            return False, ("权限不足 (403 RLS)：请使用 service_role secret key\n"
+                           "路径：Supabase → Project Settings → API → service_role")
         return False, f"HTTP {r.status_code}: {r.text[:300]}"
+    except requests.exceptions.ConnectionError:
+        return False, "网络连接失败：无法访问 Supabase，请检查 SUPABASE_URL"
     except Exception as e:
-        return False, f"请求异常：{e}"
+        return False, f"上传异常：{e}"
 
 
 def _download(file_key: str) -> Optional[Any]:
-    """从 Supabase Storage 下载 JSON 文件。"""
     url, key, bucket = _get_secrets()
     if not url or not key:
         return None
     fname  = _CLOUD_FILES.get(file_key, f"{file_key}.json")
-    target = _storage_url(url, bucket, fname)
-    hdrs   = _headers(key)
+    obj_url = f"{url}/storage/v1/object/{bucket}/{fname}"
     try:
-        r = requests.get(target, headers=hdrs, timeout=30)
+        r = requests.get(obj_url, headers=_hdrs(key), timeout=30)
         if r.status_code == 200:
             return r.json()
-        return None
     except Exception as e:
         logger.debug(f"_download {file_key}: {e}")
-        return None
+    return None
 
 
 def _test_connection() -> Tuple[bool, str]:
-    """测试 Supabase 连接，返回 (ok, 详细信息)。"""
+    """完整测试：凭证 → bucket → 读写"""
     url, key, bucket = _get_secrets()
-    if not url or not key:
-        return False, "SUPABASE_URL 或 SUPABASE_KEY 未在 Secrets 中配置"
+    if not url:
+        return False, "SUPABASE_URL 未填写"
+    if not key:
+        return False, "SUPABASE_KEY 未填写"
+    if not url.startswith("https://"):
+        return False, f"SUPABASE_URL 格式错误（应以 https:// 开头）：{url[:40]}"
 
-    # 1. 测试 API 连通性
+    # Step 1: 测试 API 连通
     try:
-        r = requests.get(
-            f"{url}/storage/v1/bucket",
-            headers=_headers(key), timeout=10,
-        )
-        if r.status_code == 401:
-            return False, "认证失败：SUPABASE_KEY 不正确（请使用 anon/public key）"
-        if r.status_code not in (200, 400, 404):
-            return False, f"API 返回异常状态：{r.status_code}，请检查 SUPABASE_URL 是否正确"
+        r = requests.get(f"{url}/storage/v1/bucket",
+                         headers=_hdrs(key), timeout=10)
     except Exception as e:
-        return False, f"无法连接到 Supabase：{e}"
+        return False, f"无法连接到 Supabase：{e}\n请检查 SUPABASE_URL 是否正确"
 
-    # 2. 确保 bucket 存在
+    if r.status_code == 401:
+        return False, ("API Key 无效 (401 Unauthorized)\n"
+                       "请检查 SUPABASE_KEY 是否正确复制\n"
+                       "⚠️ 必须使用 service_role secret key，不是 anon key")
+
+    # Step 2: bucket
     ok, msg = ensure_bucket()
     if not ok:
-        return False, f"Bucket 操作失败：{msg}"
+        return False, msg
 
-    # 3. 测试写入
-    ok, msg = _upload("meta", {
-        "test": True, "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "last_sync": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "last_sync_ts": time.time(),
-        "watchlist_cnt": 0, "scan_results_cnt": 0, "version": "4",
+    # Step 3: 写入测试
+    ok2, msg2 = _upload("meta", {
+        "last_sync":        time.strftime("%Y-%m-%d %H:%M:%S"),
+        "last_sync_ts":     time.time(),
+        "version":          "5",
+        "watchlist_cnt":    0,
+        "scan_results_cnt": 0,
     })
-    if ok:
-        return True, f"连接正常 ✅  Bucket='{bucket}'，读写测试通过"
-    return False, f"连接成功但写入失败：{msg}"
+    if ok2:
+        return True, f"✅ 连接成功！Bucket=\'{bucket}\'，读写测试通过"
+    return False, f"连接成功但写入失败：{msg2}"
 
 
 # ════════════════════════════════════════════════════════════════════
 # 收藏夹完整同步（含所有 notes 字段）
 # ════════════════════════════════════════════════════════════════════
 def push_watchlist() -> Tuple[bool, str]:
-    """
-    上传完整收藏夹到 Supabase。
-    同步所有字段：ticker / name / added_at / notes[]
-      每条 note 包含：text（备注文字）/ img_url（图片链接）/ ts（时间戳）
-    """
     try:
         import storage as loc
-        items   = loc.load_watchlist()        # 完整列表，含 notes
+        items   = loc.load_watchlist()
         archive = loc.load_watchlist_archive()
-
-        # 验证 notes 结构完整性
         for item in items:
             if not isinstance(item.get("notes"), list):
                 item["notes"] = []
@@ -217,75 +225,51 @@ def push_watchlist() -> Tuple[bool, str]:
                 note.setdefault("text",    "")
                 note.setdefault("img_url", "")
                 note.setdefault("ts",      "")
-
         ok1, m1 = _upload("watchlist",         items)
         ok2, m2 = _upload("watchlist_archive", archive)
-
         note_cnt = sum(len(i.get("notes", [])) for i in items)
         if ok1 and ok2:
-            return True, (f"收藏 {len(items)} 个品种、"
-                          f"{note_cnt} 条备注（含图片链接）已同步到云端")
+            return True, f"收藏 {len(items)} 个品种、{note_cnt} 条备注已同步"
         return False, f"watchlist:{m1} / archive:{m2}"
     except Exception as e:
         return False, f"push_watchlist 异常：{e}"
 
 
 def pull_watchlist() -> Tuple[bool, str]:
-    """
-    从云端拉取收藏夹，完整合并到本地。
-    合并规则：
-      · 本地有、云端也有 → 合并 notes（按 ts 去重，追加云端独有的备注）
-      · 云端有、本地没有 → 追加到本地
-      · 本地有、云端没有 → 保留本地（不删除）
-    """
     try:
         import storage as loc
-
         cloud_items = _download("watchlist")
         if not isinstance(cloud_items, list):
             return False, "云端无收藏夹数据"
-
         local_items = loc.load_watchlist()
-        local_map   = {i["ticker"].upper(): i
-                       for i in local_items if isinstance(i, dict) and i.get("ticker")}
-        added_cnt  = 0
+        local_map   = {i["ticker"].upper(): i for i in local_items
+                       if isinstance(i, dict) and i.get("ticker")}
+        added = 0
         merged_notes = 0
-
         for ci in cloud_items:
             if not isinstance(ci, dict) or not ci.get("ticker"):
                 continue
             tk = ci["ticker"].upper()
-
             if tk not in local_map:
-                # 云端独有品种：完整追加（含所有备注）
                 local_map[tk] = ci
-                added_cnt += 1
+                added += 1
             else:
-                # 已存在：合并 notes（按 ts 去重）
                 local_entry  = local_map[tk]
                 local_notes  = local_entry.get("notes", [])
                 local_ts_set = {n.get("ts") for n in local_notes
                                 if isinstance(n, dict) and n.get("ts")}
                 for cn in ci.get("notes", []):
-                    if not isinstance(cn, dict):
-                        continue
-                    ts = cn.get("ts", "")
-                    if ts and ts not in local_ts_set:
+                    if isinstance(cn, dict) and cn.get("ts") not in local_ts_set:
                         local_notes.append({
                             "text":    cn.get("text",    ""),
                             "img_url": cn.get("img_url", ""),
-                            "ts":      ts,
+                            "ts":      cn.get("ts",      ""),
                         })
-                        local_ts_set.add(ts)
+                        local_ts_set.add(cn.get("ts"))
                         merged_notes += 1
-                local_entry["notes"] = sorted(local_notes,
-                                              key=lambda x: x.get("ts", ""))
+                local_entry["notes"] = sorted(local_notes, key=lambda x: x.get("ts",""))
                 local_map[tk] = local_entry
-
-        merged_list = list(local_map.values())
-        loc.save_watchlist(merged_list)
-
-        # 同步存档
+        loc.save_watchlist(list(local_map.values()))
         cloud_arch = _download("watchlist_archive")
         arch_added = 0
         if isinstance(cloud_arch, list):
@@ -299,9 +283,7 @@ def pull_watchlist() -> Tuple[bool, str]:
                         arch_added += 1
             if arch_added:
                 loc.save_watchlist_archive(local_arch)
-
-        return True, (f"恢复完成：新增品种 {added_cnt} 个，"
-                      f"补充备注 {merged_notes} 条，"
+        return True, (f"新增品种 {added}，补充备注 {merged_notes} 条，"
                       f"存档补充 {arch_added} 个")
     except Exception as e:
         return False, f"pull_watchlist 异常：{e}"
@@ -313,32 +295,25 @@ def pull_watchlist() -> Tuple[bool, str]:
 def push_all() -> Dict[str, Any]:
     import storage as loc
     results: Dict[str, Any] = {}
-
     ok, msg = push_watchlist()
     results["watchlist"] = (ok, msg)
-
-    wl_cnt = len(loc.load_watchlist())
-
     for key, loader in [
         ("scan_history", lambda: loc._load(loc.F_HIST,   [])),
-        ("scan_results", lambda: loc._load(loc.F_ALLRES,  [])),
+        ("scan_results", lambda: loc._load(loc.F_ALLRES, [])),
         ("scan_groups",  lambda: loc.load_scanned_groups()),
-        ("config",       lambda: loc._load(loc.F_CFG,     {})),
+        ("config",       lambda: loc._load(loc.F_CFG,    {})),
     ]:
         try:
-            data = loader()
-            ok2, msg2 = _upload(key, data)
+            ok2, msg2 = _upload(key, loader())
             results[key] = (ok2, msg2)
         except Exception as e:
             results[key] = (False, str(e))
-
-    res_cnt = len(loc._load(loc.F_ALLRES, []))
     ok3, msg3 = _upload("meta", {
         "last_sync":        time.strftime("%Y-%m-%d %H:%M:%S"),
         "last_sync_ts":     time.time(),
-        "version":          "4",
-        "watchlist_cnt":    wl_cnt,
-        "scan_results_cnt": res_cnt,
+        "version":          "5",
+        "watchlist_cnt":    len(loc.load_watchlist()),
+        "scan_results_cnt": len(loc._load(loc.F_ALLRES, [])),
     })
     results["meta"] = (ok3, msg3)
     return results
@@ -347,76 +322,55 @@ def push_all() -> Dict[str, Any]:
 def pull_all() -> Dict[str, Any]:
     import storage as loc
     results: Dict[str, Any] = {}
-
     ok, msg = pull_watchlist()
     results["watchlist"] = (ok, msg)
-
-    # 扫描历史
     cloud_hist = _download("scan_history")
     if isinstance(cloud_hist, list):
-        local_hist = loc._load(loc.F_HIST, [])
-        if not isinstance(local_hist, list):
-            local_hist = []
-        local_ids = {s.get("session_id") for s in local_hist if isinstance(s, dict)}
-        added = 0
-        for s in cloud_hist:
-            if isinstance(s, dict) and s.get("session_id") not in local_ids:
-                local_hist.append(s)
-                added += 1
+        local_hist = loc._load(loc.F_HIST, []) or []
+        local_ids  = {s.get("session_id") for s in local_hist if isinstance(s, dict)}
+        added = sum(1 for s in cloud_hist
+                    if isinstance(s, dict) and s.get("session_id") not in local_ids
+                    and local_hist.append(s) is None)
         if added:
             loc._save(loc.F_HIST, local_hist[-50:])
-        results["scan_history"] = (True, f"补充 {added} 条会话")
+        results["scan_history"] = (True, f"补充 {added} 条")
     else:
-        results["scan_history"] = (False, "无云端扫描历史")
-
-    # 扫描结果
+        results["scan_history"] = (False, "无云端数据")
     cloud_res = _download("scan_results")
     if isinstance(cloud_res, list):
-        local_res = loc._load(loc.F_ALLRES, [])
-        if not isinstance(local_res, list):
-            local_res = []
-        merged_map = {
-            (r["ticker"], r.get("timeframe", "")): r
-            for r in local_res if isinstance(r, dict) and r.get("ticker")
-        }
-        added = 0
-        for r in cloud_res:
-            if isinstance(r, dict) and r.get("ticker"):
-                k = (r["ticker"], r.get("timeframe", ""))
-                if k not in merged_map:
-                    merged_map[k] = r
-                    added += 1
+        local_res = loc._load(loc.F_ALLRES, []) or []
+        m = {(r["ticker"], r.get("timeframe","")): r for r in local_res
+             if isinstance(r, dict) and r.get("ticker")}
+        added = sum(1 for r in cloud_res
+                    if isinstance(r, dict) and r.get("ticker") and
+                    (r["ticker"], r.get("timeframe","")) not in m and
+                    m.update({(r["ticker"], r.get("timeframe","")): r}) is None)
         if added:
-            loc._save(loc.F_ALLRES, list(merged_map.values()))
-        results["scan_results"] = (True, f"补充 {added} 条，共 {len(merged_map)} 条")
+            loc._save(loc.F_ALLRES, list(m.values()))
+        results["scan_results"] = (True, f"补充 {added} 条，共 {len(m)} 条")
     else:
-        results["scan_results"] = (False, "无云端扫描结果")
-
-    # 品种组
+        results["scan_results"] = (False, "无云端数据")
     cloud_grp = _download("scan_groups")
     if isinstance(cloud_grp, list):
-        merged_g = list(set(loc.load_scanned_groups()) | set(cloud_grp))
-        loc._save(loc.F_GROUPS, merged_g)
-        results["scan_groups"] = (True, f"{len(merged_g)} 个品种组")
+        merged = list(set(loc.load_scanned_groups()) | set(cloud_grp))
+        loc._save(loc.F_GROUPS, merged)
+        results["scan_groups"] = (True, f"{len(merged)} 组")
     else:
-        results["scan_groups"] = (False, "无品种组数据")
-
-    # 配置
+        results["scan_groups"] = (False, "无云端数据")
     if not loc._load(loc.F_CFG, {}):
         cloud_cfg = _download("config")
         if isinstance(cloud_cfg, dict):
             loc._save(loc.F_CFG, cloud_cfg)
-            results["config"] = (True, "配置已恢复")
+            results["config"] = (True, "已恢复")
         else:
-            results["config"] = (False, "无配置数据")
+            results["config"] = (False, "无云端数据")
     else:
-        results["config"] = (True, "本地配置存在，已跳过")
-
+        results["config"] = (True, "本地已有，跳过")
     return results
 
 
 # ════════════════════════════════════════════════════════════════════
-# 定时同步 / 启动恢复
+# 定时 / 启动
 # ════════════════════════════════════════════════════════════════════
 def auto_sync_if_due(force: bool = False) -> Optional[Dict]:
     global _last_sync_ts
@@ -428,8 +382,7 @@ def auto_sync_if_due(force: bool = False) -> Optional[Dict]:
     if not force:
         meta = _download("meta")
         if isinstance(meta, dict):
-            last_ts = float(meta.get("last_sync_ts", 0))
-            if (now - last_ts) < SYNC_INTERVAL_SEC:
+            if (now - float(meta.get("last_sync_ts", 0))) < SYNC_INTERVAL_SEC:
                 _last_sync_ts = now
                 return None
     _last_sync_ts = now
@@ -439,17 +392,13 @@ def auto_sync_if_due(force: bool = False) -> Optional[Dict]:
 
 def startup_restore() -> Dict[str, Any]:
     if not is_configured():
-        return {"configured": False, "msg": "Supabase 未配置"}
-    ok, msg = ensure_bucket()
-    results = pull_all()
-    results["configured"] = True
-    results["bucket"]     = (ok, msg)
-    return results
+        return {"configured": False}
+    ensure_bucket()
+    r = pull_all()
+    r["configured"] = True
+    return r
 
 
-# ════════════════════════════════════════════════════════════════════
-# 状态查询
-# ════════════════════════════════════════════════════════════════════
 def get_sync_status() -> Dict[str, Any]:
     if not is_configured():
         return {"configured": False, "status": "未配置"}
@@ -477,6 +426,6 @@ def time_to_next_sync_str() -> str:
         return "立即同步"
     remain = max(0.0, SYNC_INTERVAL_SEC - (time.time() - float(meta["last_sync_ts"])))
     if remain <= 0:
-        return "已到期，下次访问自动触发"
+        return "已到期，下次访问触发"
     h, m = int(remain // 3600), int((remain % 3600) // 60)
     return f"{h}h {m:02d}m 后"
