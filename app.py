@@ -65,6 +65,9 @@ import page_alerts
 import page_settings
 import page_watchlist
 import page_universe
+import page_cloud
+import cloud_sync
+import cloud_sync
 
 
 # ── 侧边栏 ─────────────────────────────────────────────────────────
@@ -89,6 +92,7 @@ def sidebar():
             ("⭐", "自选收藏",   "watchlist"),
             ("📂", "历史记录",   "history"),
             ("🔔", "告警配置",   "alerts"),
+            ("☁️", "云端同步",  "cloud"),
             ("⚙️", "系统设置",  "settings"),
         ]
         p = st.session_state.get("page", "scanner")
@@ -96,6 +100,41 @@ def sidebar():
             if st.button(f"{icon}  {label}", key=f"nav_{key}", width="stretch"):
                 st.session_state.page = key
                 st.rerun()
+
+        # ── 云同步状态 ──────────────────────────────────────────
+        st.markdown("<hr style='margin:10px 0;border-color:#e5e7eb'>", unsafe_allow_html=True)
+        try:
+            status = cloud_sync.sync_status()
+            if status["configured"]:
+                last = status["last_push"]
+                nxt  = status["next_push"]
+                gurl = status["gist_url"]
+                st.markdown(
+                    f'''<div style="font-size:11px;color:#6b7280;padding:4px 0">
+                    ☁️ <b>云同步</b> · 每4小时自动备份<br>
+                    上次：{last}<br>
+                    下次：{nxt}
+                    {"<br><a href='" + gurl + "' target='_blank' style='color:#3b82f6'>查看 Gist ↗</a>" if gurl else ""}
+                    </div>''',
+                    unsafe_allow_html=True,
+                )
+                if st.button("☁️ 立即同步", key="sidebar_push", help="立即推送到 GitHub Gist"):
+                    with st.spinner("同步中…"):
+                        ok, msg = cloud_sync.push_to_gist(force=True)
+                    if ok:
+                        st.toast(f"✅ {msg[:60]}", icon="☁️")
+                        st.rerun()
+                    else:
+                        st.error(msg)
+            else:
+                st.markdown(
+                    '<div style="font-size:11px;color:#9ca3af;padding:4px 0">' +
+                    '☁️ 云同步未配置<br>' +
+                    '<a href="#" style="color:#3b82f6">→ 系统设置中配置</a></div>',
+                    unsafe_allow_html=True,
+                )
+        except Exception:
+            pass
 
         st.markdown("---")
 
@@ -175,15 +214,32 @@ def _check_password() -> bool:
 def main():
     _check_password()
 
-    # ── 启动时自动从 Streamlit Secrets 恢复收藏夹（跨重启持久化）──
+    # ── 启动时：从 GitHub Gist 自动恢复所有数据（云备份）──────────
+    if not st.session_state.get("_cloud_pulled"):
+        try:
+            ok, msg = cloud_sync.auto_pull_on_startup()
+            if ok and "成功" in msg:
+                st.toast(f"☁️ 云端数据已恢复：{msg}", icon="✅")
+        except Exception as e:
+            pass   # 云端恢复失败不影响正常使用
+
+    # ── 旧 Secrets 收藏夹恢复（兼容旧版本）────────────────────────
     if not st.session_state.get("_secrets_restored"):
         try:
             ok, msg = storage.restore_from_secrets()
-            if ok:
-                st.session_state["_secrets_restored"] = True
         except Exception:
             pass
-        st.session_state["_secrets_restored"] = True   # 无论成败，只尝试一次
+        st.session_state["_secrets_restored"] = True
+
+    # ── 每次渲染：检查是否需要自动 Push（4小时一次）────────────────
+    try:
+        result = cloud_sync.auto_push_if_due()
+        if result:
+            ok, msg = result
+            if ok:
+                st.toast("☁️ 数据已自动同步到云端", icon="✅")
+    except Exception:
+        pass
 
     if "page" not in st.session_state:
         st.session_state.page = "scanner"
@@ -198,6 +254,7 @@ def main():
         "watchlist":  page_watchlist.render,
         "history":    page_history.render,
         "alerts":     page_alerts.render,
+        "cloud":      page_cloud.render,
         "settings":   page_settings.render,
     }
     dispatch.get(p, page_scanner.render)()
