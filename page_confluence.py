@@ -27,6 +27,18 @@ def _cat_label(cat: str) -> str:
 
 
 def render():
+    # ── 处理收藏操作（session_state 方式）──────────────────────
+    _pending = st.session_state.pop("_cf_fav_action", None)
+    if _pending:
+        _act, _tk, _nm = _pending
+        if _act == "add":
+            storage.add_to_watchlist(ticker=_tk, name=_nm)
+            st.toast(f"已收藏：{_nm}", icon="⭐")
+        else:
+            storage.remove_from_watchlist(_tk)
+            st.toast(f"已移除：{_nm}", icon="🗑️")
+        st.rerun()
+
     st.markdown("## 🔥 多框架共振检测")
 
     if not storage.has_scan_data():
@@ -191,7 +203,12 @@ def render():
         is_fav = ticker in watchlist_tickers
 
         price_s  = f"{float(price):,.4f}" if price is not None else "—"
-        fav_icon = "★" if is_fav else "☆"
+        if is_fav:
+            fav_cell_html = ("<td style='width:5%;text-align:center;"
+                             "font-size:18px;color:#f59e0b'>★</td>")
+        else:
+            fav_cell_html = ("<td style='width:5%;text-align:center;"
+                             "font-size:18px;color:#d1d5db'>☆</td>")
 
         rows_html_cf.append(
             f"<tr style='border-bottom:1px solid #f3f4f6'>"
@@ -206,8 +223,8 @@ def render():
             f"{_score_bar(score)}</td>"
             f"<td style='width:6%'><a href='{info['tv_url']}' target='_blank' "
             f"style='color:#e85d04;font-size:12px'>📈 TV</a></td>"
-            f"<td style='width:5%;text-align:center'>{fav_icon}</td>"
-            f"</tr>"
+            + fav_cell_html
+            + f"</tr>"
         )
         fav_cf.append((ticker, info["name"], is_fav, idx))
 
@@ -231,29 +248,25 @@ def render():
         unsafe_allow_html=True,
     )
 
-    # 收藏按钮行（统一显示在表格下方）
-    btn_cols = st.columns(min(len(fav_cf), 8))
-    for i, (ticker, name, is_fav, idx) in enumerate(fav_cf):
-        with btn_cols[i % len(btn_cols)]:
-            if is_fav:
-                if st.button(f"★ {ticker}", key=f"cf_unfav_{ticker}_{idx}",
-                             help=f"从自选移除：{name}", type="secondary"):
-                    storage.remove_from_watchlist(ticker)
-                    st.toast(f"已移除：{name}", icon="🗑️")
-                    st.rerun()
-            else:
-                if st.button(f"☆ {ticker}", key=f"cf_fav_{ticker}_{idx}",
-                             help=f"添加到自选：{name}", type="secondary"):
-                    storage.add_to_watchlist(ticker=ticker, name=name, note="共振检测添加")
-                    st.toast(f"已收藏：{name}", icon="⭐")
-                    st.rerun()
-    st.markdown("""
-    <p style="font-size:11px;color:#9ca3af;margin-top:8px">
-    ✅ 黄金区间 (0.500–0.618) &nbsp;·&nbsp; 👀 接近区间 (&lt;5%) &nbsp;·&nbsp; · 区间外
-    &nbsp;｜&nbsp; ☆ 点击收藏 / ★ 点击取消收藏
-    </p>
-    """, unsafe_allow_html=True)
-    st.caption(f"显示 {len(filtered)} 个有信号品种")
+    # ── 收藏操作按钮区（表格下方，每行8个，完全对齐）──────────────
+    st.markdown(
+        '<div style="color:#6b7280;font-size:11px;margin:8px 0 4px">'
+        '✅ 黄金区间 &nbsp;👀 接近区间(&lt;5%) &nbsp;· 区间外 &nbsp;｜&nbsp;'
+        f'显示 {len(filtered)} 个品种 &nbsp;｜&nbsp; 点击下方按钮收藏 / 取消收藏'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    N = 8
+    for row_start in range(0, len(fav_cf), N):
+        batch = fav_cf[row_start:row_start + N]
+        cols  = st.columns(N)
+        for i, (ticker, name, is_fav, _) in enumerate(batch):
+            lbl = f"★ {ticker}" if is_fav else f"☆ {ticker}"
+            tip = f"{'取消收藏' if is_fav else '收藏'}：{name}"
+            if cols[i].button(lbl, key=f"cf_fav_{ticker}", help=tip):
+                st.session_state["_cf_fav_action"] = (
+                    "del" if is_fav else "add", ticker, name)
+                st.rerun()
 
     # ── CSV 下载 ─────────────────────────────────────────────────────
     export_rows = []
