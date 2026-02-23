@@ -137,116 +137,117 @@ def render():
 # 结果表（含逐行收藏按钮）
 # ════════════════════════════════════════════════════════════════════
 def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
-    watchlist        = storage.load_watchlist()
+    watchlist         = storage.load_watchlist()
     watchlist_tickers = {w["ticker"] for w in watchlist if isinstance(w, dict)}
 
-    # ── 统一渲染完整表格（避免 st.columns 分段导致对齐错位）──────
-    st.markdown("""
-    <style>
-    .res-table {width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
-    .res-table th {padding:8px 8px;background:#f9fafb;border-bottom:2px solid #e5e7eb;
-                   white-space:nowrap;overflow:hidden}
-    .res-table td {padding:7px 8px;border-bottom:1px solid #f3f4f6;vertical-align:middle;
-                   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    </style>
-    """, unsafe_allow_html=True)
+    # CSS
+    st.markdown("""<style>
+    .rt{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
+    .rt th{padding:8px 6px;background:#f9fafb;border-bottom:2px solid #e5e7eb;
+           font-size:12px;color:#374151;font-weight:600;white-space:nowrap;
+           overflow:hidden;text-align:left}
+    .rt td{padding:7px 6px;border-bottom:1px solid #f3f4f6;vertical-align:middle;
+           overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .rt tr.zone{background:#fffbeb}
+    </style>""", unsafe_allow_html=True)
 
-    seen_tickers: set = set()
-
-    # 先把所有行 HTML 和收藏按钮信息汇集，再一起渲染
-    # 表格整体一次性输出保证对齐，收藏按钮用 st.columns 叠加在表格下方
     rows_html = []
-    fav_actions = []   # [(ticker, name, is_fav, is_first, idx)]
+    fav_list  = []    # (ticker, name, is_fav, is_unique, df_idx)
+    seen: set = set()
 
     for idx, r in df.iterrows():
-        in_zone  = bool(r.get("in_zone", False))
-        dist     = safe_float(r.get("dist_pct"))
-        price    = r.get("current_price")
-        retrace  = r.get("retrace_pct")
-        conf_l   = r.get("confluence_label", "—") or "—"
-        tv_lnk   = r.get("tv_url", "#")
-        cat      = r.get("category", "")
-        ticker   = r.get("ticker", "")
-        name     = r.get("name", "")
+        in_zone   = bool(r.get("in_zone", False))
+        dist      = safe_float(r.get("dist_pct"))
+        price     = r.get("current_price")
+        retrace   = r.get("retrace_pct")
+        conf_l    = r.get("confluence_label", "\u2014") or "\u2014"
+        tv_lnk    = r.get("tv_url", "#")
+        cat       = r.get("category", "")
+        ticker    = r.get("ticker", "")
+        name      = r.get("name", "")
+        tf        = r.get("timeframe", "")
 
-        price_s   = f"{float(price):,.4f}"   if price   is not None else "—"
-        retrace_s = f"{float(retrace):.1f}%" if retrace is not None else "—"
-        dist_s    = "区间内" if in_zone else (f"{dist:.1f}%" if dist < 999 else "—")
+        price_s   = f"{float(price):,.4f}"   if price   is not None else "\u2014"
+        retrace_s = f"{float(retrace):.1f}%" if retrace is not None else "\u2014"
+        dist_s    = "\u533a\u95f4\u5185" if in_zone else (
+                    f"{dist:.1f}%"       if dist < 999 else "\u2014")
 
-        is_first = ticker not in seen_tickers
-        seen_tickers.add(ticker)
-        is_fav   = ticker in watchlist_tickers
+        unique  = ticker not in seen
+        seen.add(ticker)
+        is_fav  = ticker in watchlist_tickers
+        fav_list.append((ticker, name, is_fav, unique, idx))
 
-        row_bg = "background:#fffbeb;" if in_zone else ""
+        fav_icon = "\u2605" if is_fav else "\u2606"   # ★ / ☆
+        zone_cls = ' class="zone"' if in_zone else ""
+
         rows_html.append(
-            f"<tr style='{row_bg}border-bottom:1px solid #f3f4f6'>"
-            f"<td style='width:18%'><b>{name}</b><br>"
-            f"<small style='color:#9ca3af;font-family:monospace'>{ticker}</small></td>"
+            f"<tr{zone_cls}>"
+            f"<td style='width:20%'><b>{name}</b>"
+            f"<br><small style='color:#9ca3af;font-family:monospace'>{ticker}</small></td>"
             f"<td style='width:8%'><span class='badge b-gray'>{_cat_label(cat)}</span></td>"
-            f"<td style='width:7%'><span class='badge b-gray'>{r.get('timeframe','')}</span></td>"
+            f"<td style='width:7%'><span class='badge b-gray'>{tf}</span></td>"
             f"<td style='width:9%'>{_badge(in_zone, dist)}</td>"
             f"<td style='width:12%;font-family:monospace;text-align:right'>{price_s}</td>"
             f"<td style='width:8%;text-align:right'>{retrace_s}</td>"
             f"<td style='width:8%;text-align:right'>{dist_s}</td>"
-            f"<td style='width:12%'>{_conf_badge(conf_l)}</td>"
-            f"<td style='width:8%'><a href='{tv_lnk}' target='_blank' "
-            f"style='color:#e85d04;font-size:12px'>📈 TV</a></td>"
-            f"<td style='width:6%;text-align:center'>"
-            f"{'★' if is_fav else '☆'} </td>"
+            f"<td style='width:13%'>{_conf_badge(conf_l)}</td>"
+            f"<td style='width:7%'><a href='{tv_lnk}' target='_blank'"
+            f" style='color:#e85d04;font-size:12px'>\U0001f4c8 TV</a></td>"
+            f"<td style='width:6%;text-align:center;font-size:16px;color:#f59e0b'>"
+            f"{fav_icon if unique else ''}</td>"
             f"</tr>"
         )
-        fav_actions.append((ticker, name, is_fav, is_first, idx))
 
-    # 整体输出完整表格（一次性渲染，列完全对齐）
+    thead = (
+        "<tr>"
+        "<th style='width:20%'>\u8d44\u4ea7</th>"
+        "<th style='width:8%'>\u7c7b\u522b</th>"
+        "<th style='width:7%'>\u6846\u67b6</th>"
+        "<th style='width:9%'>\u72b6\u6001</th>"
+        "<th style='width:12%;text-align:right'>\u5f53\u524d\u4ef7\u683c</th>"
+        "<th style='width:8%;text-align:right'>\u56de\u64a4%</th>"
+        "<th style='width:8%;text-align:right'>\u8ddd\u533a\u95f4</th>"
+        "<th style='width:13%'>\u5171\u632f</th>"
+        "<th style='width:7%'>TV</th>"
+        "<th style='width:6%;text-align:center'>\u6536\u85cf</th>"
+        "</tr>"
+    )
     st.markdown(
-        f'''<table class="res-table">
-        <thead><tr>
-          <th style="text-align:left;width:18%">资产</th>
-          <th style="text-align:left;width:8%">类别</th>
-          <th style="text-align:left;width:7%">框架</th>
-          <th style="text-align:left;width:9%">状态</th>
-          <th style="text-align:right;width:12%">当前价格</th>
-          <th style="text-align:right;width:8%">回撤%</th>
-          <th style="text-align:right;width:8%">距区间</th>
-          <th style="text-align:left;width:12%">共振</th>
-          <th style="text-align:left;width:8%">TV</th>
-          <th style="text-align:center;width:6%">收藏</th>
-        </tr></thead>
-        <tbody>{'\n'.join(rows_html)}</tbody>
-        </table>''',
+        f"<table class='rt'><thead>{thead}</thead>"
+        f"<tbody>{chr(10).join(rows_html)}</tbody></table>",
         unsafe_allow_html=True,
     )
 
-    # ── 收藏按钮（独立行，紧跟表格下方）──────────────────────────
-    # 用极小的 st.columns 模拟每行收藏操作
-    st.markdown(
-        '<div style="display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 4px">',
-        unsafe_allow_html=True,
-    )
-    for ticker, name, is_fav, is_first, idx in fav_actions:
-        if not is_first:
-            continue
-        if is_fav:
-            if st.button(f"★ {ticker}", key=f"unfav_{ticker}_{idx}",
-                         help=f"从自选移除：{name}", type="secondary"):
-                storage.remove_from_watchlist(ticker)
-                st.toast(f"已移除：{name}", icon="🗑️")
-                st.rerun()
-        else:
-            if st.button(f"☆ {ticker}", key=f"fav_{ticker}_{idx}",
-                         help=f"添加到自选：{name}", type="secondary"):
-                storage.add_to_watchlist(ticker=ticker, name=name)
-                st.toast(f"已收藏：{name}", icon="⭐")
-                st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+    # Favorite buttons below table (8 per row)
+    uniq = [(t, n, f) for t, n, f, u, _ in fav_list if u]
+    if uniq:
+        st.markdown(
+            f'<div style="color:#9ca3af;font-size:11px;margin:8px 0 4px">' +
+            f'\u5171 {len(df)} \u6761 \uff5c \u70b9\u51fb \u2606 \u6536\u85cf / \u2605 \u53d6\u6d88\u6536\u85cf</div>',
+            unsafe_allow_html=True,
+        )
+        BATCH = 8
+        for i in range(0, len(uniq), BATCH):
+            batch    = uniq[i:i + BATCH]
+            btn_cols = st.columns(len(batch))
+            for col, (ticker, name, is_fav) in zip(btn_cols, batch):
+                label = f"\u2605 {ticker}" if is_fav else f"\u2606 {ticker}"
+                tip   = (f"\u53d6\u6d88\u6536\u85cf\uff1a{name}" if is_fav
+                         else f"\u6536\u85cf\uff1a{name}")
+                if col.button(label, key=f"favbtn_{ticker}", help=tip, type="secondary"):
+                    if is_fav:
+                        storage.remove_from_watchlist(ticker)
+                        st.toast(f"\u5df2\u79fb\u9664\uff1a{name}", icon="\U0001f5d1\ufe0f")
+                    else:
+                        storage.add_to_watchlist(ticker=ticker, name=name)
+                        st.toast(f"\u5df2\u6536\u85cf\uff1a{name}", icon="\u2b50")
+                    st.rerun()
 
-    st.caption(f"共 {len(df)} 条  ｜  点击上方按钮收藏 / 取消收藏品种")
     csv = df.drop(columns=[c for c in ["_r","_d"] if c in df.columns],
                   errors="ignore").to_csv(index=False).encode("utf-8-sig")
-    st.download_button("⬇️ 下载 CSV", csv,
+    st.download_button("\u2b07\ufe0f \u4e0b\u8f7d CSV", csv,
                        file_name=f"strx_fibo_{last_s.get('scan_date','today')}.csv",
                        mime="text/csv")
-
 
 # ════════════════════════════════════════════════════════════════════
 # Ticker 自动修正建议
