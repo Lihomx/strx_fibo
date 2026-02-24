@@ -161,15 +161,18 @@ def sidebar():
 
 
 # ── 密码门禁 ───────────────────────────────────────────────────────
+import hashlib as _hashlib
+
+def _make_token(pw: str) -> str:
+    """生成密码 token（用于 URL query param 持久化登录）"""
+    return _hashlib.sha256(("strx_fibo_" + pw).encode()).hexdigest()[:16]
+
 def _check_password() -> bool:
     """
-    读取 secrets.toml 中的 APP_PASSWORD 字段做简单密码验证。
-    Streamlit Cloud 部署：在 App Settings → Secrets 中添加：
-        APP_PASSWORD = "your_password_here"
-    本地开发：在项目根目录创建 .streamlit/secrets.toml 写入同样内容。
-    若未配置 APP_PASSWORD，则跳过密码验证（方便本地开发）。
+    密码验证 + 持久化登录：
+    - 验证通过后将 token 写入 st.query_params
+    - 刷新页面 / 新标签页时自动从 URL 读取 token 验证，无需重新输入密码
     """
-    # 未配置密码时直接放行
     try:
         required_pw = st.secrets.get("APP_PASSWORD", "")
     except Exception:
@@ -178,11 +181,22 @@ def _check_password() -> bool:
     if not required_pw:
         return True
 
-    # 已通过验证
+    valid_token = _make_token(required_pw)
+
+    # 1. session_state 已验证（当前会话）
     if st.session_state.get("_authenticated"):
         return True
 
-    # 显示登录界面
+    # 2. URL query param 中有 token（刷新/新标签自动恢复）
+    try:
+        url_token = st.query_params.get("_t", "")
+        if url_token == valid_token:
+            st.session_state["_authenticated"] = True
+            return True
+    except Exception:
+        pass
+
+    # 3. 显示登录界面
     st.markdown("""
     <div style="max-width:360px;margin:100px auto 0;text-align:center;">
       <div style="background:linear-gradient(135deg,#e85d04,#f97316);color:#fff;
@@ -199,9 +213,14 @@ def _check_password() -> bool:
             "密码", type="password", label_visibility="collapsed",
             placeholder="请输入访问密码…", key="_pw_input"
         )
-        if st.button("🔓 进入", type="primary", width="stretch", key="_pw_btn"):
+        if st.button("🔓 进入", type="primary", use_container_width=True, key="_pw_btn"):
             if pw_input == required_pw:
                 st.session_state["_authenticated"] = True
+                # 将 token 写入 URL，刷新/新标签页自动保持登录
+                try:
+                    st.query_params["_t"] = valid_token
+                except Exception:
+                    pass
                 st.rerun()
             else:
                 st.error("❌ 密码错误，请重试")

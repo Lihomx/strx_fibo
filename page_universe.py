@@ -87,25 +87,97 @@ def render():
 
 
 # ════════════════════════════════════════════════════════════════════
+
+# ════════════════════════════════════════════════════════════════════
+# 静态兜底品种（AKShare 无法访问时使用）
+# ════════════════════════════════════════════════════════════════════
+_FALLBACK_US = [
+    ("AAPL","苹果"),("MSFT","微软"),("GOOGL","谷歌"),("AMZN","亚马逊"),("NVDA","英伟达"),
+    ("META","Meta"),("TSLA","特斯拉"),("NFLX","Netflix"),("AMD","AMD"),("INTC","英特尔"),
+    ("JPM","摩根大通"),("BAC","美国银行"),("GS","高盛"),("MS","摩根士丹利"),("WFC","富国银行"),
+    ("JNJ","强生"),("PFE","辉瑞"),("MRNA","Moderna"),("ABBV","艾伯维"),("LLY","礼来"),
+    ("XOM","埃克森美孚"),("CVX","雪佛龙"),("COP","康菲石油"),("SLB","斯伦贝谢"),
+    ("BRK-B","伯克希尔B"),("V","Visa"),("MA","万事达"),("PYPL","PayPal"),
+    ("WMT","沃尔玛"),("COST","好市多"),("TGT","塔吉特"),("AMGN","安进"),
+    ("UBER","Uber"),("LYFT","Lyft"),("SNAP","Snap"),("TWTR","Twitter"),
+    ("DIS","迪士尼"),("CMCSA","康卡斯特"),("T","AT&T"),("VZ","Verizon"),
+    ("BABA","阿里巴巴"),("JD","京东"),("PDD","拼多多"),("BIDU","百度"),
+    ("NIO","蔚来"),("LI","理想汽车"),("XPEV","小鹏汽车"),
+    ("SPY","标普500ETF"),("QQQ","纳斯达克ETF"),("IWM","罗素2000ETF"),
+    ("GLD","黄金ETF"),("SLV","白银ETF"),("USO","原油ETF"),
+]
+_FALLBACK_A = [
+    ("000001","平安银行"),("000858","五粮液"),("002594","比亚迪"),("002415","海康威视"),
+    ("000333","美的集团"),("601398","工商银行"),("601857","中国石油"),("600519","贵州茅台"),
+    ("601318","中国平安"),("600036","招商银行"),("600900","长江电力"),("601012","隆基绿能"),
+    ("300750","宁德时代"),("002230","科大讯飞"),("601166","兴业银行"),("600030","中信证券"),
+    ("000002","万科A"),("600276","恒瑞医药"),("601628","中国人寿"),("600309","万华化学"),
+]
+_FALLBACK_HK = [
+    ("0700","腾讯控股"),("9988","阿里巴巴"),("3690","美团"),("0941","中国移动"),
+    ("1398","工商银行"),("0939","建设银行"),("2318","中国平安"),("1211","比亚迪股份"),
+    ("0005","汇丰控股"),("2020","安踏体育"),("9618","京东集团"),("1024","快手"),
+    ("0388","香港交易所"),("2382","舜宇光学"),("9999","网易"),("0175","吉利汽车"),
+]
+
 # 通用市场渲染
 # ════════════════════════════════════════════════════════════════════
 def _render_market(market_key: str, load_fn, category: str, cfg: dict, label: str):
 
-    # ── 加载品种列表 ────────────────────────────────────────────
+    # ── 加载品种列表（带重试 + 缓存清除）──────────────────────
+    cache_key = f"_uni_retry_{market_key}"
+    if st.session_state.get(cache_key):
+        # 用户点击重试：清除缓存强制重新拉取
+        st.cache_data.clear()
+        st.session_state.pop(cache_key, None)
+
     with st.spinner(f"📡 从 AKShare 获取{label}品种列表（约5-15秒）…"):
         try:
             raw_list: list = load_fn()
         except Exception as e:
-            st.error(
-                f"❌ 加载失败：{e}\n\n"
-                f"请确认 `akshare` 已安装（`requirements.txt` 中已包含）。"
-            )
-            st.info("💡 Streamlit Cloud 首次部署时会自动安装 akshare，约需 1-2 分钟。")
+            err_msg = str(e)
+            st.error(f"❌ 加载 {label} 品种列表失败")
+            with st.expander("查看错误详情"):
+                st.code(err_msg)
+            st.markdown("""
+            **常见原因及解决方案：**
+            - 🌐 **网络问题**：AKShare 需要访问东方财富服务器，Streamlit Cloud 的网络有时不稳定
+            - 📦 **依赖未安装**：首次部署后等待 2-3 分钟让 akshare 完成安装
+            - ⏱️ **临时超时**：点击下方「重新获取」按钮重试
+            """)
+            col_retry, col_manual = st.columns(2)
+            with col_retry:
+                if st.button("🔄 重新获取品种列表", key=f"retry_{market_key}", type="primary"):
+                    st.session_state[cache_key] = True
+                    st.rerun()
+            with col_manual:
+                st.info("💡 或在「自定义品种扫描」中直接输入 Ticker 代码使用")
             return
 
     if not raw_list:
-        st.warning("⚠️ 未获取到品种数据，请检查网络连接或稍后重试。")
-        return
+        # 使用内置静态兜底数据
+        fallback_map = {
+            "a_share":  _FALLBACK_A,
+            "hk_stock": _FALLBACK_HK,
+            "us_stock": _FALLBACK_US,
+        }
+        raw_list = fallback_map.get(market_key, [])
+        if raw_list:
+            st.warning(
+                f"⚠️ AKShare 未返回实时数据（可能是网络限制），已加载 {len(raw_list)} 个常用{label}品种。"
+                f"点击「🔄 重新获取」可重试实时列表。"
+            )
+            col_r, _ = st.columns([2, 5])
+            with col_r:
+                if st.button("🔄 重新获取实时列表", key=f"retry3_{market_key}"):
+                    st.cache_data.clear()
+                    st.rerun()
+        else:
+            st.warning("⚠️ 未获取到品种数据，请检查网络或稍后重试。")
+            if st.button("🔄 重新获取", key=f"retry2_{market_key}"):
+                st.cache_data.clear()
+                st.rerun()
+            return
 
     total_raw = len(raw_list)
     name_map: dict = {t: n for t, n in raw_list}

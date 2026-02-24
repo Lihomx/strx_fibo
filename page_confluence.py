@@ -157,43 +157,69 @@ def render():
         st.info("过滤后无结果")
         return
 
+    # ── 处理收藏 query_param 指令 ──────────────────────────────
+    try:
+        fav_act = st.query_params.get("_fav", "")
+        if fav_act:
+            parts = fav_act.split("|", 2)
+            if len(parts) == 3:
+                act, tk, nm = parts
+                if act == "add":
+                    storage.add_to_watchlist(ticker=tk, name=nm)
+                    st.toast(f"已收藏：{nm}", icon="⭐")
+                elif act == "del":
+                    storage.remove_from_watchlist(tk)
+                    st.toast(f"已移除：{nm}", icon="🗑️")
+            st.query_params.pop("_fav", None)
+            st.rerun()
+    except Exception:
+        pass
+
+    _pending = st.session_state.pop("_cf_fav_action", None)
+    if _pending:
+        act, tk, nm = _pending
+        if act == "add":
+            storage.add_to_watchlist(ticker=tk, name=nm)
+            st.toast(f"已收藏：{nm}", icon="⭐")
+        else:
+            storage.remove_from_watchlist(tk)
+            st.toast(f"已移除：{nm}", icon="🗑️")
+        st.rerun()
+
     watchlist         = storage.load_watchlist()
     watchlist_tickers = {w["ticker"] for w in watchlist if isinstance(w, dict)}
 
     TFS = ["Daily", "Weekly", "Monthly"]
 
-    # ── CSS ──────────────────────────────────────────────────────
     st.markdown("""
     <style>
-    .cf2{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
-    .cf2 th{padding:8px 6px;background:#f9fafb;border-bottom:2px solid #e5e7eb;
+    .cf3{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
+    .cf3 th{padding:9px 6px;background:#f9fafb;border-bottom:2px solid #e5e7eb;
             font-size:12px;color:#374151;font-weight:600;white-space:nowrap}
-    .cf2 td{padding:8px 6px;border-bottom:1px solid #f3f4f6;vertical-align:middle;
-            overflow:hidden;text-overflow:ellipsis;height:46px}
+    .cf3 td{padding:9px 6px;border-bottom:1px solid #f3f4f6;vertical-align:middle;overflow:hidden}
+    .cf3 tr:hover td{background:#f8fafc}
+    .fav-btn{font-size:20px;cursor:pointer;text-decoration:none;line-height:1;
+             display:block;text-align:center;padding:2px 0;transition:transform .1s}
+    .fav-btn:hover{transform:scale(1.3)}
+    .fav-star{color:#f59e0b}
+    .fav-empty{color:#d1d5db}
     </style>
     """, unsafe_allow_html=True)
 
     def _tf_icon(tf_data):
-        if not tf_data:
-            return '<span style="color:#d1d5db">·</span>'
-        if tf_data.get("in_zone"):
-            return "✅"
-        if tf_data.get("dist_pct") is not None and tf_data["dist_pct"] < 5:
-            return "👀"
+        if not tf_data: return '<span style="color:#d1d5db">·</span>'
+        if tf_data.get("in_zone"): return "✅"
+        if tf_data.get("dist_pct") is not None and tf_data["dist_pct"] < 5: return "👀"
         return '<span style="color:#d1d5db">·</span>'
 
     def _score_bar(score):
         pct   = score * 10
         color = "#dc2626" if pct >= 90 else "#f59e0b" if pct >= 60 else "#10b981"
-        return (
-            f'<div style="background:#f3f4f6;border-radius:3px;height:5px;'
-            f'margin-top:3px;width:100%">'
-            f'<div style="background:{color};width:{pct}%;height:5px;border-radius:3px"></div>'
-            f'</div>'
-        )
+        return (f'<div style="background:#f3f4f6;border-radius:3px;height:5px;margin-top:3px">'
+                f'<div style="background:{color};width:{pct}%;height:5px;border-radius:3px"></div></div>')
 
-    # ── 收集行数据 ────────────────────────────────────────────
-    rows_data = []
+    url_t = st.query_params.get("_t", "")
+    rows_html = []
     for idx, (ticker, info) in enumerate(filtered):
         tfs    = info["tfs"]
         score  = info["conf_score"]
@@ -201,92 +227,62 @@ def render():
         price  = info["current_price"]
         is_fav = ticker in watchlist_tickers
         price_s = f"{float(price):,.4f}" if price is not None else "—"
-        rows_data.append({
-            "ticker": ticker, "info": info, "tfs": tfs,
-            "score": score, "label": label, "price_s": price_s,
-            "is_fav": is_fav, "idx": idx,
-        })
 
-    # ── 双列布局：HTML 表格(93%) + 收藏列(7%) ────────────────
-    col_table, col_fav = st.columns([13, 1])
+        if is_fav:
+            fav_html = (f'<a href="?_t={url_t}&_fav=del|{ticker}|{info["name"]}" '
+                        f'class="fav-btn fav-star" title="取消收藏">★</a>')
+        else:
+            fav_html = (f'<a href="?_t={url_t}&_fav=add|{ticker}|{info["name"]}" '
+                        f'class="fav-btn fav-empty" title="收藏">☆</a>')
 
-    with col_table:
-        thead = (
-            "<tr>"
-            "<th style='width:20%'>资产</th>"
-            "<th style='width:8%'>类别</th>"
-            "<th style='width:11%;text-align:right'>当前价格</th>"
-            "<th style='width:7%;text-align:center'>日线</th>"
-            "<th style='width:7%;text-align:center'>周线</th>"
-            "<th style='width:7%;text-align:center'>月线</th>"
-            "<th style='width:13%'>共振信号</th>"
-            "<th style='width:10%'>评分</th>"
-            "<th style='width:7%'>TV</th>"
-            "</tr>"
-        )
-        rows_html = []
-        for rd in rows_data:
-            info   = rd["info"]
-            ticker = rd["ticker"]
-            rows_html.append(
-                f"<tr>"
-                f"<td><b>{info['name']}</b>"
-                f"<br><small style='color:#9ca3af;font-family:monospace'>{ticker}</small></td>"
-                f"<td><span class='badge b-gray'>{_cat_label(info['category'])}</span></td>"
-                f"<td style='font-family:monospace;font-size:12px;text-align:right'>{rd['price_s']}</td>"
-                + "".join(
-                    f"<td style='text-align:center'>{_tf_icon(rd['tfs'].get(tf))}</td>"
-                    for tf in TFS
-                )
-                + f"<td>{rd['label']}</td>"
-                f"<td><span style='font-size:12px;font-family:monospace'>{rd['score']}/10</span>"
-                f"{_score_bar(rd['score'])}</td>"
-                f"<td><a href='{info['tv_url']}' target='_blank' "
-                f"style='color:#e85d04;font-size:12px'>📈 TV</a></td>"
-                f"</tr>"
-            )
-        st.markdown(
-            f"<table class='cf2'><thead>{thead}</thead>"
-            f"<tbody>{''.join(rows_html)}</tbody></table>",
-            unsafe_allow_html=True,
+        rows_html.append(
+            f"<tr>"
+            f"<td style='width:19%'><b>{info['name']}</b>"
+            f"<br><small style='color:#9ca3af;font-family:monospace'>{ticker}</small></td>"
+            f"<td style='width:7%'><span class='badge b-gray'>{_cat_label(info['category'])}</span></td>"
+            f"<td style='width:11%;font-family:monospace;font-size:12px;text-align:right'>{price_s}</td>"
+            + "".join(f"<td style='width:7%;text-align:center'>{_tf_icon(tfs.get(tf))}</td>" for tf in TFS)
+            + f"<td style='width:13%'>{label}</td>"
+            f"<td style='width:10%'><span style='font-size:12px;font-family:monospace'>{score}/10</span>"
+            f"{_score_bar(score)}</td>"
+            f"<td style='width:7%'><a href='{info['tv_url']}' target='_blank' "
+            f"style='color:#e85d04;font-size:12px'>📈 TV</a></td>"
+            f"<td style='width:5%;text-align:center'>{fav_html}</td>"
+            f"</tr>"
         )
 
-    with col_fav:
-        # 表头占位
-        st.markdown(
-            '<div style="font-size:12px;color:#374151;font-weight:600;'
-            'padding:8px 0;border-bottom:2px solid #e5e7eb;text-align:center">收藏</div>',
-            unsafe_allow_html=True,
-        )
-        for rd in rows_data:
-            lbl = "★" if rd["is_fav"] else "☆"
-            tip = f"{'取消收藏' if rd['is_fav'] else '收藏'}：{rd['info']['name']}"
-            if st.button(lbl, key=f"cf_fav_{rd['ticker']}_{rd['idx']}",
-                         help=tip, use_container_width=True):
-                st.session_state["_cf_fav_action"] = (
-                    "del" if rd["is_fav"] else "add",
-                    rd["ticker"], rd["info"]["name"])
-                st.rerun()
-
+    thead = (
+        "<tr>"
+        "<th style='width:19%'>资产</th>"
+        "<th style='width:7%'>类别</th>"
+        "<th style='width:11%;text-align:right'>当前价格</th>"
+        "<th style='width:7%;text-align:center'>日线</th>"
+        "<th style='width:7%;text-align:center'>周线</th>"
+        "<th style='width:7%;text-align:center'>月线</th>"
+        "<th style='width:13%'>共振信号</th>"
+        "<th style='width:10%'>评分</th>"
+        "<th style='width:7%'>TV</th>"
+        "<th style='width:5%;text-align:center'>收藏</th>"
+        "</tr>"
+    )
     st.markdown(
-        f'<div style="color:#9ca3af;font-size:11px;margin-top:4px">'
-        f'✅ 黄金区间 &nbsp;👀 接近区间(&lt;5%) &nbsp;· 区间外 &nbsp;｜&nbsp;'
-        f'显示 {len(filtered)} 个品种 &nbsp;｜&nbsp; 点击收藏列 ☆/★ 即可操作'
-        f'</div>',
+        f"<table class='cf3'><thead>{thead}</thead>"
+        f"<tbody>{''.join(rows_html)}</tbody></table>",
         unsafe_allow_html=True,
     )
 
-    # ── CSV 下载 ─────────────────────────────────────────────────
+    st.markdown(
+        f'<div style="color:#9ca3af;font-size:11px;margin-top:6px">'
+        f'✅ 黄金区间 &nbsp;👀 接近区间(&lt;5%) &nbsp;· 区间外 &nbsp;｜&nbsp;'
+        f'显示 {len(filtered)} 个品种 &nbsp;｜&nbsp; 点击 ☆/★ 收藏</div>',
+        unsafe_allow_html=True,
+    )
+
     export_rows = []
     for ticker, info in filtered:
-        row = {
-            "ticker":        ticker,
-            "name":          info["name"],
-            "category":      info["category"],
-            "current_price": info["current_price"],
-            "conf_score":    info["conf_score"],
-            "conf_label":    info["conf_label"],
-        }
+        row = {"ticker": ticker, "name": info["name"], "category": info["category"],
+               "current_price": info["current_price"], "conf_score": info["conf_score"],
+               "conf_label": info["conf_label"]}
         for tf in TFS:
             td = info["tfs"].get(tf, {})
             row[f"{tf}_in_zone"] = td.get("in_zone", False)
@@ -296,6 +292,5 @@ def render():
     st.download_button(
         "⬇️ 下载共振报告 CSV",
         pd.DataFrame(export_rows).to_csv(index=False).encode("utf-8-sig"),
-        file_name="strx_confluence.csv",
-        mime="text/csv",
+        file_name="strx_confluence.csv", mime="text/csv",
     )
