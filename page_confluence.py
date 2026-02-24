@@ -165,17 +165,13 @@ def render():
     # ── CSS ──────────────────────────────────────────────────────
     st.markdown("""
     <style>
-    .cf-hdr{font-size:12px;color:#6b7280;font-weight:600;
-            padding:5px 0;border-bottom:2px solid #e5e7eb;white-space:nowrap}
-    .cf-cell{font-size:13px;padding:5px 0;
-             border-bottom:1px solid #f3f4f6;
-             min-height:40px;display:flex;align-items:center;flex-wrap:wrap}
+    .cf2{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
+    .cf2 th{padding:8px 6px;background:#f9fafb;border-bottom:2px solid #e5e7eb;
+            font-size:12px;color:#374151;font-weight:600;white-space:nowrap}
+    .cf2 td{padding:8px 6px;border-bottom:1px solid #f3f4f6;vertical-align:middle;
+            overflow:hidden;text-overflow:ellipsis;height:46px}
     </style>
     """, unsafe_allow_html=True)
-
-    # 列宽: 资产 类别 价格 日线 周线 月线 共振 评分 TV 收藏
-    W = [2.8, 1.0, 1.6, 0.8, 0.8, 0.8, 1.8, 1.4, 0.8, 0.8]
-    HDRS = ["资产", "类别", "当前价格", "日线", "周线", "月线", "共振信号", "评分", "TV", "收藏"]
 
     def _tf_icon(tf_data):
         if not tf_data:
@@ -196,74 +192,89 @@ def render():
             f'</div>'
         )
 
-    # ── 表头 ────────────────────────────────────────────────────
-    hcols = st.columns(W)
-    for c, h in zip(hcols, HDRS):
-        c.markdown(f'<div class="cf-hdr">{h}</div>', unsafe_allow_html=True)
-
-    # ── 数据行（每行 st.columns，收藏按钮在最后一列）──────────
+    # ── 收集行数据 ────────────────────────────────────────────
+    rows_data = []
     for idx, (ticker, info) in enumerate(filtered):
         tfs    = info["tfs"]
         score  = info["conf_score"]
         label  = info["conf_label"]
         price  = info["current_price"]
         is_fav = ticker in watchlist_tickers
-
         price_s = f"{float(price):,.4f}" if price is not None else "—"
+        rows_data.append({
+            "ticker": ticker, "info": info, "tfs": tfs,
+            "score": score, "label": label, "price_s": price_s,
+            "is_fav": is_fav, "idx": idx,
+        })
 
-        rc = st.columns(W)
+    # ── 双列布局：HTML 表格(93%) + 收藏列(7%) ────────────────
+    col_table, col_fav = st.columns([13, 1])
 
-        rc[0].markdown(
-            f'<div class="cf-cell"><div><b>{info["name"]}</b><br>'
-            f'<span style="color:#9ca3af;font-size:11px;font-family:monospace">{ticker}</span>'
-            f'</div></div>', unsafe_allow_html=True)
+    with col_table:
+        thead = (
+            "<tr>"
+            "<th style='width:20%'>资产</th>"
+            "<th style='width:8%'>类别</th>"
+            "<th style='width:11%;text-align:right'>当前价格</th>"
+            "<th style='width:7%;text-align:center'>日线</th>"
+            "<th style='width:7%;text-align:center'>周线</th>"
+            "<th style='width:7%;text-align:center'>月线</th>"
+            "<th style='width:13%'>共振信号</th>"
+            "<th style='width:10%'>评分</th>"
+            "<th style='width:7%'>TV</th>"
+            "</tr>"
+        )
+        rows_html = []
+        for rd in rows_data:
+            info   = rd["info"]
+            ticker = rd["ticker"]
+            rows_html.append(
+                f"<tr>"
+                f"<td><b>{info['name']}</b>"
+                f"<br><small style='color:#9ca3af;font-family:monospace'>{ticker}</small></td>"
+                f"<td><span class='badge b-gray'>{_cat_label(info['category'])}</span></td>"
+                f"<td style='font-family:monospace;font-size:12px;text-align:right'>{rd['price_s']}</td>"
+                + "".join(
+                    f"<td style='text-align:center'>{_tf_icon(rd['tfs'].get(tf))}</td>"
+                    for tf in TFS
+                )
+                + f"<td>{rd['label']}</td>"
+                f"<td><span style='font-size:12px;font-family:monospace'>{rd['score']}/10</span>"
+                f"{_score_bar(rd['score'])}</td>"
+                f"<td><a href='{info['tv_url']}' target='_blank' "
+                f"style='color:#e85d04;font-size:12px'>📈 TV</a></td>"
+                f"</tr>"
+            )
+        st.markdown(
+            f"<table class='cf2'><thead>{thead}</thead>"
+            f"<tbody>{''.join(rows_html)}</tbody></table>",
+            unsafe_allow_html=True,
+        )
 
-        rc[1].markdown(
-            f'<div class="cf-cell">'
-            f'<span class="badge b-gray">{_cat_label(info["category"])}</span></div>',
-            unsafe_allow_html=True)
-
-        rc[2].markdown(
-            f'<div class="cf-cell" style="justify-content:flex-end;'
-            f'font-family:monospace;font-size:12px">{price_s}</div>',
-            unsafe_allow_html=True)
-
-        for i, tf in enumerate(TFS):
-            icon = _tf_icon(tfs.get(tf))
-            rc[3 + i].markdown(
-                f'<div class="cf-cell" style="justify-content:center">{icon}</div>',
-                unsafe_allow_html=True)
-
-        rc[6].markdown(
-            f'<div class="cf-cell">{label}</div>', unsafe_allow_html=True)
-
-        rc[7].markdown(
-            f'<div class="cf-cell"><div style="width:100%">'
-            f'<span style="font-size:12px;font-family:monospace">{score}/10</span>'
-            f'{_score_bar(score)}</div></div>',
-            unsafe_allow_html=True)
-
-        rc[8].markdown(
-            f'<div class="cf-cell">'
-            f'<a href="{info["tv_url"]}" target="_blank" '
-            f'style="color:#e85d04;font-size:12px">📈 TV</a></div>',
-            unsafe_allow_html=True)
-
-        # 收藏按钮：直接在同行最后一列
-        lbl = "★" if is_fav else "☆"
-        tip = f"{'取消收藏' if is_fav else '收藏'}：{info['name']}"
-        if rc[9].button(lbl, key=f"cf_fav_{ticker}_{idx}",
-                        help=tip, use_container_width=True):
-            st.session_state["_cf_fav_action"] = (
-                "del" if is_fav else "add", ticker, info["name"])
-            st.rerun()
+    with col_fav:
+        # 表头占位
+        st.markdown(
+            '<div style="font-size:12px;color:#374151;font-weight:600;'
+            'padding:8px 0;border-bottom:2px solid #e5e7eb;text-align:center">收藏</div>',
+            unsafe_allow_html=True,
+        )
+        for rd in rows_data:
+            lbl = "★" if rd["is_fav"] else "☆"
+            tip = f"{'取消收藏' if rd['is_fav'] else '收藏'}：{rd['info']['name']}"
+            if st.button(lbl, key=f"cf_fav_{rd['ticker']}_{rd['idx']}",
+                         help=tip, use_container_width=True):
+                st.session_state["_cf_fav_action"] = (
+                    "del" if rd["is_fav"] else "add",
+                    rd["ticker"], rd["info"]["name"])
+                st.rerun()
 
     st.markdown(
-        f'<hr style="border:none;border-top:1px solid #e5e7eb;margin:4px 0">'
-        f'<div style="color:#9ca3af;font-size:11px">'
+        f'<div style="color:#9ca3af;font-size:11px;margin-top:4px">'
         f'✅ 黄金区间 &nbsp;👀 接近区间(&lt;5%) &nbsp;· 区间外 &nbsp;｜&nbsp;'
         f'显示 {len(filtered)} 个品种 &nbsp;｜&nbsp; 点击收藏列 ☆/★ 即可操作'
-        f'</div>', unsafe_allow_html=True)
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
     # ── CSV 下载 ─────────────────────────────────────────────────
     export_rows = []

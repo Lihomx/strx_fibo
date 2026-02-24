@@ -417,11 +417,14 @@ def _render_card(item: dict, idx: int, result_map: dict):
         # ── 最新备注（标红，放在最后）─────────────────────────────
         if latest:
             thumb = _thumb_html(latest.get("img_url", ""), 140)
+            ts_str = latest.get("ts", "")
             st.markdown(
                 f'<div style="background:#fff1f2;border-left:3px solid #ef4444;'
-                f'border-radius:0 6px 6px 0;padding:7px 12px;margin:6px 0 2px;">'
-                f'<span style="color:#ef4444;font-size:11px;font-weight:600">'
-                f'📝 最新备注 · {latest.get("ts","")}</span><br>'
+                f'border-radius:0 6px 6px 0;padding:8px 12px 6px;margin:6px 0 2px;">'
+                f'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">'
+                f'<span style="color:#ef4444;font-size:11px;font-weight:600">📝 最新备注</span>'
+                f'<span style="color:#9ca3af;font-size:10px">{ts_str}</span>'
+                f'</div>'
                 f'<span style="color:#1f2937;font-size:13px">{latest["text"]}</span>'
                 f'{("<br>" + thumb) if thumb else ""}'
                 f'</div>',
