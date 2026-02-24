@@ -56,8 +56,24 @@ def tv_symbol(ticker: str) -> str:
             return f"{ex}:{ticker[:ticker.rfind(sfx)]}"
     return ticker.replace("=X","").replace("-USD","").replace("=F","").replace("^","")
 
-def tv_url(ticker: str) -> str:
-    return f"https://www.tradingview.com/chart/?symbol={tv_symbol(ticker)}"
+# TradingView interval mapping (timeframe name → TV interval param)
+_TV_INTERVAL = {
+    "Daily":   "D",
+    "Weekly":  "W",
+    "Monthly": "M",
+    "1d":      "D",
+    "1wk":     "W",
+    "1mo":     "M",
+}
+
+def tv_url(ticker: str, timeframe: str = "") -> str:
+    """生成中文版 TradingView 链接，带正确的时间框架参数"""
+    sym = tv_symbol(ticker)
+    interval = _TV_INTERVAL.get(timeframe, "D")
+    return (
+        f"https://cn.tradingview.com/chart/"
+        f"?symbol={sym}&interval={interval}"
+    )
 
 
 # ════════════════════════════════════════════════════════════════════

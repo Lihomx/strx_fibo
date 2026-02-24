@@ -468,7 +468,7 @@ def run_full_scan(
                 "confluence_score": conf["score"],
                 "confluence_label": conf["label"],
                 "tv_symbol":        tv_symbol(ticker),
-                "tv_url":           tv_url(ticker),
+                "tv_url":           tv_url(ticker, tf_name),
             })
 
     elapsed_ms   = int((time.time() - t0) * 1000)

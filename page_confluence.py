@@ -69,7 +69,10 @@ def render():
             ticker_info[t] = {
                 "name":          r.get("name", ""),
                 "category":      r.get("category", ""),
-                "tv_url":        r.get("tv_url", "#"),
+                "tv_url":        r.get("tv_url", "#").replace(
+                    "https://www.tradingview.com",
+                    "https://cn.tradingview.com"
+                ),
                 "conf_label":    r.get("confluence_label", "—") or "—",
                 "conf_score":    int(r.get("confluence_score") or 0),
                 "current_price": None,

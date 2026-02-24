@@ -23,7 +23,7 @@ def _tv_link(ticker: str) -> str:
     try:
         return _tv_url(ticker)
     except Exception:
-        return f"https://www.tradingview.com/chart/?symbol={ticker}"
+        return f"https://cn.tradingview.com/chart/?symbol={ticker}"
 
 
 def _thumb_html(img_url: str, max_w: int = 120) -> str:
