@@ -34,7 +34,7 @@ def _mark(ticker: str, tf: str) -> None:
 
 def build_message(ticker: str, name: str, tf: str,
                   fibo: Dict, conf: Dict) -> str:
-    from scanner import tv_url
+    from assets import tv_url  # 使用 assets 版本，支持 cn 域名 + 时间框架
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     return (
         f"📐 STRX Fibo 信号  {conf['label']}\n"
@@ -44,7 +44,7 @@ def build_message(ticker: str, name: str, tf: str,
         f"💰 价格: {fibo['current']:,.4f}\n"
         f"📏 黄金区: {fibo['zone_bot']:,.4f} – {fibo['zone_top']:,.4f}\n"
         f"📉 回撤: {fibo['retrace_pct']:.1f}%\n"
-        f"🔗 {tv_url(ticker)}\n"
+        f"🔗 {tv_url(ticker, tf)}\n"
         f"🕐 {now}"
     )
 

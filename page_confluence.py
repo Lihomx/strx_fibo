@@ -7,6 +7,7 @@ import streamlit as st
 
 import storage
 from assets import CATEGORY_LABELS
+from assets import tv_url as _assets_tv_url
 
 
 def _safe_dist(r: dict) -> float:
@@ -69,10 +70,7 @@ def render():
             ticker_info[t] = {
                 "name":          r.get("name", ""),
                 "category":      r.get("category", ""),
-                "tv_url":        r.get("tv_url", "#").replace(
-                    "https://www.tradingview.com",
-                    "https://cn.tradingview.com"
-                ),
+                "tv_url":        _assets_tv_url(t),  # 实时生成 cn.tradingview.com 链接
                 "conf_label":    r.get("confluence_label", "—") or "—",
                 "conf_score":    int(r.get("confluence_score") or 0),
                 "current_price": None,
@@ -162,17 +160,21 @@ def render():
 
     # ── 处理收藏 query_param 指令 ──────────────────────────────
     try:
+        from urllib.parse import unquote as _uq
+        import re as _re
         fav_act = st.query_params.get("_fav", "")
         if fav_act:
+            fav_act = _uq(fav_act)
             parts = fav_act.split("|", 2)
             if len(parts) == 3:
                 act, tk, nm = parts
-                if act == "add":
-                    storage.add_to_watchlist(ticker=tk, name=nm)
-                    st.toast(f"已收藏：{nm}", icon="⭐")
-                elif act == "del":
-                    storage.remove_from_watchlist(tk)
-                    st.toast(f"已移除：{nm}", icon="🗑️")
+                if act in ("add", "del") and _re.match(r"^[\w.\-\^=]+$", tk):
+                    if act == "add":
+                        storage.add_to_watchlist(ticker=tk, name=nm[:60])
+                        st.toast(f"已收藏：{nm[:40]}", icon="⭐")
+                    else:
+                        storage.remove_from_watchlist(tk)
+                        st.toast(f"已移除：{nm[:40]}", icon="🗑️")
             st.query_params.pop("_fav", None)
             st.rerun()
     except Exception:
@@ -231,17 +233,22 @@ def render():
         is_fav = ticker in watchlist_tickers
         price_s = f"{float(price):,.4f}" if price is not None else "—"
 
-        if is_fav:
-            fav_html = (f'<a href="?_t={url_t}&_fav=del|{ticker}|{info["name"]}" '
-                        f'class="fav-btn fav-star" title="取消收藏">★</a>')
-        else:
-            fav_html = (f'<a href="?_t={url_t}&_fav=add|{ticker}|{info["name"]}" '
-                        f'class="fav-btn fav-empty" title="收藏">☆</a>')
+        from html import escape as _he2
+        from urllib.parse import quote as _qu2
+        _fav_enc = _qu2(f"{'del' if is_fav else 'add'}|{ticker}|{info['name']}", safe="")
+        _fav_tip = _he2(f"{'取消收藏' if is_fav else '收藏'}：{info['name']}")
+        _fav_ico = "★" if is_fav else "☆"
+        _fav_cls = "fav-star" if is_fav else "fav-empty"
+        fav_html = (
+            f'<a href="?_t={_he2(url_t)}&_fav={_fav_enc}" '
+            f'class="fav-btn {_fav_cls}" title="{_fav_tip}">{_fav_ico}</a>'
+        )
 
+        from html import escape as _he3
         rows_html.append(
             f"<tr>"
-            f"<td style='width:19%'><b>{info['name']}</b>"
-            f"<br><small style='color:#9ca3af;font-family:monospace'>{ticker}</small></td>"
+            f"<td style='width:19%'><b>{_he3(info['name'])}</b>"
+            f"<br><small style='color:#9ca3af;font-family:monospace'>{_he3(ticker)}</small></td>"
             f"<td style='width:7%'><span class='badge b-gray'>{_cat_label(info['category'])}</span></td>"
             f"<td style='width:11%;font-family:monospace;font-size:12px;text-align:right'>{price_s}</td>"
             + "".join(f"<td style='width:7%;text-align:center'>{_tf_icon(tfs.get(tf))}</td>" for tf in TFS)

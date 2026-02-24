@@ -151,18 +151,22 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
 
     # ── 处理 query_params 收藏指令（页面渲染前执行）────────────
     try:
+        from urllib.parse import unquote as _uq
+        import re as _re
         fav_act = st.query_params.get("_fav", "")
         if fav_act:
-            parts = fav_act.split("|", 2)   # "add|TICKER|NAME" 或 "del|TICKER|NAME"
+            fav_act = _uq(fav_act)          # URL decode
+            parts = fav_act.split("|", 2)   # "add|TICKER|NAME"
             if len(parts) == 3:
                 act, tk, nm = parts
-                if act == "add":
-                    storage.add_to_watchlist(ticker=tk, name=nm)
-                    st.toast(f"已收藏：{nm}", icon="⭐")
-                elif act == "del":
-                    storage.remove_from_watchlist(tk)
-                    st.toast(f"已移除：{nm}", icon="🗑️")
-            # 清除 query param，避免刷新重复执行
+                # 安全校验：action 只允许 add/del，ticker 只允许字母数字符号
+                if act in ("add", "del") and _re.match(r'^[\w\.\-\^=]+$', tk):
+                    if act == "add":
+                        storage.add_to_watchlist(ticker=tk, name=nm[:60])
+                        st.toast(f"已收藏：{nm[:40]}", icon="⭐")
+                    else:
+                        storage.remove_from_watchlist(tk)
+                        st.toast(f"已移除：{nm[:40]}", icon="🗑️")
             st.query_params.pop("_fav", None)
             st.rerun()
     except Exception:
@@ -202,6 +206,7 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
     </style>
     """, unsafe_allow_html=True)
 
+    from html import escape as _he
     seen: set = set()
     rows_html = []
 
@@ -211,11 +216,15 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
         price     = r.get("current_price")
         retrace   = r.get("retrace_pct")
         conf_l    = r.get("confluence_label", "—") or "—"
-        tv_lnk    = r.get("tv_url", "#")
         cat       = r.get("category", "")
-        ticker    = r.get("ticker", "")
-        name      = r.get("name", "")
+        ticker    = str(r.get("ticker", ""))
+        name      = str(r.get("name", ""))
         tf        = r.get("timeframe", "")
+        # 始终从 ticker+timeframe 实时生成 TV 链接（不依赖存储的旧 URL）
+        tv_lnk    = tv_url(ticker, tf) if ticker else "#"
+        # XSS 防护：转义用户可控字段
+        name_s    = _he(name)
+        ticker_s  = _he(ticker)
 
         price_s   = f"{float(price):,.4f}"   if price   is not None else "—"
         retrace_s = f"{float(retrace):.1f}%" if retrace is not None else "—"
@@ -225,30 +234,29 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
         seen.add(ticker)
         is_fav   = ticker in watchlist_tickers
 
-        # 收藏列：用 <a href> 触发 query_params，完全在 HTML 表格内，永远对齐
+        # 收藏列：用 <a href> 触发 query_params
+        from urllib.parse import quote as _qu
+        _t = _he(st.query_params.get("_t", ""))
         if is_first:
-            if is_fav:
-                fav_param = f"del|{ticker}|{name}"
-                fav_html  = (
-                    f'<a href="?_t={st.query_params.get("_t","")}&_fav={fav_param}" '
-                    f'class="fav-btn fav-star" title="取消收藏 {name}">★</a>'
-                )
-            else:
-                fav_param = f"add|{ticker}|{name}"
-                fav_html  = (
-                    f'<a href="?_t={st.query_params.get("_t","")}&_fav={fav_param}" '
-                    f'class="fav-btn fav-empty" title="收藏 {name}">☆</a>'
-                )
+            # URL encode ticker+name 防止注入
+            fav_enc = _qu(f"{'del' if is_fav else 'add'}|{ticker}|{name}", safe="")
+            _icon  = "★" if is_fav else "☆"
+            _cls   = "fav-star" if is_fav else "fav-empty"
+            _tip   = _he(f"{'取消收藏' if is_fav else '收藏'}：{name}")
+            fav_html = (
+                f'<a href="?_t={_t}&_fav={fav_enc}" '
+                f'class="fav-btn {_cls}" title="{_tip}">{_icon}</a>'
+            )
         else:
             fav_html = ""
 
         zone_cls = ' class="zone"' if in_zone else ""
         rows_html.append(
             f"<tr{zone_cls}>"
-            f"<td style='width:20%'><b>{name}</b>"
-            f"<br><small style='color:#9ca3af;font-family:monospace'>{ticker}</small></td>"
+            f"<td style='width:20%'><b>{name_s}</b>"
+            f"<br><small style='color:#9ca3af;font-family:monospace'>{ticker_s}</small></td>"
             f"<td style='width:8%'><span class='badge b-gray'>{_cat_label(cat)}</span></td>"
-            f"<td style='width:7%'><span class='badge b-gray'>{tf}</span></td>"
+            f"<td style='width:7%'><span class='badge b-gray'>{_he(tf)}</span></td>"
             f"<td style='width:9%'>{_badge(in_zone, dist)}</td>"
             f"<td style='width:12%;font-family:monospace;font-size:12px;text-align:right'>{price_s}</td>"
             f"<td style='width:8%;text-align:right'>{retrace_s}</td>"

@@ -14,6 +14,8 @@ import pandas as pd
 
 import storage
 from assets import tv_url as _tv_url
+from html import escape as _he
+from urllib.parse import quote as _qu
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -27,17 +29,24 @@ def _tv_link(ticker: str) -> str:
 
 
 def _thumb_html(img_url: str, max_w: int = 120) -> str:
-    """将图片链接渲染为可点击的缩略图 HTML。"""
+    """将图片链接渲染为可点击的缩略图 HTML（安全校验：仅 http/https）。"""
     if not img_url:
         return ""
+    _url = str(img_url).strip()
+    # 安全：只允许 http/https，防止 javascript: 等协议注入
+    if not (_url.startswith("https://") or _url.startswith("http://")):
+        return ""
+    from html import escape as _he_img
+    _url_e = _he_img(_url)
     return (
-        f'<a href="{img_url}" target="_blank" title="点击查看大图">'
-        f'<img src="{img_url}" style="max-width:{max_w}px;max-height:90px;'
+        f'<a href="{_url_e}" target="_blank" title="点击查看大图">'
+        f'<img src="{_url_e}" style="max-width:{max_w}px;max-height:90px;'
         f'border-radius:6px;border:1px solid #e5e7eb;object-fit:cover;'
         f'vertical-align:middle;margin-top:4px" '
         f'onerror="this.style.display=\'none\'">'
         f'</a>'
     )
+
 
 
 def _latest_note(item: dict) -> dict | None:
@@ -374,7 +383,7 @@ def _render_card(item: dict, idx: int, result_map: dict):
                         f'<div style="border-left:2px solid #e5e7eb;'
                         f'padding:5px 10px;margin:4px 0;font-size:12px;">'
                         f'<span style="color:#9ca3af">{n.get("ts","")}</span>&nbsp;&nbsp;'
-                        f'<span style="color:#374151">{n["text"]}</span>'
+                        f'<span style="color:#374151">{_he(str(n["text"]))}</span>'
                         f'{("<br>" + thumb) if thumb else ""}'
                         f'</div>',
                         unsafe_allow_html=True,
@@ -425,7 +434,7 @@ def _render_card(item: dict, idx: int, result_map: dict):
                 f'<span style="color:#ef4444;font-size:11px;font-weight:600">📝 最新备注</span>'
                 f'<span style="color:#9ca3af;font-size:10px">{ts_str}</span>'
                 f'</div>'
-                f'<span style="color:#1f2937;font-size:13px">{latest["text"]}</span>'
+                f'<span style="color:#1f2937;font-size:13px">{_he(str(latest["text"]))}</span>'
                 f'{("<br>" + thumb) if thumb else ""}'
                 f'</div>',
                 unsafe_allow_html=True,

@@ -162,10 +162,21 @@ def sidebar():
 
 # ── 密码门禁 ───────────────────────────────────────────────────────
 import hashlib as _hashlib
+import hmac as _hmac
+
+# 固定的 HMAC 密钥（混入 salt 防止离线暴力破解）
+_TOKEN_SALT = "STRX_F1b0_S3cur3_S4lt_2025"
 
 def _make_token(pw: str) -> str:
-    """生成密码 token（用于 URL query param 持久化登录）"""
-    return _hashlib.sha256(("strx_fibo_" + pw).encode()).hexdigest()[:16]
+    """
+    生成会话 token（HMAC-SHA256），用于 URL query param 持久化登录。
+    使用服务端固定 salt 混入，防止离线暴力破解密码。
+    """
+    return _hmac.new(
+        _TOKEN_SALT.encode(),
+        pw.encode(),
+        _hashlib.sha256
+    ).hexdigest()[:32]
 
 def _check_password() -> bool:
     """
@@ -190,7 +201,11 @@ def _check_password() -> bool:
     # 2. URL query param 中有 token（刷新/新标签自动恢复）
     try:
         url_token = st.query_params.get("_t", "")
-        if url_token == valid_token:
+        # 使用 compare_digest 防止计时攻击（timing attack）
+        if url_token and _hmac.compare_digest(
+            url_token.encode("utf-8"),
+            valid_token.encode("utf-8")
+        ):
             st.session_state["_authenticated"] = True
             return True
     except Exception:
@@ -213,9 +228,18 @@ def _check_password() -> bool:
             "密码", type="password", label_visibility="collapsed",
             placeholder="请输入访问密码…", key="_pw_input"
         )
+        # 登录失败次数限制（防暴力破解）
+        _fail_key = "_login_fails"
+        _fail_count = st.session_state.get(_fail_key, 0)
+
+        if _fail_count >= 5:
+            st.error("🔒 登录尝试过多，请刷新页面后重试。")
+            st.stop()
+
         if st.button("🔓 进入", type="primary", use_container_width=True, key="_pw_btn"):
-            if pw_input == required_pw:
+            if pw_input and _hmac.compare_digest(pw_input.encode(), required_pw.encode()):
                 st.session_state["_authenticated"] = True
+                st.session_state.pop(_fail_key, None)  # 清除失败计数
                 # 将 token 写入 URL，刷新/新标签页自动保持登录
                 try:
                     st.query_params["_t"] = valid_token
@@ -223,7 +247,12 @@ def _check_password() -> bool:
                     pass
                 st.rerun()
             else:
-                st.error("❌ 密码错误，请重试")
+                st.session_state[_fail_key] = _fail_count + 1
+                remaining = 5 - st.session_state[_fail_key]
+                if remaining > 0:
+                    st.error(f"❌ 密码错误，还剩 {remaining} 次机会")
+                else:
+                    st.error("🔒 登录已锁定，请刷新页面后重试。")
 
     st.stop()
     return False

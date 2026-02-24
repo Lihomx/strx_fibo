@@ -404,15 +404,15 @@ def _render_market(market_key: str, load_fn, category: str, cfg: dict, label: st
         is_fav   = ticker in wl_set
         is_sel   = ticker in selected
 
-        # TV 链接
+        # TV 链接（中文版，不带 interval 因品种库无时间框架概念）
         if market_key == "a_share":
             exch   = "SH" if ticker[0] == "6" else ("BJ" if ticker[0] in ("4","8","9") else "SZ")
-            tv_lnk = f"https://www.tradingview.com/chart/?symbol={exch}{ticker}"
+            tv_lnk = f"https://cn.tradingview.com/chart/?symbol={exch}{ticker}"
         elif market_key == "hk_stock":
             num    = ticker.replace(".HK","").lstrip("0") or "0"
-            tv_lnk = f"https://www.tradingview.com/chart/?symbol=HKEX:{num}"
+            tv_lnk = f"https://cn.tradingview.com/chart/?symbol=HKEX:{num}"
         else:
-            tv_lnk = f"https://www.tradingview.com/chart/?symbol={ticker}"
+            tv_lnk = f"https://cn.tradingview.com/chart/?symbol={ticker}"
 
         sel_icon = "✅" if is_sel else "⬜"
         fav_icon = "★"  if is_fav else "☆"
