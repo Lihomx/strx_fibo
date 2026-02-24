@@ -144,9 +144,31 @@ def render():
 # 方案：主内容用 HTML 表格渲染（完美对齐）
 #       收藏列用 st.columns 逐行对应，通过 CSS margin-top 精确校准
 # ════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════
+# 结果表 — 完全 HTML 表格方案，收藏通过 query_params 触发，永远同行对齐
+# ════════════════════════════════════════════════════════════════════
 def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
 
-    # ── 处理收藏操作 ──────────────────────────────────────────
+    # ── 处理 query_params 收藏指令（页面渲染前执行）────────────
+    try:
+        fav_act = st.query_params.get("_fav", "")
+        if fav_act:
+            parts = fav_act.split("|", 2)   # "add|TICKER|NAME" 或 "del|TICKER|NAME"
+            if len(parts) == 3:
+                act, tk, nm = parts
+                if act == "add":
+                    storage.add_to_watchlist(ticker=tk, name=nm)
+                    st.toast(f"已收藏：{nm}", icon="⭐")
+                elif act == "del":
+                    storage.remove_from_watchlist(tk)
+                    st.toast(f"已移除：{nm}", icon="🗑️")
+            # 清除 query param，避免刷新重复执行
+            st.query_params.pop("_fav", None)
+            st.rerun()
+    except Exception:
+        pass
+
+    # 兼容旧的 session_state 方式
     _pending = st.session_state.pop("_fav_action", None)
     if _pending:
         act, tk, nm = _pending
@@ -161,21 +183,27 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
     watchlist         = storage.load_watchlist()
     watchlist_tickers = {w["ticker"] for w in watchlist if isinstance(w, dict)}
 
-    # ── CSS ──────────────────────────────────────────────────
+    # ── CSS ──────────────────────────────────────────────────────
     st.markdown("""
     <style>
-    .rt2{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
-    .rt2 th{padding:8px 6px;background:#f9fafb;border-bottom:2px solid #e5e7eb;
+    .rt3{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
+    .rt3 th{padding:9px 6px;background:#f9fafb;border-bottom:2px solid #e5e7eb;
             font-size:12px;color:#374151;font-weight:600;white-space:nowrap}
-    .rt2 td{padding:8px 6px;border-bottom:1px solid #f3f4f6;vertical-align:middle;
-            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;height:46px}
-    .rt2 tr.zone td{background:#fffbeb}
+    .rt3 td{padding:9px 6px;border-bottom:1px solid #f3f4f6;vertical-align:middle;
+            white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .rt3 tr.zone td{background:#fffbeb}
+    .rt3 tr:hover td{background:#f8fafc}
+    .rt3 tr.zone:hover td{background:#fef3c7}
+    .fav-btn{font-size:20px;cursor:pointer;text-decoration:none;line-height:1;
+             display:block;text-align:center;padding:2px 0;transition:transform .1s}
+    .fav-btn:hover{transform:scale(1.3)}
+    .fav-star{color:#f59e0b}
+    .fav-empty{color:#d1d5db}
     </style>
     """, unsafe_allow_html=True)
 
-    # ── 收集行数据 ────────────────────────────────────────────
-    rows_data = []   # 每行的完整数据
     seen: set = set()
+    rows_html = []
 
     for _, r in df.iterrows():
         in_zone   = bool(r.get("in_zone", False))
@@ -192,93 +220,69 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
         price_s   = f"{float(price):,.4f}"   if price   is not None else "—"
         retrace_s = f"{float(retrace):.1f}%" if retrace is not None else "—"
         dist_s    = "区间内" if in_zone else (f"{dist:.1f}%" if dist < 999 else "—")
-        is_first  = ticker not in seen
+
+        is_first = ticker not in seen
         seen.add(ticker)
-        is_fav    = ticker in watchlist_tickers
+        is_fav   = ticker in watchlist_tickers
 
-        rows_data.append({
-            "in_zone": in_zone, "dist": dist, "price_s": price_s,
-            "retrace_s": retrace_s, "dist_s": dist_s, "conf_l": conf_l,
-            "tv_lnk": tv_lnk, "cat": cat, "ticker": ticker, "name": name,
-            "tf": tf, "is_first": is_first, "is_fav": is_fav,
-        })
-
-    # ── 双列布局：左边 HTML 表格(91%) + 右边收藏列(9%) ──────
-    # 这样收藏按钮完全独立于 HTML 表格，用 CSS margin 精确对齐
-    col_table, col_fav = st.columns([13, 1])
-
-    with col_table:
-        thead = (
-            "<tr>"
-            "<th style='width:21%'>资产</th>"
-            "<th style='width:9%'>类别</th>"
-            "<th style='width:8%'>框架</th>"
-            "<th style='width:10%'>状态</th>"
-            "<th style='width:13%;text-align:right'>当前价格</th>"
-            "<th style='width:9%;text-align:right'>回撤%</th>"
-            "<th style='width:9%;text-align:right'>距区间</th>"
-            "<th style='width:14%'>共振</th>"
-            "<th style='width:7%'>TV</th>"
-            "</tr>"
-        )
-        rows_html = []
-        for rd in rows_data:
-            zone_cls = ' class="zone"' if rd["in_zone"] else ""
-            rows_html.append(
-                f"<tr{zone_cls}>"
-                f"<td><b>{rd['name']}</b>"
-                f"<br><small style='color:#9ca3af;font-family:monospace'>{rd['ticker']}</small></td>"
-                f"<td><span class='badge b-gray'>{_cat_label(rd['cat'])}</span></td>"
-                f"<td><span class='badge b-gray'>{rd['tf']}</span></td>"
-                f"<td>{_badge(rd['in_zone'], rd['dist'])}</td>"
-                f"<td style='font-family:monospace;font-size:12px;text-align:right'>{rd['price_s']}</td>"
-                f"<td style='text-align:right'>{rd['retrace_s']}</td>"
-                f"<td style='text-align:right'>{rd['dist_s']}</td>"
-                f"<td>{_conf_badge(rd['conf_l'])}</td>"
-                f"<td><a href='{rd['tv_lnk']}' target='_blank' "
-                f"style='color:#e85d04;font-size:12px'>📈 TV</a></td>"
-                f"</tr>"
-            )
-        st.markdown(
-            f"<table class='rt2'><thead>{thead}</thead>"
-            f"<tbody>{''.join(rows_html)}</tbody></table>",
-            unsafe_allow_html=True,
-        )
-
-    with col_fav:
-        # 表头占位（与 th 高度相同：约 36px）
-        st.markdown(
-            '<div style="font-size:12px;color:#374151;font-weight:600;'
-'padding:8px 0;border-bottom:2px solid #e5e7eb;text-align:center;'
-'margin-bottom:0px">收藏</div>',
-            unsafe_allow_html=True,
-        )
-        # 每行一个按钮，高度 46px 与 td 完全对齐
-        for rd in rows_data:
-            if rd["is_first"]:
-                lbl = "★" if rd["is_fav"] else "☆"
-                tip = f"{'取消收藏' if rd['is_fav'] else '收藏'}：{rd['name']}"
-                if st.button(
-                    lbl,
-                    key=f"scn_fav_{rd['ticker']}",
-                    help=tip,
-                    use_container_width=True,
-                ):
-                    st.session_state["_fav_action"] = (
-                        "del" if rd["is_fav"] else "add",
-                        rd["ticker"], rd["name"],
-                    )
-                    st.rerun()
-            else:
-                # 空占位，高度与 td 相同
-                st.markdown(
-                    '<div style="height:46px;border-bottom:1px solid #f3f4f6"></div>',
-                    unsafe_allow_html=True,
+        # 收藏列：用 <a href> 触发 query_params，完全在 HTML 表格内，永远对齐
+        if is_first:
+            if is_fav:
+                fav_param = f"del|{ticker}|{name}"
+                fav_html  = (
+                    f'<a href="?_t={st.query_params.get("_t","")}&_fav={fav_param}" '
+                    f'class="fav-btn fav-star" title="取消收藏 {name}">★</a>'
                 )
+            else:
+                fav_param = f"add|{ticker}|{name}"
+                fav_html  = (
+                    f'<a href="?_t={st.query_params.get("_t","")}&_fav={fav_param}" '
+                    f'class="fav-btn fav-empty" title="收藏 {name}">☆</a>'
+                )
+        else:
+            fav_html = ""
+
+        zone_cls = ' class="zone"' if in_zone else ""
+        rows_html.append(
+            f"<tr{zone_cls}>"
+            f"<td style='width:20%'><b>{name}</b>"
+            f"<br><small style='color:#9ca3af;font-family:monospace'>{ticker}</small></td>"
+            f"<td style='width:8%'><span class='badge b-gray'>{_cat_label(cat)}</span></td>"
+            f"<td style='width:7%'><span class='badge b-gray'>{tf}</span></td>"
+            f"<td style='width:9%'>{_badge(in_zone, dist)}</td>"
+            f"<td style='width:12%;font-family:monospace;font-size:12px;text-align:right'>{price_s}</td>"
+            f"<td style='width:8%;text-align:right'>{retrace_s}</td>"
+            f"<td style='width:8%;text-align:right'>{dist_s}</td>"
+            f"<td style='width:13%'>{_conf_badge(conf_l)}</td>"
+            f"<td style='width:7%'><a href='{tv_lnk}' target='_blank' "
+            f"style='color:#e85d04;font-size:12px'>📈 TV</a></td>"
+            f"<td style='width:5%;text-align:center'>{fav_html}</td>"
+            f"</tr>"
+        )
+
+    thead = (
+        "<tr>"
+        "<th style='width:20%'>资产</th>"
+        "<th style='width:8%'>类别</th>"
+        "<th style='width:7%'>框架</th>"
+        "<th style='width:9%'>状态</th>"
+        "<th style='width:12%;text-align:right'>当前价格</th>"
+        "<th style='width:8%;text-align:right'>回撤%</th>"
+        "<th style='width:8%;text-align:right'>距区间</th>"
+        "<th style='width:13%'>共振</th>"
+        "<th style='width:7%'>TV</th>"
+        "<th style='width:5%;text-align:center'>收藏</th>"
+        "</tr>"
+    )
+    st.markdown(
+        f"<table class='rt3'><thead>{thead}</thead>"
+        f"<tbody>{''.join(rows_html)}</tbody></table>",
+        unsafe_allow_html=True,
+    )
 
     st.markdown(
-        f'<div style="color:#9ca3af;font-size:11px;margin-top:4px">'
-        f'共 {len(df)} 条 &nbsp;｜&nbsp; 点击收藏列 ☆/★ 按钮即可收藏/取消</div>',
+        f'<div style="color:#9ca3af;font-size:11px;margin-top:6px">'
+        f'共 {len(df)} 条 &nbsp;｜&nbsp; 点击 ☆/★ 收藏/取消收藏</div>',
         unsafe_allow_html=True,
     )
 
