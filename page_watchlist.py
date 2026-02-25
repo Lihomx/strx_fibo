@@ -82,6 +82,11 @@ def render():
     )
 
     # ── Tab：收藏 / 分类管理 / 存档 / 备份 ──────────────────────
+    # 支持从"当前收藏"的快捷按钮跳转到"分类管理"标签
+    _tab_default = 0
+    if st.session_state.pop("_wl_go_cats", False) or        st.session_state.pop("_wl_tab", None) == "cats":
+        _tab_default = 1
+
     tab_main, tab_cats, tab_archive, tab_backup = st.tabs(
         ["⭐ 当前收藏", "🏷️ 分类管理", "🗂️ 已删除存档", "💾 备份与恢复"]
     )
@@ -234,7 +239,8 @@ def _render_main():
         tk = r.get("ticker", "").upper()
         result_map.setdefault(tk, []).append(r)
 
-    # 工具栏
+    # ── 工具栏（搜索 + 分类筛选 + 清空）──────────────────────────
+    # 第一行：搜索框 + 清空按钮
     col_l, col_r = st.columns([6, 2])
     with col_l:
         search = st.text_input(
@@ -259,6 +265,52 @@ def _render_main():
                 st.session_state["wl_confirm_clear"] = False
                 st.rerun()
 
+    # ── 第二行：分类筛选（始终显示，无分类时显示引导提示）──────
+    if cats:
+        # 构建分类选项（含路径名称，最多3级）
+        _cat_opts = {"📋 全部": None, "❓ 未分类": "__NONE__"}
+        def _collect_opts(tree, prefix=""):
+            for node in sorted(tree, key=lambda x: x.get("order", 0)):
+                label = f"{prefix}{node['name']}" if prefix else node["name"]
+                _cat_opts[f"🏷️ {label}"] = node["id"]
+                if node.get("children"):
+                    _collect_opts(node["children"], prefix=f"{prefix}  └ ")
+        _collect_opts(storage.build_cat_tree(cats))
+
+        _col_catsel, _col_catmgr = st.columns([5, 2])
+        with _col_catsel:
+            _sel_cat = st.selectbox(
+                "🏷️ 按分类筛选",
+                options=list(_cat_opts.keys()),
+                key="wl_cat_filter",
+                label_visibility="visible",
+            )
+        with _col_catmgr:
+            st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+            if st.button("⚙️ 管理分类", key="wl_go_cats",
+                         help="前往「分类管理」标签页新增/编辑分类",
+                         use_container_width=True):
+                st.session_state["_wl_tab"] = "cats"
+                st.rerun()
+
+        _sel_cat_id = _cat_opts[_sel_cat]
+    else:
+        # 尚无分类 → 显示引导横幅
+        _sel_cat_id = None
+        st.markdown(
+            '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;'
+            'padding:10px 16px;margin:4px 0 10px;display:flex;align-items:center;gap:12px">'
+            '<span style="font-size:20px">🏷️</span>'
+            '<span style="color:#15803d;font-size:13px">'
+            '<b>尚未创建分类</b> — 点击右侧按钮前往「分类管理」标签页创建品种分类目录（支持1~3级）'
+            '</span></div>',
+            unsafe_allow_html=True,
+        )
+        if st.button("➕ 去创建分类", key="wl_create_cats",
+                     type="primary"):
+            st.session_state["_wl_go_cats"] = True
+            st.rerun()
+
     q = search.strip().upper()
     display_items = items
     if q:
@@ -267,47 +319,26 @@ def _render_main():
             if q in i["ticker"].upper() or q in i.get("name", "").upper()
         ]
 
-    # ── 分类筛选 ────────────────────────────────────────────────
-    if cats:
-        # 构建分类选项（含路径名称，最多3级）
-        _cat_opts = {"全部": None, "未分类": "__NONE__"}
-        def _collect_opts(tree, prefix=""):
-            for node in sorted(tree, key=lambda x: x.get("order", 0)):
-                label = f"{prefix}{node['name']}" if prefix else node["name"]
-                _cat_opts[label] = node["id"]
-                if node.get("children"):
-                    _collect_opts(node["children"], prefix=f"{prefix}  └ ")
-        _collect_opts(storage.build_cat_tree(cats))
-
-        _sel_cat = st.selectbox(
-            "🏷️ 按分类筛选",
-            options=list(_cat_opts.keys()),
-            key="wl_cat_filter",
-            label_visibility="collapsed",
-        )
-        _sel_cat_id = _cat_opts[_sel_cat]
-        if _sel_cat_id == "__NONE__":
-            # 未分类：category_id 为 None 或不存在
-            display_items = [i for i in display_items
-                             if not i.get("category_id")]
-        elif _sel_cat_id is not None:
-            # 筛选该分类及其后代
-            _valid_ids = {_sel_cat_id} | storage._collect_descendants(cats, _sel_cat_id)
-            display_items = [i for i in display_items
-                             if i.get("category_id") in _valid_ids]
-    else:
-        _sel_cat_id = None
+    # 应用分类筛选
+    if _sel_cat_id == "__NONE__":
+        display_items = [i for i in display_items if not i.get("category_id")]
+    elif _sel_cat_id is not None:
+        _valid_ids = {_sel_cat_id} | storage._collect_descendants(cats, _sel_cat_id)
+        display_items = [i for i in display_items
+                         if i.get("category_id") in _valid_ids]
 
     # ── 置顶排序：pinned=True 的排在前面 ──────────────────────
     display_items = sorted(display_items, key=lambda x: (0 if x.get("pinned") else 1))
 
     pinned_cnt = sum(1 for i in display_items if i.get("pinned"))
-    # 计算分类名（用于标题显示）
-    _cat_label_disp = ""
-    if cats and _sel_cat_id and _sel_cat_id != "__NONE__":
-        _cat_label_disp = f" · 🏷️ {_sel_cat}"
-    elif _sel_cat_id == "__NONE__":
+    # 分类过滤标签
+    if cats and _sel_cat_id == "__NONE__":
         _cat_label_disp = " · 🏷️ 未分类"
+    elif cats and _sel_cat_id is not None:
+        # 从 _cat_opts 反查名称（去除 emoji 前缀）
+        _cat_label_disp = f" · 🏷️ {_sel_cat.lstrip('🏷️ ')}"
+    else:
+        _cat_label_disp = ""
     st.markdown(
         f"<div style='color:#6b7280;font-size:12px;margin-bottom:8px'>"
         f"共 {len(items)} 个品种 · 显示 {len(display_items)} 个"

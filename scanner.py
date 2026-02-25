@@ -304,6 +304,152 @@ def fetch_twelvedata(ticker: str, interval: str, period: str,
 
 
 # ════════════════════════════════════════════════════════════════════
+# 网易财经 — A股备用数据源（免费公开API，无需登录）
+# ════════════════════════════════════════════════════════════════════
+def _netease_a_share(ticker: str, interval: str) -> Optional[pd.DataFrame]:
+    """
+    网易财经历史K线接口（第三备用，AKShare和yfinance均失败时启用）
+    沪市600xxx → code=0600xxx, 深市000xxx/300xxx → code=1000xxx/1300xxx
+    北交所: 使用 yfinance 即可
+    """
+    try:
+        import requests
+        symbol = re.sub(r"\.(SS|SH|SZ|BJ)$", "", ticker.upper())
+        if not re.match(r"^\d{6}$", symbol):
+            return None
+        # 判断交易所前缀
+        first = symbol[0]
+        if first == "6":
+            code = "0" + symbol    # 沪市
+        elif first in ("0", "3"):
+            code = "1" + symbol    # 深市
+        else:
+            return None            # 北交所等暂不支持
+
+        from datetime import datetime, timedelta
+        days_map = {"1d": 730, "1wk": 1825, "1mo": 5475}
+        days = days_map.get(interval, 730)
+        start = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
+        end   = datetime.now().strftime("%Y%m%d")
+
+        url = (
+            f"http://quotes.money.163.com/service/chddata.html"
+            f"?code={code}&start={start}&end={end}"
+            f"&fields=TCLOSE;HIGH;LOW;TOPEN;VOTURNOVER"
+        )
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; STRX/1.0)"}
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            return None
+
+        from io import StringIO
+        # 网易返回 GBK 编码 CSV
+        text = resp.content.decode("gbk", errors="replace")
+        df = pd.read_csv(StringIO(text))
+        if df is None or df.empty:
+            return None
+
+        # 列名映射: 日期,股票代码,名称,收盘价,最高价,最低价,开盘价,...
+        col_map = {}
+        for c in df.columns:
+            cs = str(c).strip()
+            if cs in ("日期", "DATE", "date"):      col_map[c] = "Date"
+            elif cs in ("开盘价", "TOPEN"):          col_map[c] = "Open"
+            elif cs in ("最高价", "HIGH"):           col_map[c] = "High"
+            elif cs in ("最低价", "LOW"):            col_map[c] = "Low"
+            elif cs in ("收盘价", "TCLOSE"):         col_map[c] = "Close"
+        df = df.rename(columns=col_map)
+
+        if not {"Open","High","Low","Close"}.issubset(set(df.columns)):
+            return None
+
+        if "Date" in df.columns:
+            df = df.set_index("Date")
+        df = df[["Open","High","Low","Close"]].copy()
+        df.index = pd.to_datetime(df.index, errors="coerce")
+        df = df[df.index.notna()].sort_index()
+        for col in ["Open","High","Low","Close"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df = df.dropna()
+
+        # 对周/月线进行降采样
+        if interval == "1wk":
+            df = df.resample("W").agg({"Open":"first","High":"max","Low":"min","Close":"last"}).dropna()
+        elif interval == "1mo":
+            df = df.resample("ME").agg({"Open":"first","High":"max","Low":"min","Close":"last"}).dropna()
+
+        return df if not df.empty else None
+    except Exception as e:
+        logger.debug(f"netease_a_share {ticker}: {e}")
+        return None
+
+
+# ════════════════════════════════════════════════════════════════════
+# 新浪财经 — A股第四备用数据源（实时/历史）
+# ════════════════════════════════════════════════════════════════════
+def _sina_a_share(ticker: str, interval: str) -> Optional[pd.DataFrame]:
+    """
+    新浪财经 mish 接口，日线/周线/月线历史数据
+    代码格式: sh600048 / sz000001
+    """
+    try:
+        import requests
+        symbol = re.sub(r"\.(SS|SH|SZ|BJ)$", "", ticker.upper())
+        if not re.match(r"^\d{6}$", symbol):
+            return None
+        prefix = "sh" if symbol[0] == "6" else "sz"
+        code   = prefix + symbol
+
+        scale_map = {"1d": 240, "1wk": 1200, "1mo": 4800}  # 分钟数
+        scale = scale_map.get(interval, 240)
+        datalen = 500
+
+        url = (
+            f"https://money.finance.sina.com.cn/quotes_service/api/json_v2.php"
+            f"/CN_MarketData.getKLineData?symbol={code}"
+            f"&scale={scale}&ma=5&datalen={datalen}"
+        )
+        headers = {"Referer": "https://finance.sina.com.cn",
+                   "User-Agent": "Mozilla/5.0"}
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            return None
+
+        import json
+        data = resp.json()
+        if not data or not isinstance(data, list):
+            return None
+
+        rows = []
+        for item in data:
+            try:
+                rows.append({
+                    "Date":  item.get("d") or item.get("date", ""),
+                    "Open":  float(item.get("o", 0) or item.get("open", 0)),
+                    "High":  float(item.get("h", 0) or item.get("high", 0)),
+                    "Low":   float(item.get("l", 0) or item.get("low", 0)),
+                    "Close": float(item.get("c", 0) or item.get("close", 0)),
+                })
+            except Exception:
+                continue
+        if not rows:
+            return None
+
+        df = pd.DataFrame(rows).set_index("Date")
+        df.index = pd.to_datetime(df.index, errors="coerce")
+        df = df[df.index.notna()].sort_index()
+        df = df[["Open","High","Low","Close"]]
+        for col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df = df.dropna()
+        df = df[df["Close"] > 0]  # 过滤无效行
+        return df if not df.empty else None
+    except Exception as e:
+        logger.debug(f"sina_a_share {ticker}: {e}")
+        return None
+
+
+# ════════════════════════════════════════════════════════════════════
 # 智能路由
 # ════════════════════════════════════════════════════════════════════
 def fetch_data(ticker: str, interval: str, period: str,
@@ -313,8 +459,17 @@ def fetch_data(ticker: str, interval: str, period: str,
     td_key = cfg.get("twelvedata_key", "")
 
     if tt in ("a_share", "a_bare"):
+        # 优先级: AKShare > yfinance > 网易财经 > 新浪财经
         df = _ak_a_share(ticker, interval)
-        return df if df is not None else fetch_yfinance(ticker, interval, period)
+        if df is not None:
+            return df
+        df = fetch_yfinance(ticker, interval, period)
+        if df is not None:
+            return df
+        df = _netease_a_share(ticker, interval)
+        if df is not None:
+            return df
+        return _sina_a_share(ticker, interval)
 
     if tt == "hk_stock":
         df = _ak_hk_stock(ticker, interval)

@@ -92,6 +92,23 @@ def render():
         st.caption(f"📦 已扫描组：{'、'.join(scanned_groups[-8:])}  "
                    f"| 品种：{total}  | 更新：{last_s.get('scan_time','—')}")
 
+    # data quality check
+    _has_price_data = any(r.get("current_price") is not None for r in merged_rows)
+    if not _has_price_data and merged_rows:
+        _warn_lines = [
+            "⚠️ **数据获取失败**：所有品种的价格数据均为空。",
+            "",
+            "**可能原因**：",
+            "- 数据服务器暂时无法连接（AKShare / Yahoo Finance 超时）",
+            "- A股代码格式有误，需带交易所后缀，如 600048.SS",
+            "",
+            "**解决方法**：",
+            "1. 点击下方[清空扫描结果]清除旧缓存",
+            "2. 等待 1-2 分钟后重新扫描",
+            "3. 先用[自定义品种扫描]测试单个品种（如 AAPL 或 600519.SS）",
+        ]
+        st.warning("\n".join(_warn_lines))
+
     # ── 过滤 ─────────────────────────────────────────────────────────
     df = pd.DataFrame(merged_rows)
     if zone_only:           df = df[df["in_zone"]]
