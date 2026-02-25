@@ -54,8 +54,94 @@ div[data-testid="stSidebar"] .stButton>button{
   text-align:left!important;justify-content:flex-start!important;padding:8px 12px!important;
 }
 div[data-testid="stSidebar"] .stButton>button:hover{background:#f9fafb!important;}
+
+/* ── 移动端适配 ─────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* 收起侧栏，用汉堡菜单代替 */
+  section[data-testid="stSidebar"] > div:first-child {
+    padding-top: 0.5rem !important;
+  }
+
+  /* 增大正文内边距 */
+  .main .block-container {
+    padding: 0.5rem 0.8rem 2rem !important;
+    max-width: 100% !important;
+  }
+
+  /* 指标卡：移动端 2×2 布局，减小字体 */
+  .m-card { padding: 10px 10px !important; margin-bottom: 6px !important; }
+  .m-val  { font-size: 20px !important; }
+  .m-lbl  { font-size: 10px !important; }
+  .m-sub  { font-size: 10px !important; }
+
+  /* 结果表：移动端隐藏非核心列，启用横向滚动 */
+  .rt3 { font-size: 11px !important; display: block; overflow-x: auto; }
+  .rt3 th, .rt3 td { padding: 6px 4px !important; white-space: nowrap; }
+
+  /* 品种库表格横向滚动 */
+  .ut2 { font-size: 11px !important; display: block; overflow-x: auto; }
+  .ut2 th, .ut2 td { padding: 5px 4px !important; }
+
+  /* 徽章：移动端更小 */
+  .badge { font-size: 10px !important; padding: 1px 5px !important; }
+
+  /* 按钮：增大触摸区域 */
+  .stButton > button {
+    min-height: 38px !important;
+    font-size: 12px !important;
+    padding: 6px 8px !important;
+  }
+
+  /* 输入框：全宽 */
+  .stTextInput input {
+    font-size: 14px !important;
+  }
+
+  /* 工具栏：允许换行 */
+  div[data-testid="column"] { min-width: 0 !important; }
+
+  /* pills 标签：换行 */
+  div[data-testid="stPills"] { flex-wrap: wrap !important; gap: 4px !important; }
+  div[data-testid="stPills"] button {
+    font-size: 11px !important;
+    padding: 3px 8px !important;
+  }
+
+  /* expander 头部 */
+  .streamlit-expanderHeader { font-size: 13px !important; }
+
+  /* tabs */
+  div[data-testid="stTabs"] button { font-size: 12px !important; padding: 6px 8px !important; }
+
+  /* 信息框 */
+  .n-info, .n-ok, .n-warn { font-size: 12px !important; padding: 7px 10px !important; }
+
+  /* 卡片内标题 */
+  div[data-testid="stMarkdownContainer"] span { max-width: 100% !important; }
+}
+
+@media (max-width: 480px) {
+  /* 超小屏（iPhone SE 等） */
+  .m-val { font-size: 18px !important; }
+  .rt3 { font-size: 10px !important; }
+  .ut2 { font-size: 10px !important; }
+  .main .block-container { padding: 0.3rem 0.5rem 2rem !important; }
+  h2 { font-size: 18px !important; }
+  .stButton > button { font-size: 11px !important; padding: 5px 6px !important; }
+}
 </style>
 """, unsafe_allow_html=True)
+
+# ── 移动端 viewport meta 注入（Streamlit 默认不设置，必须手动注入）─
+import streamlit.components.v1 as _stcv1
+_stcv1.html("""<script>
+if (!document.querySelector('meta[name="viewport"]')) {
+    var m = document.createElement('meta');
+    m.name = 'viewport';
+    m.content = 'width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes';
+    document.head.appendChild(m);
+}
+</script>""", height=0)
 
 # ── 导入页面模块（直接 import，无子文件夹）──────────────────────────
 import page_scanner
@@ -292,6 +378,19 @@ def main():
     if "page" not in st.session_state:
         st.session_state.page = "scanner"
 
+    # 支持 URL 参数跳转（如收藏后新标签打开自选页）
+    _url_page = st.query_params.get("_page", "")
+    if _url_page and _url_page in ("watchlist","scanner","confluence","alerts","settings","history","cloud"):
+        st.session_state.page = _url_page
+        _anchor = st.query_params.get("_anchor", "")
+        if _anchor:
+            st.session_state["_wl_highlight"] = _anchor
+        try:
+            st.query_params.pop("_page", None)
+            st.query_params.pop("_anchor", None)
+        except Exception:
+            pass
+
     sidebar()
 
     p = st.session_state.get("page", "scanner")
@@ -306,6 +405,42 @@ def main():
         "settings":   page_settings.render,
     }
     dispatch.get(p, page_scanner.render)()
+
+    # ── 移动端底部导航栏（仅小屏显示）────────────────────────────
+    _cur_page = st.session_state.get("page", "scanner")
+    _t_nav = st.query_params.get("_t", "")
+    _nav_items = [
+        ("📊", "扫描", "scanner"),
+        ("🔥", "共振", "confluence"),
+        ("🌍", "品种库", "universe"),
+        ("⭐", "自选", "watchlist"),
+        ("⚙️", "设置", "settings"),
+    ]
+    _nav_html = "".join(
+        f'<a href="/?_t={_t_nav}&_page={k}" class="mob-nav-item{" active" if k == _cur_page else ""}">'
+        f'<span class="mob-nav-icon">{ic}</span>'
+        f'<span class="mob-nav-lbl">{lb}</span></a>'
+        for ic, lb, k in _nav_items
+    )
+    st.markdown(f"""
+    <style>
+    .mob-nav{{display:none;position:fixed;bottom:0;left:0;right:0;z-index:9999;
+              background:#fff;border-top:1px solid #e5e7eb;padding:4px 0 env(safe-area-inset-bottom);
+              box-shadow:0 -2px 8px rgba(0,0,0,.08)}}
+    .mob-nav-item{{flex:1;display:flex;flex-direction:column;align-items:center;
+                   justify-content:center;padding:4px 2px;text-decoration:none;color:#6b7280;
+                   font-size:10px;transition:color .15s;min-width:0}}
+    .mob-nav-item.active{{color:#e85d04}}
+    .mob-nav-icon{{font-size:18px;line-height:1.2}}
+    .mob-nav-lbl{{font-size:10px;margin-top:1px;white-space:nowrap}}
+    @media(max-width:768px){{
+      .mob-nav{{display:flex !important}}
+      /* 底部导航占位，防止内容被遮挡 */
+      .main .block-container{{padding-bottom:70px !important}}
+    }}
+    </style>
+    <div class="mob-nav">{_nav_html}</div>
+    """, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

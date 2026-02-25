@@ -160,10 +160,12 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
             if len(parts) == 3:
                 act, tk, nm = parts
                 # 安全校验：action 只允许 add/del，ticker 只允许字母数字符号
-                if act in ("add", "del") and _re.match(r'^[\w\.\-\^=]+$', tk):
+                if act in ("add", "del") and _re.match(r"^[\w.\-\^=]+$", tk):
                     if act == "add":
                         storage.add_to_watchlist(ticker=tk, name=nm[:60])
-                        st.toast(f"已收藏：{nm[:40]}", icon="⭐")
+                        # 收藏成功：触发新标签页打开自选页并定位
+                        _t_val = st.query_params.get("_t", "")
+                        st.session_state["_open_wl_tab"] = (tk, nm[:40], _t_val)
                     else:
                         storage.remove_from_watchlist(tk)
                         st.toast(f"已移除：{nm[:40]}", icon="🗑️")
@@ -171,6 +173,24 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
             st.rerun()
     except Exception:
         pass
+
+    # 新标签页打开自选页（收藏成功时）
+    _open_wl = st.session_state.pop("_open_wl_tab", None)
+    if _open_wl:
+        if len(_open_wl) == 3:
+            _highlight_tk, _display_nm, _t_val = _open_wl
+        else:
+            _highlight_tk, _t_val = _open_wl
+            _display_nm = _highlight_tk
+        _wl_url = f"/?_t={_t_val}&_page=watchlist&_anchor={_highlight_tk}"
+        import streamlit.components.v1 as _stc_v1
+        _stc_v1.html(
+            f"""<script>
+            try {{ window.open('{_wl_url}', '_blank'); }} catch(e) {{}}
+            </script>""",
+            height=0,
+        )
+        st.success(f"⭐ 已收藏「{_display_nm}」| 自选页已在新标签页打开，已自动定位到该品种")
 
     # 兼容旧的 session_state 方式
     _pending = st.session_state.pop("_fav_action", None)
@@ -190,7 +210,35 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
     # ── CSS ──────────────────────────────────────────────────────
     st.markdown("""
     <style>
-    .rt3{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
+    /* ── 全站移动端适配 ── */
+    @media(max-width:768px){
+      /* 卡片间距收紧 */
+      .block-container{padding:0.5rem 0.5rem 2rem !important;}
+      /* 指标卡手机竖排 */
+      .m-card{padding:10px 8px !important;margin:4px 2px !important;}
+      .m-val{font-size:24px !important;}
+      .m-lbl{font-size:11px !important;}
+      /* 表格滚动 */
+      .rt3-wrap,.ut2-wrap,.cf3-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+      /* 减小字体 */
+      .rt3,.ut2,.cf3{font-size:11px !important;}
+      .rt3 th,.rt3 td,.ut2 th,.ut2 td{padding:5px 4px !important;}
+      /* 按钮满宽 */
+      .stButton>button{width:100% !important;font-size:12px !important;padding:6px 4px !important;}
+      /* 收藏按钮 */
+      .fav-btn{font-size:18px;}
+      /* 标题缩小 */
+      h2{font-size:1.2rem !important;}
+      h3{font-size:1rem !important;}
+      /* 隐藏次要列在极窄屏 */
+    }
+    @media(max-width:480px){
+      .rt3{min-width:360px;}
+      .block-container{padding:0.3rem !important;}
+    }
+    /* 扫描结果表 */
+    .rt3-wrap{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+    .rt3{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;min-width:560px}
     .rt3 th{padding:9px 6px;background:#f9fafb;border-bottom:2px solid #e5e7eb;
             font-size:12px;color:#374151;font-weight:600;white-space:nowrap}
     .rt3 td{padding:9px 6px;border-bottom:1px solid #f3f4f6;vertical-align:middle;
@@ -283,8 +331,8 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
         "</tr>"
     )
     st.markdown(
-        f"<table class='rt3'><thead>{thead}</thead>"
-        f"<tbody>{''.join(rows_html)}</tbody></table>",
+        f"<div class='rt3-wrap'><table class='rt3'><thead>{thead}</thead>"
+        f"<tbody>{''.join(rows_html)}</tbody></table></div>",
         unsafe_allow_html=True,
     )
 
@@ -296,11 +344,19 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
 
     csv = df.drop(columns=[c for c in ["_r", "_d"] if c in df.columns],
                   errors="ignore").to_csv(index=False).encode("utf-8-sig")
-    st.download_button(
-        "⬇️ 下载 CSV", csv,
-        file_name=f"strx_fibo_{last_s.get('scan_date', 'today')}.csv",
-        mime="text/csv",
-    )
+    _dl_col, _clear_col = st.columns([3, 2])
+    with _dl_col:
+        st.download_button(
+            "⬇️ 下载 CSV", csv,
+            file_name=f"strx_fibo_{last_s.get('scan_date', 'today')}.csv",
+            mime="text/csv",
+        )
+    with _clear_col:
+        if st.button("🗑️ 清空全部扫描结果", key="clear_all_results",
+                     help="清除所有扫描缓存，可重新扫描", type="secondary"):
+            storage.clear_all_scan_data()
+            st.toast("✅ 扫描结果已清空，请重新扫描", icon="🗑️")
+            st.rerun()
 
 # ════════════════════════════════════════════════════════════════════
 
@@ -470,6 +526,15 @@ def _render_custom_scan(cfg):
         do_custom = st.button("🔍 立即扫描", type="primary",
                               width="stretch", key="custom_scan_btn")
 
+    # 自动触发扫描（来自"建议代码"按钮或"扫描 XX.SS"按钮点击）
+    _auto_trig = st.session_state.pop("_auto_scan_trigger", None)
+    if _auto_trig:
+        do_custom = True
+        custom_ticker = _auto_trig.upper()
+        # 同步更新 custom_name 若已预置
+        if st.session_state.get("custom_name_confirmed"):
+            custom_name = st.session_state["custom_name_confirmed"]
+
     # ── 实时修正提示（输入时即显示建议，无需点扫描）──────────────
     confirmed_ticker = custom_ticker  # 最终使用的 ticker
 
@@ -549,10 +614,14 @@ def _render_custom_scan(cfg):
                         unsafe_allow_html=True,
                     )
                 with c2:
-                    if st.button(f"扫描 {sug['ticker']}", key=f"err_sug_{i}_{sug['ticker']}",
+                    if st.button(f"✅ 扫描 {sug['ticker']}", key=f"err_sug_{i}_{sug['ticker']}",
                                  type="primary"):
-                        st.session_state["custom_ticker_confirmed"] = sug["ticker"]
-                        st.session_state["custom_name_confirmed"]   = sug.get("name", "")
+                        # 清除旧 widget state，用 prefill 机制更新输入框
+                        st.session_state.pop("custom_ticker_input", None)
+                        st.session_state["custom_ticker_prefill"]  = sug["ticker"]
+                        st.session_state["custom_name_confirmed"]  = sug.get("name", "")
+                        st.session_state["custom_ticker_confirmed"]= sug["ticker"]
+                        st.session_state["_auto_scan_trigger"]     = sug["ticker"]
                         st.rerun()
         return
 
@@ -669,18 +738,24 @@ def _render_batch_selector(cfg):
         if st.button("🔲 清空", width="stretch"):
             st.session_state.scan_groups = []
 
+    # ── 多选品种组：使用 st.multiselect（不会自动关闭，支持搜索）──
     raw_default = st.session_state.get("scan_groups", [group_names[0]])
     if not isinstance(raw_default, list):
         raw_default = [group_names[0]]
-    default_sel = [g for g in raw_default if g in group_names]
-    if not default_sel:
-        default_sel = [group_names[0]]
+    current_sel = [g for g in raw_default if g in group_names]
 
+    # st.multiselect 不会自动关闭，点击后可继续选择
     selected = st.multiselect(
-        "选择要扫描的品种组（可多选）：",
+        f"🗂️ 选择要扫描的品种组（可多选，直接搜索筛选，已选 {len(current_sel)} 组）：",
         options=group_names,
-        default=default_sel,
+        default=current_sel,
+        key="scan_group_multiselect",
+        placeholder="点击下拉，输入关键词筛选品种组…",
+        help="支持多选：点击后继续选择不会关闭菜单。也可以用上方快捷按钮批量选择。",
     )
+    if selected is None:
+        selected = []
+
     st.session_state.scan_groups = selected
 
     if not selected:
