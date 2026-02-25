@@ -344,7 +344,7 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
 
     csv = df.drop(columns=[c for c in ["_r", "_d"] if c in df.columns],
                   errors="ignore").to_csv(index=False).encode("utf-8-sig")
-    _dl_col, _clear_col = st.columns([3, 2])
+    _dl_col, _spacer, _clear_col = st.columns([3, 1, 2])
     with _dl_col:
         st.download_button(
             "⬇️ 下载 CSV", csv,
@@ -352,11 +352,29 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
             mime="text/csv",
         )
     with _clear_col:
-        if st.button("🗑️ 清空全部扫描结果", key="clear_all_results",
-                     help="清除所有扫描缓存，可重新扫描", type="secondary"):
-            storage.clear_all_scan_data()
-            st.toast("✅ 扫描结果已清空，请重新扫描", icon="🗑️")
-            st.rerun()
+        # 二次确认防止误操作
+        _clr_key = "clear_all_confirm"
+        if not st.session_state.get(_clr_key):
+            if st.button("🗑️ 清空所有缓存", key="clear_all_cache_btn",
+                         help="清除所有扫描结果、历史记录（保留自选收藏和配置）",
+                         type="secondary", use_container_width=True):
+                st.session_state[_clr_key] = True
+                st.rerun()
+        else:
+            st.warning("⚠️ 确认清空所有缓存？")
+            _cc1, _cc2 = st.columns(2)
+            with _cc1:
+                if st.button("✅ 确认清空", key="clear_all_confirm_yes",
+                             type="primary", use_container_width=True):
+                    storage.clear_all_data()
+                    st.session_state.pop(_clr_key, None)
+                    st.toast("✅ 所有缓存已清空", icon="🗑️")
+                    st.rerun()
+            with _cc2:
+                if st.button("❌ 取消", key="clear_all_confirm_no",
+                             use_container_width=True):
+                    st.session_state.pop(_clr_key, None)
+                    st.rerun()
 
 # ════════════════════════════════════════════════════════════════════
 

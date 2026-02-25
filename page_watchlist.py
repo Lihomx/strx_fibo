@@ -102,6 +102,52 @@ def render():
 def _render_main():
     items = storage.load_watchlist()
 
+    # ── 处理来自扫描页的高亮定位 ────────────────────────────────
+    _hl = st.session_state.pop("_wl_highlight", None)
+    if _hl:
+        _hl_name = next((i.get("name","") for i in items if i["ticker"]==_hl), _hl)
+        st.success(f"⭐ 已收藏 **{_hl_name}**（`{_hl}`），已自动定位到该品种 ↓")
+        import streamlit.components.v1 as _stc2
+        # 使用轮询方式等待 DOM 就绪后再滚动，最多重试 25 次（每次 200ms = 5s）
+        _stc2.html(
+            f"""<script>
+            (function() {{
+                var target = '{_hl}';
+                var tries  = 0;
+                function scrollToCard() {{
+                    // Streamlit 渲染在 shadow DOM 或 iframe 内，需要穿透查找
+                    var el = null;
+                    // 先在当前文档找
+                    el = document.getElementById('wl-card-' + target);
+                    // 再尝试向上层 window 传递（iframe 内）
+                    if (!el) {{
+                        try {{
+                            el = window.parent.document.getElementById('wl-card-' + target);
+                        }} catch(e) {{}}
+                    }}
+                    if (el) {{
+                        el.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+                        // 闪烁高亮提示
+                        el.style.transition = 'box-shadow 0.3s';
+                        el.style.boxShadow = '0 0 0 4px #3b82f6, 0 0 20px rgba(59,130,246,0.4)';
+                        setTimeout(function() {{
+                            el.style.boxShadow = '';
+                        }}, 2000);
+                        return;
+                    }}
+                    tries++;
+                    if (tries < 30) {{
+                        setTimeout(scrollToCard, 200);
+                    }}
+                }}
+                // 延迟 300ms 后开始轮询（等 Streamlit 开始渲染）
+                setTimeout(scrollToCard, 300);
+            }})();
+            </script>""",
+            height=0,
+        )
+        st.session_state["_hl_ticker"] = _hl  # pass to card renderer
+
     # ── 添加新品种 ──────────────────────────────────────────────
     with st.expander("➕ 添加新品种", expanded=len(items) == 0):
         c1, c2 = st.columns([2, 2])
@@ -281,11 +327,14 @@ def _render_card(item: dict, idx: int, result_map: dict):
     # 卡片边框：置顶时高亮
     border_color = "#f59e0b" if pinned else "#e5e7eb"
     pin_bg       = "background:#fffbeb;" if pinned else ""
+    _is_hl = (st.session_state.get("_hl_ticker","") == ticker)
+    _hl_border = "#3b82f6" if _is_hl else border_color
+    _hl_extra  = "box-shadow:0 0 0 3px #bfdbfe;" if _is_hl else ""
 
     with st.container():
         st.markdown(
-            f'<div style="background:#fff;border:1.5px solid {border_color};'
-            f'border-radius:10px;padding:14px 18px 12px;margin-bottom:10px;{pin_bg}">',
+            f'<div id="wl-card-{ticker}" style="background:#fff;border:1.5px solid {_hl_border};'
+            f'border-radius:10px;padding:14px 18px 12px;margin-bottom:10px;{pin_bg}{_hl_extra}">',
             unsafe_allow_html=True,
         )
 

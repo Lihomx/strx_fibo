@@ -413,56 +413,49 @@ def _render_market(market_key: str, load_fn, category: str, cfg: dict, label: st
     watchlist = storage.load_watchlist()
     wl_set    = {w["ticker"] for w in watchlist if isinstance(w, dict)}
 
-    # ── 表格：CSS ─────────────────────────────────────────────────
-    _t_param = _he(st.query_params.get("_t", ""))
+    # ── 品种列表：使用纯 st.columns 逐行渲染，彻底解决按钮错位 ────
+    # 每行直接在同一个 st.columns 内渲染：序号|代码|名称|选择按钮|收藏按钮|扫描按钮|TV链接
+    # 这是 Streamlit 中保证按钮与文字完全同行对齐的唯一可靠方式
+
+    # 表头（纯 HTML，仅做视觉对齐参考）
     st.markdown("""
     <style>
-    .ut2-wrap{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}
-    .ut2{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;}
-    .ut2 th{padding:8px 6px;background:#f9fafb;border-bottom:2px solid #e5e7eb;
-            white-space:nowrap;font-size:12px;color:#374151;font-weight:600}
-    .ut2 td{padding:7px 6px;border-bottom:1px solid #f3f4f6;vertical-align:middle;
-            overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .ut2 tr.sel-row td{background:#eff6ff}
-    .ut2 tr:hover td{background:#f8fafc}
-    .ut2 tr.sel-row:hover td{background:#dbeafe}
-    .ua-btn{display:inline-flex;align-items:center;justify-content:center;
-            padding:3px 8px;border-radius:5px;font-size:12px;font-weight:500;
-            text-decoration:none;cursor:pointer;transition:all .15s;border:1px solid transparent;
-            line-height:1.3;white-space:nowrap}
-    .ua-sel{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe}
-    .ua-sel:hover{background:#dbeafe}
-    .ua-unsel{background:#f9fafb;color:#6b7280;border-color:#e5e7eb}
-    .ua-unsel:hover{background:#f3f4f6;color:#374151}
-    .ua-fav{background:#fffbeb;color:#d97706;border-color:#fde68a;font-size:14px}
-    .ua-fav:hover{background:#fef3c7}
-    .ua-unfav{background:#f9fafb;color:#9ca3af;border-color:#e5e7eb;font-size:14px}
-    .ua-unfav:hover{background:#f3f4f6;color:#6b7280}
+    .ut3-hdr{display:grid;grid-template-columns:40px 120px 1fr 90px 70px 90px 70px;
+             gap:4px;padding:6px 8px;background:#f9fafb;border-bottom:2px solid #e5e7eb;
+             border-radius:6px 6px 0 0;font-size:12px;font-weight:600;color:#374151;
+             align-items:center;margin-bottom:0}
+    .ut3-hdr span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ut3-body{border:1px solid #e5e7eb;border-top:none;border-radius:0 0 6px 6px;
+              margin-bottom:12px}
+    /* 让行内每个 st.columns 的按钮样式更紧凑 */
+    .row-item .stButton>button{
+        padding:3px 6px !important;
+        font-size:12px !important;
+        min-height:28px !important;
+        border-radius:5px !important;
+    }
     @media(max-width:768px){
-      .ut2{font-size:11px;}
-      .ut2 th,.ut2 td{padding:5px 4px}
-      .ua-btn{padding:2px 5px;font-size:11px}
+      .ut3-hdr{grid-template-columns:30px 80px 1fr 70px 50px 70px 50px;font-size:11px}
     }
     </style>
+    <div class="ut3-hdr">
+      <span>#</span>
+      <span>代码</span>
+      <span>名称</span>
+      <span style="text-align:center">选择</span>
+      <span style="text-align:center">收藏</span>
+      <span style="text-align:center">扫描</span>
+      <span style="text-align:center">图表</span>
+    </div>
+    <div class="ut3-body">
     """, unsafe_allow_html=True)
-
-    # ── 构建完整表格行（选择/收藏/扫描全部在表格内）──────────────
-    rows_html = []
-    scan_singles = []   # 仅用于单支扫描st.button（扫描需要Python逻辑）
 
     for i, (ticker, name) in enumerate(page_items):
         global_i = page_idx * page_size + i + 1
         is_fav   = ticker in wl_set
         is_sel   = ticker in selected
 
-        t_e   = _he(ticker)
-        n_e   = _he(name)
-        enc   = _qu(f"{'sel_del' if is_sel else 'sel_add'}|{ticker}|{name}", safe="")
-        fenc  = _qu(f"{'fav_del' if is_fav else 'fav_add'}|{ticker}|{name}", safe="")
-        href_sel = f"?_t={_t_param}&_u_{market_key}={enc}"
-        href_fav = f"?_t={_t_param}&_u_{market_key}={fenc}"
-
-        # TV 链接（中文版）
+        # TV link
         if market_key == "a_share":
             exch   = "SH" if ticker[0] == "6" else ("BJ" if ticker[0] in ("4","8","9") else "SZ")
             tv_lnk = f"https://cn.tradingview.com/chart/?symbol={exch}{ticker}"
@@ -472,65 +465,89 @@ def _render_market(market_key: str, load_fn, category: str, cfg: dict, label: st
         else:
             tv_lnk = f"https://cn.tradingview.com/chart/?symbol={ticker}"
 
-        row_cls = " class='sel-row'" if is_sel else ""
-        sel_cls = "ua-btn ua-sel" if is_sel else "ua-btn ua-unsel"
-        sel_lbl = "✅ 已选" if is_sel else "⬜ 选择"
-        fav_cls = "ua-btn ua-fav" if is_fav else "ua-btn ua-unfav"
-        fav_lbl = "★" if is_fav else "☆"
-        fav_tip = _he(f"{'取消收藏' if is_fav else '收藏'} {name}")
-        sel_tip = _he(f"{'取消选择' if is_sel else '选择'} {name}")
+        # 奇偶行背景
+        row_bg = "background:#f8fafc" if i % 2 == 0 else "background:#fff"
+        if is_sel:
+            row_bg = "background:#eff6ff"
 
-        rows_html.append(
-            f"<tr{row_cls}>"
-            f"<td style='width:4%;color:#9ca3af;text-align:center'>{global_i}</td>"
-            f"<td style='width:16%;font-family:monospace;font-weight:600'>{t_e}</td>"
-            f"<td style='width:30%'>{n_e}</td>"
-            f"<td style='width:12%;text-align:center'>"
-            f"<a href='{href_sel}' class='{sel_cls}' title='{sel_tip}'>{sel_lbl}</a></td>"
-            f"<td style='width:8%;text-align:center'>"
-            f"<a href='{href_fav}' class='{fav_cls}' title='{fav_tip}'>{fav_lbl}</a></td>"
-            f"<td style='width:10%;text-align:center;font-size:11px'>"
-            f"<span style='color:#9ca3af'>🔍扫描↓</span></td>"
-            f"<td style='width:10%;text-align:center'>"
-            f"<a href='{tv_lnk}' target='_blank' style='color:#e85d04;font-size:12px'>📈 TV</a></td>"
-            f"</tr>"
+        st.markdown(
+            f'<div style="{row_bg};padding:4px 8px;border-bottom:1px solid #f3f4f6;'
+            f'display:flex;align-items:center;min-height:36px">',
+            unsafe_allow_html=True
         )
-        scan_singles.append((ticker, name, i))
 
-    # 整体输出表格
+        # 7列：# | 代码 | 名称 | [选择按钮] | [收藏按钮] | [扫描按钮] | [TV链接]
+        c_no, c_tk, c_nm, c_sel, c_fav, c_scan, c_tv = st.columns(
+            [0.5, 1.3, 3.2, 1.1, 0.8, 1.1, 0.8]
+        )
+        with c_no:
+            st.markdown(
+                f'<div style="color:#9ca3af;font-size:11px;text-align:center;'
+                f'padding-top:4px">{global_i}</div>',
+                unsafe_allow_html=True
+            )
+        with c_tk:
+            st.markdown(
+                f'<div style="font-family:monospace;font-size:12px;font-weight:600;'
+                f'padding-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+                f'{ticker}</div>',
+                unsafe_allow_html=True
+            )
+        with c_nm:
+            st.markdown(
+                f'<div style="font-size:12px;padding-top:4px;overflow:hidden;'
+                f'text-overflow:ellipsis;white-space:nowrap" title="{name}">'
+                f'{name}</div>',
+                unsafe_allow_html=True
+            )
+        with c_sel:
+            sel_lbl = "✅ 已选" if is_sel else "⬜ 选择"
+            sel_type = "primary" if is_sel else "secondary"
+            if st.button(sel_lbl, key=f"sel_{market_key}_{page_idx}_{i}",
+                         help=f"{'取消选择' if is_sel else '选择'} {name}",
+                         use_container_width=True, type=sel_type):
+                if is_sel:
+                    selected.discard(ticker)
+                else:
+                    selected.add(ticker)
+                st.session_state[sel_key] = selected
+                st.rerun()
+        with c_fav:
+            fav_lbl = "★" if is_fav else "☆"
+            if st.button(fav_lbl, key=f"fav_{market_key}_{page_idx}_{i}",
+                         help=f"{'取消收藏' if is_fav else '收藏'} {name}",
+                         use_container_width=True):
+                if is_fav:
+                    storage.remove_from_watchlist(ticker)
+                    st.toast(f"已移除：{name}", icon="🗑️")
+                else:
+                    storage.add_to_watchlist(ticker=ticker, name=name,
+                                             note=f"{label}品种库添加")
+                    st.toast(f"已收藏：{name}", icon="⭐")
+                st.rerun()
+        with c_scan:
+            if st.button("🔍 扫描", key=f"scan_{market_key}_{page_idx}_{i}",
+                         help=f"单独扫描 {name}（约6秒）",
+                         use_container_width=True):
+                _run_single(ticker, name, category, cfg)
+        with c_tv:
+            st.markdown(
+                f'<a href="{tv_lnk}" target="_blank" '
+                f'style="color:#e85d04;font-size:12px;text-decoration:none;'
+                f'display:block;text-align:center;padding-top:4px">📈 TV</a>',
+                unsafe_allow_html=True
+            )
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
     st.markdown(
-        f'<div class="ut2-wrap"><table class="ut2"><thead><tr>'
-        f'<th style="text-align:center;width:4%">#</th>'
-        f'<th style="text-align:left;width:16%">代码</th>'
-        f'<th style="text-align:left;width:30%">名称</th>'
-        f'<th style="text-align:center;width:12%">选择</th>'
-        f'<th style="text-align:center;width:8%">收藏</th>'
-        f'<th style="text-align:center;width:10%">单支扫描</th>'
-        f'<th style="text-align:center;width:10%">图表</th>'
-        f'</tr></thead>'
-        f'<tbody>{"".join(rows_html)}</tbody>'
-        f'</table></div>',
+        f'<div style="color:#9ca3af;font-size:11px;margin:4px 0 12px">'
+        f'共 {len(page_items)} 条｜✅已选 {len(selected)} 支｜点击按钮可选择/收藏/扫描单支品种</div>',
         unsafe_allow_html=True,
     )
-    st.markdown(
-        '<div style="color:#9ca3af;font-size:11px;margin:4px 0 8px">'
-        '点击「⬜选择」切换选中状态 · 点击「☆收藏」加入自选 · 「🔍扫描」按钮在下方对应行</div>',
-        unsafe_allow_html=True,
-    )
 
-    # ── 单支扫描按钮（紧凑展示，与表格行对应）─────────────────
-    ITEMS_PER_ROW = 5
-    for chunk_start in range(0, len(scan_singles), ITEMS_PER_ROW):
-        chunk = scan_singles[chunk_start: chunk_start + ITEMS_PER_ROW]
-        cols = st.columns(len(chunk))
-        for j, (ticker, name, i) in enumerate(chunk):
-            with cols[j]:
-                if st.button(f"🔍 {ticker[:10]}", key=f"univ_scan1_{market_key}_{page_idx}_{i}",
-                             help=f"单独扫描 {name}（约6秒）",
-                             use_container_width=True):
-                    _run_single(ticker, name, category, cfg)
-
-    # ── 批量扫描 ─────────────────────────────────────────────────
+        # ── 批量扫描 ─────────────────────────────────────────────────
     st.markdown("---")
     n_sel = len(selected)
 

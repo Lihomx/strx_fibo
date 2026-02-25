@@ -185,6 +185,8 @@ def sidebar():
         for icon, label, key in NAV:
             if st.button(f"{icon}  {label}", key=f"nav_{key}", width="stretch"):
                 st.session_state.page = key
+                # 清除 URL 路由标记，允许下次 URL 参数重新路由
+                st.session_state.pop("_url_routed", None)
                 st.rerun()
 
         # ── 云同步状态 ──────────────────────────────────────────
@@ -375,21 +377,29 @@ def main():
     except Exception:
         pass
 
-    if "page" not in st.session_state:
-        st.session_state.page = "scanner"
-
     # 支持 URL 参数跳转（如收藏后新标签打开自选页）
+    # 注意：必须在设置默认 page 之前读取，防止新标签页路由被覆盖
+    _VALID_PAGES = ("watchlist","scanner","confluence","alerts","settings",
+                    "history","cloud","universe")
     _url_page = st.query_params.get("_page", "")
-    if _url_page and _url_page in ("watchlist","scanner","confluence","alerts","settings","history","cloud"):
-        st.session_state.page = _url_page
-        _anchor = st.query_params.get("_anchor", "")
-        if _anchor:
+    _anchor   = st.query_params.get("_anchor", "")
+
+    if _url_page and _url_page in _VALID_PAGES:
+        # 直接设置目标页（不弹出 query_params，让它保留在 URL 以防 rerun）
+        st.session_state["page"] = _url_page
+        if _anchor and not st.session_state.get("_wl_highlight"):
             st.session_state["_wl_highlight"] = _anchor
-        try:
-            st.query_params.pop("_page", None)
-            st.query_params.pop("_anchor", None)
-        except Exception:
-            pass
+        # 首次处理后标记，防止重复设置覆盖用户的后续导航
+        if not st.session_state.get("_url_routed"):
+            st.session_state["_url_routed"] = True
+            try:
+                # 弹出路由参数，保留 _t（登录 token）
+                st.query_params.pop("_page", None)
+                st.query_params.pop("_anchor", None)
+            except Exception:
+                pass
+    elif "page" not in st.session_state:
+        st.session_state.page = "scanner"
 
     sidebar()
 
