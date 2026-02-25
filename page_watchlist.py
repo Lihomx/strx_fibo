@@ -81,13 +81,16 @@ def render():
         unsafe_allow_html=True,
     )
 
-    # ── Tab：收藏 / 存档 / 备份 ────────────────────────────────
-    tab_main, tab_archive, tab_backup = st.tabs(
-        ["⭐ 当前收藏", "🗂️ 已删除存档", "💾 备份与恢复"]
+    # ── Tab：收藏 / 分类管理 / 存档 / 备份 ──────────────────────
+    tab_main, tab_cats, tab_archive, tab_backup = st.tabs(
+        ["⭐ 当前收藏", "🏷️ 分类管理", "🗂️ 已删除存档", "💾 备份与恢复"]
     )
 
     with tab_main:
         _render_main()
+
+    with tab_cats:
+        _render_categories()
 
     with tab_archive:
         _render_archive()
@@ -101,6 +104,7 @@ def render():
 # ════════════════════════════════════════════════════════════════════
 def _render_main():
     items = storage.load_watchlist()
+    cats  = storage.load_wl_categories()
 
     # ── 处理来自扫描页的高亮定位 ────────────────────────────────
     _hl = st.session_state.pop("_wl_highlight", None)
@@ -263,21 +267,59 @@ def _render_main():
             if q in i["ticker"].upper() or q in i.get("name", "").upper()
         ]
 
+    # ── 分类筛选 ────────────────────────────────────────────────
+    if cats:
+        # 构建分类选项（含路径名称，最多3级）
+        _cat_opts = {"全部": None, "未分类": "__NONE__"}
+        def _collect_opts(tree, prefix=""):
+            for node in sorted(tree, key=lambda x: x.get("order", 0)):
+                label = f"{prefix}{node['name']}" if prefix else node["name"]
+                _cat_opts[label] = node["id"]
+                if node.get("children"):
+                    _collect_opts(node["children"], prefix=f"{prefix}  └ ")
+        _collect_opts(storage.build_cat_tree(cats))
+
+        _sel_cat = st.selectbox(
+            "🏷️ 按分类筛选",
+            options=list(_cat_opts.keys()),
+            key="wl_cat_filter",
+            label_visibility="collapsed",
+        )
+        _sel_cat_id = _cat_opts[_sel_cat]
+        if _sel_cat_id == "__NONE__":
+            # 未分类：category_id 为 None 或不存在
+            display_items = [i for i in display_items
+                             if not i.get("category_id")]
+        elif _sel_cat_id is not None:
+            # 筛选该分类及其后代
+            _valid_ids = {_sel_cat_id} | storage._collect_descendants(cats, _sel_cat_id)
+            display_items = [i for i in display_items
+                             if i.get("category_id") in _valid_ids]
+    else:
+        _sel_cat_id = None
+
     # ── 置顶排序：pinned=True 的排在前面 ──────────────────────
     display_items = sorted(display_items, key=lambda x: (0 if x.get("pinned") else 1))
 
     pinned_cnt = sum(1 for i in display_items if i.get("pinned"))
+    # 计算分类名（用于标题显示）
+    _cat_label_disp = ""
+    if cats and _sel_cat_id and _sel_cat_id != "__NONE__":
+        _cat_label_disp = f" · 🏷️ {_sel_cat}"
+    elif _sel_cat_id == "__NONE__":
+        _cat_label_disp = " · 🏷️ 未分类"
     st.markdown(
         f"<div style='color:#6b7280;font-size:12px;margin-bottom:8px'>"
         f"共 {len(items)} 个品种 · 显示 {len(display_items)} 个"
         + (f" · 📌 {pinned_cnt} 个置顶" if pinned_cnt else "")
+        + _cat_label_disp
         + "</div>",
         unsafe_allow_html=True,
     )
 
     # ── 品种卡片 ────────────────────────────────────────────────
     for idx, item in enumerate(display_items):
-        _render_card(item, idx, result_map)
+        _render_card(item, idx, result_map, cats)
 
     # ── 导出 ─────────────────────────────────────────────────────
     st.markdown("---")
@@ -314,7 +356,7 @@ def _render_main():
 #   2. 置顶按钮
 #   3. 最新备注移到最后（添加备注按钮之前）
 # ════════════════════════════════════════════════════════════════════
-def _render_card(item: dict, idx: int, result_map: dict):
+def _render_card(item: dict, idx: int, result_map: dict, cats: list = None):
     ticker  = item["ticker"]
     name    = item.get("name", "")
     added   = item.get("added_at", "")
@@ -346,11 +388,22 @@ def _render_card(item: dict, idx: int, result_map: dict):
             if name:
                 # 有全称：大字显示全称，小字显示 ticker
                 pin_icon = "📌 " if pinned else ""
+                # 分类标签
+                _cat_badge = ""
+                _item_cat_id = item.get("category_id")
+                if cats and _item_cat_id:
+                    _cat_node = next((c for c in cats if c["id"] == _item_cat_id), None)
+                    if _cat_node:
+                        _cat_badge = (f'<span style="background:#eff6ff;color:#1d4ed8;'
+                                     f'font-size:10px;padding:1px 6px;border-radius:10px;'
+                                     f'margin-left:6px;font-weight:500">'
+                                     f'🏷️ {_he(_cat_node["name"])}</span>')
                 st.markdown(
                     f"<div style='margin-bottom:2px'>"
                     f"<span style='font-size:16px;font-weight:700;color:#111'>{pin_icon}{name}</span>&nbsp;&nbsp;"
                     f"<span style='font-family:monospace;font-size:12px;color:#9ca3af;"
                     f"background:#f3f4f6;padding:2px 6px;border-radius:4px'>{ticker}</span>"
+                    f"{_cat_badge}"
                     f"</div>"
                     f"<span style='color:#9ca3af;font-size:11px'>收藏于 {added}</span>",
                     unsafe_allow_html=True,
@@ -358,17 +411,27 @@ def _render_card(item: dict, idx: int, result_map: dict):
             else:
                 # 没有全称：直接显示 ticker
                 pin_icon = "📌 " if pinned else ""
+                _cat_badge = ""
+                _item_cat_id = item.get("category_id")
+                if cats and _item_cat_id:
+                    _cat_node = next((c for c in cats if c["id"] == _item_cat_id), None)
+                    if _cat_node:
+                        _cat_badge = (f'<span style="background:#eff6ff;color:#1d4ed8;'
+                                     f'font-size:10px;padding:1px 6px;border-radius:10px;'
+                                     f'margin-left:6px">'
+                                     f'🏷️ {_he(_cat_node["name"])}</span>')
                 st.markdown(
                     f"<div style='margin-bottom:2px'>"
                     f"<span style='font-size:16px;font-weight:700;font-family:monospace;color:#111'>{pin_icon}{ticker}</span>"
+                    f"{_cat_badge}"
                     f"</div>"
                     f"<span style='color:#9ca3af;font-size:11px'>收藏于 {added}</span>",
                     unsafe_allow_html=True,
                 )
 
         with col_actions:
-            # 操作按钮：置顶 + TV + 扫描 + 删除
-            btn_c1, btn_c2, btn_c3, btn_c4 = st.columns(4)
+            # 操作按钮：置顶 + TV + 扫描 + 分类 + 删除
+            btn_c1, btn_c2, btn_c3, btn_c4, btn_c5 = st.columns(5)
             with btn_c1:
                 pin_label = "📌" if not pinned else "🔓"
                 pin_help  = "置顶此品种" if not pinned else "取消置顶"
@@ -384,11 +447,55 @@ def _render_card(item: dict, idx: int, result_map: dict):
                     st.session_state["wl_jump_ticker"] = ticker
                     st.rerun()
             with btn_c4:
+                # 分类标签按钮
+                if st.button("🏷️", key=f"wl_cat_btn_{ticker}_{idx}",
+                             help="设置分类"):
+                    _toggle_key = f"wl_cat_editing_{ticker}"
+                    st.session_state[_toggle_key] = not st.session_state.get(_toggle_key, False)
+                    st.rerun()
+            with btn_c5:
                 if st.button("🗑", key=f"wl_del_{ticker}_{idx}",
                              help=f"删除（移入存档）{ticker}"):
                     storage.remove_from_watchlist(ticker)
                     st.toast(f"已移入存档：{ticker}", icon="🗂️")
                     st.rerun()
+
+        # ── 分类指派（内联展开）─────────────────────────────────
+        if st.session_state.get(f"wl_cat_editing_{ticker}"):
+            if not cats:
+                st.warning("⚠️ 尚无分类，请先在「🏷️ 分类管理」标签页创建分类。")
+            else:
+                _cur_cat_id = item.get("category_id")
+                # 构建选项：None=未分类 + 所有分类
+                _opts_labels = ["（未分类）"]
+                _opts_ids    = [None]
+                def _fill_opts(tree, prefix=""):
+                    for node in sorted(tree, key=lambda x: x.get("order",0)):
+                        _opts_labels.append(f"{prefix}{node['name']}")
+                        _opts_ids.append(node["id"])
+                        if node.get("children"):
+                            _fill_opts(node["children"], prefix + "  └ ")
+                _fill_opts(storage.build_cat_tree(cats))
+                _cur_idx = _opts_ids.index(_cur_cat_id) if _cur_cat_id in _opts_ids else 0
+                _new_cat = st.selectbox(
+                    f"📂 {ticker} 的分类",
+                    options=_opts_labels,
+                    index=_cur_idx,
+                    key=f"wl_cat_sel_{ticker}_{idx}",
+                )
+                _new_cat_id = _opts_ids[_opts_labels.index(_new_cat)]
+                _sc1, _sc2 = st.columns(2)
+                with _sc1:
+                    if st.button("💾 保存分类", key=f"wl_cat_save_{ticker}_{idx}",
+                                 type="primary"):
+                        storage.set_watchlist_item_category(ticker, _new_cat_id)
+                        st.session_state.pop(f"wl_cat_editing_{ticker}", None)
+                        st.toast(f"已设置分类：{_new_cat}", icon="🏷️")
+                        st.rerun()
+                with _sc2:
+                    if st.button("取消", key=f"wl_cat_cancel_{ticker}_{idx}"):
+                        st.session_state.pop(f"wl_cat_editing_{ticker}", None)
+                        st.rerun()
 
         # ── Fibo 状态 ──────────────────────────────────────────
         if results:
@@ -490,6 +597,262 @@ def _render_card(item: dict, idx: int, result_map: dict):
             )
 
         st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ════════════════════════════════════════════════════════════════════
+# 🏷️ 分类管理页面
+# 支持：无限层级（1/2/3级）、新增/重命名/删除/排序
+# 分类树结构存储于 storage.F_WL_CATS
+# ════════════════════════════════════════════════════════════════════
+def _render_categories():
+    st.markdown("### 🏷️ 分类管理")
+    st.markdown(
+        '<p style="color:#6b7280;font-size:13px;margin-top:-8px">'
+        '创建品种分类目录（支持三级），在品种卡片上点击 🏷️ 可指派分类。</p>',
+        unsafe_allow_html=True,
+    )
+
+    cats = storage.load_wl_categories()
+    tree = storage.build_cat_tree(cats)
+
+    # ── 新增分类 ──────────────────────────────────────────────
+    with st.expander("➕ 新增分类", expanded=len(cats) == 0):
+        _add_col1, _add_col2, _add_col3 = st.columns([3, 3, 2])
+        with _add_col1:
+            _new_cat_name = st.text_input(
+                "分类名称 *", placeholder="如：A股 / 美股科技 / 长期持有",
+                key="cat_new_name",
+            ).strip()
+        with _add_col2:
+            # 父分类（空=顶级）
+            _parent_opts  = {"顶级分类（一级）": None}
+            def _fill_parent(tree, prefix=""):
+                for node in sorted(tree, key=lambda x: x.get("order", 0)):
+                    depth = prefix.count("└")
+                    if depth < 2:  # 最多3级，所以父级最多2级
+                        _parent_opts[f"{prefix}{node['name']}"] = node["id"]
+                        if node.get("children"):
+                            _fill_parent(node["children"], prefix + "  └ ")
+            _fill_parent(tree)
+            _parent_label = st.selectbox(
+                "父级分类", options=list(_parent_opts.keys()),
+                key="cat_new_parent",
+            )
+            _parent_id = _parent_opts[_parent_label]
+        with _add_col3:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("➕ 添加分类", key="cat_add_btn", type="primary",
+                         use_container_width=True):
+                if not _new_cat_name:
+                    st.warning("请输入分类名称")
+                else:
+                    new_id = storage.add_wl_category(_new_cat_name, _parent_id)
+                    if new_id:
+                        st.success(f"✅ 已添加：{_new_cat_name}")
+                        st.rerun()
+                    else:
+                        st.warning(f"⚠️ 同级分类「{_new_cat_name}」已存在")
+
+    if not cats:
+        st.markdown("""
+        <div style="text-align:center;padding:40px 20px;color:#9ca3af;">
+          <div style="font-size:36px">🏷️</div>
+          <div style="font-size:15px;margin:10px 0 6px;color:#374151;font-weight:600">尚无分类</div>
+          <div style="font-size:13px">点击上方「新增分类」创建您的第一个分类</div>
+        </div>
+        """, unsafe_allow_html=True)
+        return
+
+    st.markdown("---")
+    st.markdown("**📋 分类目录**（可展开编辑、重命名、排序、删除）")
+
+    # 统计每个分类下的品种数量
+    items = storage.load_watchlist()
+    def _count_in_cat(cat_id, cats_flat):
+        """统计该分类及其后代下的品种数"""
+        all_ids = {cat_id} | storage._collect_descendants(cats_flat, cat_id)
+        return sum(1 for i in items if i.get("category_id") in all_ids)
+
+    def _render_cat_node(node, cats_flat, depth=0):
+        """递归渲染分类节点"""
+        indent = "&nbsp;" * (depth * 4)
+        depth_label = ["一", "二", "三"][min(depth, 2)]
+        item_cnt    = _count_in_cat(node["id"], cats_flat)
+        badge_color = ["#dbeafe", "#dcfce7", "#fef9c3"][min(depth, 2)]
+        badge_text  = ["#1d4ed8", "#15803d", "#92400e"][min(depth, 2)]
+
+        with st.container():
+            col_icon, col_info, col_ops = st.columns([0.3, 5, 4])
+            with col_icon:
+                icons = ["📁", "📂", "📄"]
+                st.markdown(
+                    f'<div style="font-size:20px;padding-top:6px;text-align:center">'
+                    f'{icons[min(depth,2)]}</div>',
+                    unsafe_allow_html=True,
+                )
+            with col_info:
+                st.markdown(
+                    f'{indent}<span style="font-size:14px;font-weight:600;color:#111">'
+                    f'{_he(node["name"])}</span>'
+                    f'<span style="background:{badge_color};color:{badge_text};'
+                    f'font-size:10px;padding:1px 7px;border-radius:10px;margin-left:8px">'
+                    f'{depth_label}级</span>'
+                    f'<span style="color:#9ca3af;font-size:11px;margin-left:8px">'
+                    f'{item_cnt} 个品种</span>',
+                    unsafe_allow_html=True,
+                )
+            with col_ops:
+                _op1, _op2, _op3, _op4, _op5 = st.columns(5)
+                with _op1:
+                    if st.button("✏️", key=f"cat_edit_{node['id']}",
+                                 help="重命名"):
+                        st.session_state[f"cat_renaming_{node['id']}"] = True
+                        st.rerun()
+                with _op2:
+                    if st.button("⬆️", key=f"cat_up_{node['id']}",
+                                 help="上移"):
+                        storage.reorder_wl_category(node["id"], "up")
+                        st.rerun()
+                with _op3:
+                    if st.button("⬇️", key=f"cat_dn_{node['id']}",
+                                 help="下移"):
+                        storage.reorder_wl_category(node["id"], "down")
+                        st.rerun()
+                with _op4:
+                    if depth < 2:  # 最多3级，深度0/1可有子分类
+                        if st.button("➕", key=f"cat_sub_{node['id']}",
+                                     help="添加子分类"):
+                            st.session_state[f"cat_adding_sub_{node['id']}"] = True
+                            st.rerun()
+                with _op5:
+                    if st.button("🗑️", key=f"cat_del_{node['id']}",
+                                 help="删除此分类（品种将变为未分类）"):
+                        st.session_state[f"cat_del_confirm_{node['id']}"] = True
+                        st.rerun()
+
+            # 重命名表单
+            if st.session_state.get(f"cat_renaming_{node['id']}"):
+                _rn_col1, _rn_col2, _rn_col3 = st.columns([4, 1, 1])
+                with _rn_col1:
+                    _rn_val = st.text_input(
+                        "新名称", value=node["name"],
+                        key=f"cat_rn_input_{node['id']}",
+                    )
+                with _rn_col2:
+                    if st.button("💾", key=f"cat_rn_save_{node['id']}",
+                                 help="保存"):
+                        if _rn_val.strip():
+                            storage.rename_wl_category(node["id"], _rn_val.strip())
+                            st.session_state.pop(f"cat_renaming_{node['id']}", None)
+                            st.rerun()
+                with _rn_col3:
+                    if st.button("✖", key=f"cat_rn_cancel_{node['id']}",
+                                 help="取消"):
+                        st.session_state.pop(f"cat_renaming_{node['id']}", None)
+                        st.rerun()
+
+            # 删除确认
+            if st.session_state.get(f"cat_del_confirm_{node['id']}"):
+                desc_cnt = len(storage._collect_descendants(cats_flat, node["id"]))
+                sub_txt  = f"（含 {desc_cnt} 个子分类）" if desc_cnt else ""
+                st.warning(
+                    f"⚠️ 确认删除「{node['name']}」{sub_txt}？"
+                    f"该分类下 {item_cnt} 个品种将变为「未分类」。"
+                )
+                _dc1, _dc2 = st.columns(2)
+                with _dc1:
+                    if st.button("✅ 确认删除", key=f"cat_del_yes_{node['id']}",
+                                 type="primary"):
+                        storage.delete_wl_category(node["id"])
+                        st.session_state.pop(f"cat_del_confirm_{node['id']}", None)
+                        st.rerun()
+                with _dc2:
+                    if st.button("取消", key=f"cat_del_no_{node['id']}"):
+                        st.session_state.pop(f"cat_del_confirm_{node['id']}", None)
+                        st.rerun()
+
+            # 添加子分类
+            if st.session_state.get(f"cat_adding_sub_{node['id']}"):
+                _sub_col1, _sub_col2, _sub_col3 = st.columns([4, 1, 1])
+                with _sub_col1:
+                    _sub_name = st.text_input(
+                        f"子分类名称（{node['name']} 下）",
+                        key=f"cat_sub_input_{node['id']}",
+                        placeholder="输入子分类名称…",
+                    )
+                with _sub_col2:
+                    if st.button("➕", key=f"cat_sub_save_{node['id']}",
+                                 help="添加"):
+                        if _sub_name.strip():
+                            new_id = storage.add_wl_category(_sub_name.strip(), node["id"])
+                            if new_id:
+                                st.session_state.pop(f"cat_adding_sub_{node['id']}", None)
+                                st.rerun()
+                            else:
+                                st.warning("同级已存在同名分类")
+                with _sub_col3:
+                    if st.button("✖", key=f"cat_sub_cancel_{node['id']}",
+                                 help="取消"):
+                        st.session_state.pop(f"cat_adding_sub_{node['id']}", None)
+                        st.rerun()
+
+        # 递归渲染子分类
+        for child in sorted(node.get("children", []), key=lambda x: x.get("order", 0)):
+            _render_cat_node(child, cats_flat, depth + 1)
+
+        if depth == 0:
+            st.markdown(
+                '<div style="border-bottom:1px solid #f3f4f6;margin:4px 0"></div>',
+                unsafe_allow_html=True,
+            )
+
+    # 渲染整棵树
+    for root_node in sorted(tree, key=lambda x: x.get("order", 0)):
+        _render_cat_node(root_node, cats)
+
+    # ── 批量设置分类 ──────────────────────────────────────────
+    st.markdown("---")
+    with st.expander("📦 批量设置品种分类"):
+        items_all = storage.load_watchlist()
+        if not items_all:
+            st.info("收藏夹为空")
+        else:
+            _b_col1, _b_col2, _b_col3 = st.columns([3, 3, 2])
+            with _b_col1:
+                _tickers_in_batch = st.multiselect(
+                    "选择品种",
+                    options=[f"{i['ticker']} {i.get('name','')}" for i in items_all],
+                    key="cat_batch_tickers",
+                    placeholder="选择要批量设置分类的品种…",
+                )
+            with _b_col2:
+                _batch_opts_l = ["（未分类）"]
+                _batch_opts_i = [None]
+                def _fill_batch(tree, prefix=""):
+                    for node in sorted(tree, key=lambda x: x.get("order",0)):
+                        _batch_opts_l.append(f"{prefix}{node['name']}")
+                        _batch_opts_i.append(node["id"])
+                        if node.get("children"):
+                            _fill_batch(node["children"], prefix + "  └ ")
+                _fill_batch(storage.build_cat_tree(cats))
+                _batch_cat = st.selectbox(
+                    "目标分类",
+                    options=_batch_opts_l,
+                    key="cat_batch_target",
+                )
+                _batch_cat_id = _batch_opts_i[_batch_opts_l.index(_batch_cat)]
+            with _b_col3:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("💾 批量设置", key="cat_batch_save",
+                             type="primary", use_container_width=True):
+                    if _tickers_in_batch:
+                        for tkstr in _tickers_in_batch:
+                            tk = tkstr.split()[0]
+                            storage.set_watchlist_item_category(tk, _batch_cat_id)
+                        st.success(f"✅ 已为 {len(_tickers_in_batch)} 个品种设置分类")
+                        st.rerun()
+                    else:
+                        st.warning("请先选择品种")
 
 
 def _render_archive():

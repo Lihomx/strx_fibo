@@ -70,20 +70,11 @@ def render():
         _metrics(0, 0, 0, 0)
         return
 
-    rows     = storage.load_latest_results(inzone_only=False)
-    sessions = storage.load_sessions(limit=5)
-    last_s   = sessions[0] if sessions else {}
-
-    # 合并多次扫描的最新数据（同一 ticker+timeframe 取最新）
-    # sessions 已按时间倒序，第一次遇到即为最新
-    latest_map = {}
-    for sess in sessions:   # sessions[0] = 最新，直接正序遍历覆盖即可
-        sess_rows = storage.load_session_results(sess["session_id"])
-        for r in sess_rows:
-            key = (r["ticker"], r["timeframe"])
-            if key not in latest_map:
-                latest_map[key] = r
-    merged_rows = list(latest_map.values()) if latest_map else rows
+    # load_latest_results 已内置"同 ticker+timeframe 取最新"合并逻辑
+    # 直接使用，比 session 循环更健壮（session_id 过滤不一定覆盖所有来源）
+    merged_rows = storage.load_latest_results(inzone_only=False)
+    sessions    = storage.load_sessions(limit=5)
+    last_s      = sessions[0] if sessions else {}
 
     total  = len(set(r["ticker"] for r in merged_rows))
     inzone = sum(1 for r in merged_rows if r.get("in_zone"))
@@ -116,19 +107,32 @@ def render():
         try: return float(v) if v is not None else default
         except: return default
 
-    if sort_by == "共振评分↓":
-        df = df.sort_values("confluence_score", ascending=False)
-    elif sort_by == "回撤%↑":
-        df["_r"] = df["retrace_pct"].apply(lambda x: safe_float(x, 999))
-        df = df.sort_values("_r")
-    elif sort_by == "距离%↑":
-        df["_d"] = df["dist_pct"].apply(lambda x: safe_float(x, 999))
-        df = df.sort_values("_d")
-    else:
-        df = df.sort_values("name")
+    try:
+        if sort_by == "共振评分↓":
+            if "confluence_score" in df.columns:
+                df = df.sort_values("confluence_score", ascending=False)
+        elif sort_by == "回撤%↑":
+            if "retrace_pct" in df.columns:
+                df["_r"] = df["retrace_pct"].apply(lambda x: safe_float(x, 999))
+                df = df.sort_values("_r")
+        elif sort_by == "距离%↑":
+            if "dist_pct" in df.columns:
+                df["_d"] = df["dist_pct"].apply(lambda x: safe_float(x, 999))
+                df = df.sort_values("_d")
+        elif "name" in df.columns:
+            df = df.sort_values("name")
+    except Exception:
+        pass
 
     if df.empty:
         st.info("没有符合条件的结果"); return
+
+    # 确保必需列存在（兼容旧格式数据）
+    for _col in ["in_zone","current_price","retrace_pct","dist_pct",
+                 "confluence_score","confluence_label","timeframe","category",
+                 "ticker","name"]:
+        if _col not in df.columns:
+            df[_col] = None
 
     _render_results_table(df, last_s, safe_float)
 
@@ -352,29 +356,13 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
             mime="text/csv",
         )
     with _clear_col:
-        # 二次确认防止误操作
-        _clr_key = "clear_all_confirm"
-        if not st.session_state.get(_clr_key):
-            if st.button("🗑️ 清空所有缓存", key="clear_all_cache_btn",
-                         help="清除所有扫描结果、历史记录（保留自选收藏和配置）",
-                         type="secondary", use_container_width=True):
-                st.session_state[_clr_key] = True
-                st.rerun()
-        else:
-            st.warning("⚠️ 确认清空所有缓存？")
-            _cc1, _cc2 = st.columns(2)
-            with _cc1:
-                if st.button("✅ 确认清空", key="clear_all_confirm_yes",
-                             type="primary", use_container_width=True):
-                    storage.clear_all_data()
-                    st.session_state.pop(_clr_key, None)
-                    st.toast("✅ 所有缓存已清空", icon="🗑️")
-                    st.rerun()
-            with _cc2:
-                if st.button("❌ 取消", key="clear_all_confirm_no",
-                             use_container_width=True):
-                    st.session_state.pop(_clr_key, None)
-                    st.rerun()
+        # 仅清空本页扫描结果（保留自选收藏、配置、告警日志）
+        if st.button("🗑️ 清空扫描结果", key="clear_scan_results_btn",
+                     help="仅清除本次扫描结果缓存，不影响自选收藏和系统配置",
+                     type="secondary", use_container_width=True):
+            storage.clear_all_scan_data()
+            st.toast("✅ 扫描结果已清空，可重新扫描", icon="🗑️")
+            st.rerun()
 
 # ════════════════════════════════════════════════════════════════════
 

@@ -207,6 +207,16 @@ def clear_all_data() -> bool:
     return ok
 
 
+def clear_all_scan_data() -> bool:
+    """清空扫描结果（保留自选收藏和配置），用于「清空扫描结果」按钮"""
+    ok = True
+    for f in [F_HIST, F_RES, F_ALLRES, F_GROUPS]:
+        if os.path.exists(f):
+            try: os.remove(f)
+            except: ok = False
+    return ok
+
+
 # ── 已扫描组记录（用于标注哪些组已缓存）────────────────────────────
 def load_scanned_groups() -> List[str]:
     return _load(F_GROUPS, [])
@@ -530,3 +540,138 @@ def toggle_pin_watchlist(ticker: str) -> bool:
             save_watchlist(items)
             return item["pinned"]
     return False
+
+
+# ════════════════════════════════════════════════════════════════════
+# 自选收藏夹分类管理
+# 分类树结构：[{id, name, parent_id, order, children:[]}, ...]
+# 品种的分类通过 watchlist item 的 "category_id" 字段关联
+# ════════════════════════════════════════════════════════════════════
+F_WL_CATS = os.path.join(_BASE, "data_wl_categories.json")
+
+_DEFAULT_CATS: List[Dict] = []   # 默认空分类（用户自定义）
+
+
+def load_wl_categories() -> List[Dict]:
+    """加载分类列表（扁平列表，带 parent_id 构成树）"""
+    cats = _load(F_WL_CATS, _DEFAULT_CATS)
+    if not isinstance(cats, list):
+        cats = []
+    # 确保每个分类有必要字段
+    valid = []
+    for c in cats:
+        if isinstance(c, dict) and c.get("id") and c.get("name"):
+            c.setdefault("parent_id", None)
+            c.setdefault("order", 0)
+            valid.append(c)
+    return valid
+
+
+def save_wl_categories(cats: List[Dict]) -> bool:
+    return _save(F_WL_CATS, cats)
+
+
+def add_wl_category(name: str, parent_id=None) -> Optional[str]:
+    """新增分类，返回新分类 id；名称重复（同级）则返回 None"""
+    import uuid
+    name = name.strip()
+    if not name:
+        return None
+    cats = load_wl_categories()
+    # 同级不允许重名
+    siblings = [c for c in cats if c.get("parent_id") == parent_id]
+    if any(c["name"] == name for c in siblings):
+        return None
+    new_id  = str(uuid.uuid4())[:8]
+    max_ord = max((c.get("order", 0) for c in siblings), default=-1) + 1
+    cats.append({"id": new_id, "name": name, "parent_id": parent_id, "order": max_ord})
+    save_wl_categories(cats)
+    return new_id
+
+
+def rename_wl_category(cat_id: str, new_name: str) -> bool:
+    new_name = new_name.strip()
+    if not new_name:
+        return False
+    cats = load_wl_categories()
+    for c in cats:
+        if c["id"] == cat_id:
+            c["name"] = new_name
+            return save_wl_categories(cats)
+    return False
+
+
+def delete_wl_category(cat_id: str, reassign_to=None) -> bool:
+    """删除分类（及其所有子孙分类），品种重置为未分类"""
+    cats = load_wl_categories()
+    # 收集要删除的 id（含后代）
+    to_del = _collect_descendants(cats, cat_id) | {cat_id}
+    cats = [c for c in cats if c["id"] not in to_del]
+    save_wl_categories(cats)
+    # 清除品种中引用了被删分类的字段
+    items = load_watchlist()
+    changed = False
+    for item in items:
+        if item.get("category_id") in to_del:
+            item["category_id"] = reassign_to
+            changed = True
+    if changed:
+        save_watchlist(items)
+    return True
+
+
+def _collect_descendants(cats: List[Dict], parent_id: str) -> set:
+    """递归收集所有后代 id"""
+    result = set()
+    for c in cats:
+        if c.get("parent_id") == parent_id:
+            result.add(c["id"])
+            result |= _collect_descendants(cats, c["id"])
+    return result
+
+
+def reorder_wl_category(cat_id: str, direction: str) -> bool:
+    """上移(up)/下移(down)同级分类"""
+    cats = load_wl_categories()
+    target = next((c for c in cats if c["id"] == cat_id), None)
+    if not target:
+        return False
+    pid = target.get("parent_id")
+    siblings = sorted([c for c in cats if c.get("parent_id") == pid],
+                      key=lambda x: x.get("order", 0))
+    idx = next((i for i, c in enumerate(siblings) if c["id"] == cat_id), -1)
+    if idx < 0:
+        return False
+    if direction == "up" and idx > 0:
+        siblings[idx]["order"], siblings[idx-1]["order"] = \
+            siblings[idx-1].get("order", 0), siblings[idx].get("order", 0)
+    elif direction == "down" and idx < len(siblings) - 1:
+        siblings[idx]["order"], siblings[idx+1]["order"] = \
+            siblings[idx+1].get("order", 0), siblings[idx].get("order", 0)
+    else:
+        return False
+    return save_wl_categories(cats)
+
+
+def set_watchlist_item_category(ticker: str, category_id) -> bool:
+    """设置品种所属分类（None = 未分类）"""
+    ticker = ticker.strip().upper()
+    items  = load_watchlist()
+    for item in items:
+        if item["ticker"].upper() == ticker:
+            item["category_id"] = category_id
+            return save_watchlist(items)
+    return False
+
+
+def build_cat_tree(cats: List[Dict]) -> List[Dict]:
+    """将扁平分类列表构建为树状结构（用于展示）"""
+    cat_map = {c["id"]: dict(c, children=[]) for c in cats}
+    roots = []
+    for c in sorted(cats, key=lambda x: x.get("order", 0)):
+        pid = c.get("parent_id")
+        if pid and pid in cat_map:
+            cat_map[pid]["children"].append(cat_map[c["id"]])
+        else:
+            roots.append(cat_map[c["id"]])
+    return roots
