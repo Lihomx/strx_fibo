@@ -265,33 +265,32 @@ def _render_main():
                 st.session_state["wl_confirm_clear"] = False
                 st.rerun()
 
-    # ── 第二行：分类筛选（始终显示，无分类时显示引导提示）──────
-    # 使用 ID 作为 selectbox 的 option 值，用 format_func 显示名称
-    # 彻底消除 label→id 映射可能因 emoji/前缀不一致而出错的问题
+    # ── 分类筛选 ────────────────────────────────────────────────
+    # 辅助：将分类树展开为 (ids列表, id->显示名 字典)
+    # options 存 UUID，format_func 只负责显示，彻底消除 label 歧义
+    def _cat_id_options(cats_flat):
+        ids   = ["__ALL__", "__NONE__"]
+        names = {"__ALL__": "📋 全部", "__NONE__": "❓ 未分类"}
+        def _walk(nodes, depth=0):
+            prefix = "  " * depth + ("└ " if depth > 0 else "")
+            for node in sorted(nodes, key=lambda x: x.get("order", 0)):
+                ids.append(node["id"])
+                names[node["id"]] = f"🏷️ {prefix}{node['name']}"
+                if node.get("children"):
+                    _walk(node["children"], depth + 1)
+        _walk(storage.build_cat_tree(cats_flat))
+        return ids, names
 
     if cats:
-        # 构建扁平有序 id 列表 + 对应显示名称映射
-        _cf_ids   = ["__ALL__", "__NONE__"]   # 选项 id 列表
-        _cf_names = {"__ALL__": "📋 全部", "__NONE__": "❓ 未分类"}  # id→显示名
-
-        def _build_flat(tree, prefix=""):
-            for node in sorted(tree, key=lambda x: x.get("order", 0)):
-                depth_prefix = ("  └ " * prefix.count("└")) if prefix else ""
-                display_name = f"🏷️ {prefix}{node['name']}"
-                _cf_ids.append(node["id"])
-                _cf_names[node["id"]] = display_name
-                if node.get("children"):
-                    _build_flat(node["children"], prefix + "  └ ")
-
-        _build_flat(storage.build_cat_tree(cats))
+        _cf_ids, _cf_names = _cat_id_options(cats)
 
         _col_catsel, _col_catmgr = st.columns([5, 2])
         with _col_catsel:
             _sel_cat_id = st.selectbox(
                 "🏷️ 按分类筛选",
                 options=_cf_ids,
-                format_func=lambda x: _cf_names.get(x, x),
-                key="wl_cat_filter_id",   # ID-based key, avoids stale label issues
+                format_func=lambda x: _cf_names.get(x, str(x)),
+                key="wl_cat_filter_id",
                 label_visibility="visible",
             )
         with _col_catmgr:
@@ -302,12 +301,10 @@ def _render_main():
                 st.session_state["_wl_tab"] = "cats"
                 st.rerun()
 
-        # __ALL__ → no filter; treat as None
         if _sel_cat_id == "__ALL__":
-            _sel_cat_id = None
+            _sel_cat_id = None          # 全部 → 不过滤
 
     else:
-        # 尚无分类 → 显示引导横幅
         _sel_cat_id = None
         _cf_names   = {}
         st.markdown(
@@ -315,7 +312,7 @@ def _render_main():
             'padding:10px 16px;margin:4px 0 10px;display:flex;align-items:center;gap:12px">'
             '<span style="font-size:20px">🏷️</span>'
             '<span style="color:#15803d;font-size:13px">'
-            '<b>尚未创建分类</b> — 点击右侧按钮前往「分类管理」标签页创建品种分类目录（支持1~3级）'
+            '<b>尚未创建分类</b> — 点击「管理分类」标签页创建品种分类目录（支持1~3级）'
             '</span></div>',
             unsafe_allow_html=True,
         )
@@ -331,24 +328,27 @@ def _render_main():
             if q in i["ticker"].upper() or q in i.get("name", "").upper()
         ]
 
-    # ── 应用分类筛选 ─────────────────────────────────────────
-    # 同时匹配 UUID 和分类名称（兼容历史数据中可能存的是名称而非UUID）
+    # ── 应用分类过滤 ─────────────────────────────────────────
     if _sel_cat_id == "__NONE__":
-        # 未分类：category_id 为 None/空/""/任何已知UUID/已知名称 之外的值
-        _all_cat_ids   = {c["id"]   for c in cats}
-        _all_cat_names = {c["name"] for c in cats}
-        display_items = [i for i in display_items
-                         if not i.get("category_id")
-                         or (i.get("category_id") not in _all_cat_ids
-                             and i.get("category_id") not in _all_cat_names)]
+        # 未分类：category_id 为 None/空，或值不在任何已知分类 id/name 内
+        _known_ids   = {c["id"]   for c in cats}
+        _known_names = {c["name"] for c in cats}
+        display_items = [
+            i for i in display_items
+            if (not i.get("category_id"))
+            or (i["category_id"] not in _known_ids
+                and i["category_id"] not in _known_names)
+        ]
     elif _sel_cat_id is not None:
-        # 该分类及所有后代（UUID 集合）
-        _valid_ids = {_sel_cat_id} | storage._collect_descendants(cats, _sel_cat_id)
-        # 同时构建对应名称集合（兼容 category_id 存为名称的旧数据）
+        # 该分类 + 所有后代的 UUID 集合
+        _valid_ids   = {_sel_cat_id} | storage._collect_descendants(cats, _sel_cat_id)
+        # 兼容旧数据中 category_id 存的是分类名而非 UUID 的情况
         _valid_names = {c["name"] for c in cats if c["id"] in _valid_ids}
-        display_items = [i for i in display_items
-                         if i.get("category_id") in _valid_ids
-                         or i.get("category_id") in _valid_names]
+        display_items = [
+            i for i in display_items
+            if i.get("category_id") in _valid_ids
+            or i.get("category_id") in _valid_names
+        ]
 
     # ── 置顶排序：pinned=True 的排在前面 ──────────────────────
     display_items = sorted(display_items, key=lambda x: (0 if x.get("pinned") else 1))
@@ -501,7 +501,11 @@ def _render_card(item: dict, idx: int, result_map: dict, cats: list = None):
                 if st.button("🏷️", key=f"wl_cat_btn_{ticker}_{idx}",
                              help="设置分类"):
                     _toggle_key = f"wl_cat_editing_{ticker}"
-                    st.session_state[_toggle_key] = not st.session_state.get(_toggle_key, False)
+                    _currently_open = st.session_state.get(_toggle_key, False)
+                    st.session_state[_toggle_key] = not _currently_open
+                    if not _currently_open:
+                        # 打开时标记需要重新初始化（清除旧的选择值）
+                        st.session_state[f"wl_cat_init_{ticker}"] = True
                     st.rerun()
             with btn_c4:
                 if st.button("🗑", key=f"wl_del_{ticker}_{idx}",
@@ -516,35 +520,66 @@ def _render_card(item: dict, idx: int, result_map: dict, cats: list = None):
                 st.warning("⚠️ 尚无分类，请先在「🏷️ 分类管理」标签页创建分类。")
             else:
                 _cur_cat_id = item.get("category_id")
-                # 构建选项：None=未分类 + 所有分类
-                _opts_labels = ["（未分类）"]
-                _opts_ids    = [None]
-                def _fill_opts(tree, prefix=""):
-                    for node in sorted(tree, key=lambda x: x.get("order",0)):
-                        _opts_labels.append(f"{prefix}{node['name']}")
-                        _opts_ids.append(node["id"])
-                        if node.get("children"):
-                            _fill_opts(node["children"], prefix + "  └ ")
-                _fill_opts(storage.build_cat_tree(cats))
-                _cur_idx = _opts_ids.index(_cur_cat_id) if _cur_cat_id in _opts_ids else 0
-                _new_cat = st.selectbox(
-                    f"📂 {ticker} 的分类",
-                    options=_opts_labels,
-                    index=_cur_idx,
-                    key=f"wl_cat_sel_{ticker}_{idx}",
+
+                # 构建 ID 列表 + 显示名映射（纯 UUID，format_func 只负责显示）
+                _as_ids   = ["__UNCAT__"]
+                _as_names = {"__UNCAT__": "（未分类）"}
+                def _fill_assign(nodes, depth=0):
+                    _pfx = ("  " * depth + "└ ") if depth > 0 else ""
+                    for _nd in sorted(nodes, key=lambda x: x.get("order", 0)):
+                        _as_ids.append(_nd["id"])
+                        _as_names[_nd["id"]] = f"{_pfx}{_nd['name']}"
+                        if _nd.get("children"):
+                            _fill_assign(_nd["children"], depth + 1)
+                _fill_assign(storage.build_cat_tree(cats))
+
+                _assign_key = f"wl_cat_sel_id_{ticker}"
+                _init_flag  = f"wl_cat_init_{ticker}"
+
+                # 只在"刚打开"时初始化 session_state（不覆盖用户的选择）
+                if st.session_state.pop(_init_flag, False):
+                    # 计算应该显示的默认值
+                    _default = "__UNCAT__"
+                    if _cur_cat_id:
+                        if _cur_cat_id in _as_ids:
+                            _default = _cur_cat_id
+                        else:
+                            # 兼容旧数据：category_id 存的是名称而非 UUID
+                            _matched = next(
+                                (c["id"] for c in cats if c["name"] == _cur_cat_id),
+                                None
+                            )
+                            if _matched:
+                                _default = _matched
+                    st.session_state[_assign_key] = _default
+
+                # 确保 key 存在且值合法（防止被删除的分类残留）
+                if st.session_state.get(_assign_key) not in _as_ids:
+                    st.session_state[_assign_key] = "__UNCAT__"
+
+                _chosen_id = st.selectbox(
+                    f"📂 设置「{name or ticker}」的分类",
+                    options=_as_ids,
+                    format_func=lambda x: _as_names.get(x, str(x)),
+                    key=_assign_key,
                 )
-                _new_cat_id = _opts_ids[_opts_labels.index(_new_cat)]
                 _sc1, _sc2 = st.columns(2)
                 with _sc1:
                     if st.button("💾 保存分类", key=f"wl_cat_save_{ticker}_{idx}",
                                  type="primary"):
-                        storage.set_watchlist_item_category(ticker, _new_cat_id)
+                        _save_cat_id = None if _chosen_id == "__UNCAT__" else _chosen_id
+                        storage.set_watchlist_item_category(ticker, _save_cat_id)
                         st.session_state.pop(f"wl_cat_editing_{ticker}", None)
-                        st.toast(f"已设置分类：{_new_cat}", icon="🏷️")
+                        st.session_state.pop(_assign_key, None)
+                        st.session_state.pop(_init_flag, None)
+                        _disp = _as_names.get(_chosen_id, str(_chosen_id))
+                        st.toast(f"已设置分类：{_disp}", icon="🏷️")
                         st.rerun()
                 with _sc2:
                     if st.button("取消", key=f"wl_cat_cancel_{ticker}_{idx}"):
                         st.session_state.pop(f"wl_cat_editing_{ticker}", None)
+                        st.session_state.pop(_assign_key, None)
+                        st.session_state.pop(_init_flag, None)
                         st.rerun()
 
         # ── Fibo 状态 ──────────────────────────────────────────
@@ -669,21 +704,26 @@ def _render_categories():
                 key="cat_new_name",
             ).strip()
         with _add_col2:
-            # 父分类（空=顶级）
-            _parent_opts  = {"顶级分类（一级）": None}
-            def _fill_parent(tree, prefix=""):
-                for node in sorted(tree, key=lambda x: x.get("order", 0)):
-                    depth = prefix.count("└")
-                    if depth < 2:  # 最多3级，所以父级最多2级
-                        _parent_opts[f"{prefix}{node['name']}"] = node["id"]
-                        if node.get("children"):
-                            _fill_parent(node["children"], prefix + "  └ ")
+            # 父分类（空=顶级）— ID-based selectbox
+            _pp_ids   = ["__ROOT__"]
+            _pp_names = {"__ROOT__": "顶级分类（一级）"}
+            def _fill_parent(nodes, depth=0):
+                if depth >= 2:   # 最多3级，父级最多2级
+                    return
+                pfx = "  " * depth + ("└ " if depth > 0 else "")
+                for node in sorted(nodes, key=lambda x: x.get("order", 0)):
+                    _pp_ids.append(node["id"])
+                    _pp_names[node["id"]] = f"{pfx}{node['name']}"
+                    if node.get("children"):
+                        _fill_parent(node["children"], depth + 1)
             _fill_parent(tree)
-            _parent_label = st.selectbox(
-                "父级分类", options=list(_parent_opts.keys()),
-                key="cat_new_parent",
+            _parent_chosen = st.selectbox(
+                "父级分类",
+                options=_pp_ids,
+                format_func=lambda x: _pp_names.get(x, str(x)),
+                key="cat_new_parent_id",
             )
-            _parent_id = _parent_opts[_parent_label]
+            _parent_id = None if _parent_chosen == "__ROOT__" else _parent_chosen
         with _add_col3:
             st.markdown("<br>", unsafe_allow_html=True)
             if st.button("➕ 添加分类", key="cat_add_btn", type="primary",
@@ -871,21 +911,24 @@ def _render_categories():
                     placeholder="选择要批量设置分类的品种…",
                 )
             with _b_col2:
-                _batch_opts_l = ["（未分类）"]
-                _batch_opts_i = [None]
-                def _fill_batch(tree, prefix=""):
-                    for node in sorted(tree, key=lambda x: x.get("order",0)):
-                        _batch_opts_l.append(f"{prefix}{node['name']}")
-                        _batch_opts_i.append(node["id"])
+                # ID-based selectbox for batch assign (same pattern as card assign)
+                _bb_ids   = ["__UNCAT__"]
+                _bb_names = {"__UNCAT__": "（未分类）"}
+                def _fill_batch(nodes, depth=0):
+                    pfx = "  " * depth + ("└ " if depth > 0 else "")
+                    for node in sorted(nodes, key=lambda x: x.get("order", 0)):
+                        _bb_ids.append(node["id"])
+                        _bb_names[node["id"]] = f"{pfx}{node['name']}"
                         if node.get("children"):
-                            _fill_batch(node["children"], prefix + "  └ ")
+                            _fill_batch(node["children"], depth + 1)
                 _fill_batch(storage.build_cat_tree(cats))
-                _batch_cat = st.selectbox(
+                _batch_chosen = st.selectbox(
                     "目标分类",
-                    options=_batch_opts_l,
-                    key="cat_batch_target",
+                    options=_bb_ids,
+                    format_func=lambda x: _bb_names.get(x, str(x)),
+                    key="cat_batch_target_id",
                 )
-                _batch_cat_id = _batch_opts_i[_batch_opts_l.index(_batch_cat)]
+                _batch_cat_id = None if _batch_chosen == "__UNCAT__" else _batch_chosen
             with _b_col3:
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("💾 批量设置", key="cat_batch_save",
