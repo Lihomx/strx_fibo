@@ -260,7 +260,27 @@ def load_watchlist() -> List[Dict]:
     items = _load(F_WATCHLIST, [])
     if not isinstance(items, list):
         items = []
-    return [i for i in items if isinstance(i, dict) and i.get("ticker")]
+    items = [i for i in items if isinstance(i, dict) and i.get("ticker")]
+
+    # ── 自动迁移：若 category_id 存的是分类名称而非 UUID，修正为 UUID ──
+    # 兼容旧版本数据（新版本统一用 UUID）
+    try:
+        cats = _load(F_WL_CATS, [])
+        if cats:
+            name_to_id = {c["name"]: c["id"] for c in cats if c.get("name") and c.get("id")}
+            all_ids    = {c["id"] for c in cats if c.get("id")}
+            migrated   = False
+            for item in items:
+                cid = item.get("category_id")
+                if cid and cid not in all_ids and cid in name_to_id:
+                    item["category_id"] = name_to_id[cid]
+                    migrated = True
+            if migrated:
+                _save_with_backup(F_WATCHLIST, items)
+    except Exception:
+        pass
+
+    return items
 
 
 def save_watchlist(items: List[Dict]) -> bool:

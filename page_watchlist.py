@@ -331,16 +331,24 @@ def _render_main():
             if q in i["ticker"].upper() or q in i.get("name", "").upper()
         ]
 
-    # ── 应用分类筛选（纯 ID 比较，无字符串歧义）──────────────
+    # ── 应用分类筛选 ─────────────────────────────────────────
+    # 同时匹配 UUID 和分类名称（兼容历史数据中可能存的是名称而非UUID）
     if _sel_cat_id == "__NONE__":
-        # 未分类：category_id 为 None、空字符串、或根本没有该字段
+        # 未分类：category_id 为 None/空/""/任何已知UUID/已知名称 之外的值
+        _all_cat_ids   = {c["id"]   for c in cats}
+        _all_cat_names = {c["name"] for c in cats}
         display_items = [i for i in display_items
-                         if not i.get("category_id")]
+                         if not i.get("category_id")
+                         or (i.get("category_id") not in _all_cat_ids
+                             and i.get("category_id") not in _all_cat_names)]
     elif _sel_cat_id is not None:
-        # 该分类及其所有后代
+        # 该分类及所有后代（UUID 集合）
         _valid_ids = {_sel_cat_id} | storage._collect_descendants(cats, _sel_cat_id)
+        # 同时构建对应名称集合（兼容 category_id 存为名称的旧数据）
+        _valid_names = {c["name"] for c in cats if c["id"] in _valid_ids}
         display_items = [i for i in display_items
-                         if i.get("category_id") in _valid_ids]
+                         if i.get("category_id") in _valid_ids
+                         or i.get("category_id") in _valid_names]
 
     # ── 置顶排序：pinned=True 的排在前面 ──────────────────────
     display_items = sorted(display_items, key=lambda x: (0 if x.get("pinned") else 1))
