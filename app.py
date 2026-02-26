@@ -189,36 +189,36 @@ def sidebar():
                 st.session_state.pop("_url_routed", None)
                 st.rerun()
 
-        # ── 云同步状态 ──────────────────────────────────────────
+        # ── 云同步状态（Supabase）──────────────────────────────
         st.markdown("<hr style='margin:10px 0;border-color:#e5e7eb'>", unsafe_allow_html=True)
         try:
-            status = cloud_sync.sync_status()
-            if status["configured"]:
-                last = status["last_push"]
-                nxt  = status["next_push"]
-                gurl = status["gist_url"]
+            status = cloud_sync.get_sync_status()
+            if status.get("configured"):
+                last_sync = status.get("last_sync", "—")
+                next_sync = cloud_sync.time_to_next_sync_str()
+                wl_cnt    = status.get("watchlist_cnt", 0)
                 st.markdown(
-                    f'''<div style="font-size:11px;color:#6b7280;padding:4px 0">
-                    ☁️ <b>云同步</b> · 每4小时自动备份<br>
-                    上次：{last}<br>
-                    下次：{nxt}
-                    {"<br><a href='" + gurl + "' target='_blank' style='color:#3b82f6'>查看 Gist ↗</a>" if gurl else ""}
-                    </div>''',
+                    f'<div style="font-size:11px;color:#6b7280;padding:4px 0">'
+                    f'☁️ <b>云同步</b> · 每4小时自动备份<br>'
+                    f'上次：{last_sync}<br>'
+                    f'下次：{next_sync}<br>'
+                    f'收藏：{wl_cnt} 个品种'
+                    f'</div>',
                     unsafe_allow_html=True,
                 )
-                if st.button("☁️ 立即同步", key="sidebar_push", help="立即推送到 GitHub Gist"):
+                if st.button("☁️ 立即同步", key="sidebar_push", help="立即推送到 Supabase + 创建快照"):
                     with st.spinner("同步中…"):
-                        ok, msg = cloud_sync.push_to_gist(force=True)
+                        ok, msg = cloud_sync.push_all()
                     if ok:
                         st.toast(f"✅ {msg[:60]}", icon="☁️")
                         st.rerun()
                     else:
-                        st.error(msg)
+                        st.error(msg[:80])
             else:
                 st.markdown(
-                    '<div style="font-size:11px;color:#9ca3af;padding:4px 0">' +
-                    '☁️ 云同步未配置<br>' +
-                    '<a href="#" style="color:#3b82f6">→ 系统设置中配置</a></div>',
+                    '<div style="font-size:11px;color:#9ca3af;padding:4px 0">'
+                    '☁️ 云同步未配置<br>'
+                    '<span style="color:#6b7280">→ 前往「云端同步」页配置</span></div>',
                     unsafe_allow_html=True,
                 )
         except Exception:
