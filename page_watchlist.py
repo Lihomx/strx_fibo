@@ -266,23 +266,32 @@ def _render_main():
                 st.rerun()
 
     # ── 第二行：分类筛选（始终显示，无分类时显示引导提示）──────
+    # 使用 ID 作为 selectbox 的 option 值，用 format_func 显示名称
+    # 彻底消除 label→id 映射可能因 emoji/前缀不一致而出错的问题
+
     if cats:
-        # 构建分类选项（含路径名称，最多3级）
-        _cat_opts = {"📋 全部": None, "❓ 未分类": "__NONE__"}
-        def _collect_opts(tree, prefix=""):
+        # 构建扁平有序 id 列表 + 对应显示名称映射
+        _cf_ids   = ["__ALL__", "__NONE__"]   # 选项 id 列表
+        _cf_names = {"__ALL__": "📋 全部", "__NONE__": "❓ 未分类"}  # id→显示名
+
+        def _build_flat(tree, prefix=""):
             for node in sorted(tree, key=lambda x: x.get("order", 0)):
-                label = f"{prefix}{node['name']}" if prefix else node["name"]
-                _cat_opts[f"🏷️ {label}"] = node["id"]
+                depth_prefix = ("  └ " * prefix.count("└")) if prefix else ""
+                display_name = f"🏷️ {prefix}{node['name']}"
+                _cf_ids.append(node["id"])
+                _cf_names[node["id"]] = display_name
                 if node.get("children"):
-                    _collect_opts(node["children"], prefix=f"{prefix}  └ ")
-        _collect_opts(storage.build_cat_tree(cats))
+                    _build_flat(node["children"], prefix + "  └ ")
+
+        _build_flat(storage.build_cat_tree(cats))
 
         _col_catsel, _col_catmgr = st.columns([5, 2])
         with _col_catsel:
-            _sel_cat = st.selectbox(
+            _sel_cat_id = st.selectbox(
                 "🏷️ 按分类筛选",
-                options=list(_cat_opts.keys()),
-                key="wl_cat_filter",
+                options=_cf_ids,
+                format_func=lambda x: _cf_names.get(x, x),
+                key="wl_cat_filter_id",   # ID-based key, avoids stale label issues
                 label_visibility="visible",
             )
         with _col_catmgr:
@@ -293,10 +302,14 @@ def _render_main():
                 st.session_state["_wl_tab"] = "cats"
                 st.rerun()
 
-        _sel_cat_id = _cat_opts[_sel_cat]
+        # __ALL__ → no filter; treat as None
+        if _sel_cat_id == "__ALL__":
+            _sel_cat_id = None
+
     else:
         # 尚无分类 → 显示引导横幅
         _sel_cat_id = None
+        _cf_names   = {}
         st.markdown(
             '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;'
             'padding:10px 16px;margin:4px 0 10px;display:flex;align-items:center;gap:12px">'
@@ -306,8 +319,7 @@ def _render_main():
             '</span></div>',
             unsafe_allow_html=True,
         )
-        if st.button("➕ 去创建分类", key="wl_create_cats",
-                     type="primary"):
+        if st.button("➕ 去创建分类", key="wl_create_cats", type="primary"):
             st.session_state["_wl_go_cats"] = True
             st.rerun()
 
@@ -319,10 +331,13 @@ def _render_main():
             if q in i["ticker"].upper() or q in i.get("name", "").upper()
         ]
 
-    # 应用分类筛选
+    # ── 应用分类筛选（纯 ID 比较，无字符串歧义）──────────────
     if _sel_cat_id == "__NONE__":
-        display_items = [i for i in display_items if not i.get("category_id")]
+        # 未分类：category_id 为 None、空字符串、或根本没有该字段
+        display_items = [i for i in display_items
+                         if not i.get("category_id")]
     elif _sel_cat_id is not None:
+        # 该分类及其所有后代
         _valid_ids = {_sel_cat_id} | storage._collect_descendants(cats, _sel_cat_id)
         display_items = [i for i in display_items
                          if i.get("category_id") in _valid_ids]
@@ -331,12 +346,14 @@ def _render_main():
     display_items = sorted(display_items, key=lambda x: (0 if x.get("pinned") else 1))
 
     pinned_cnt = sum(1 for i in display_items if i.get("pinned"))
-    # 分类过滤标签
-    if cats and _sel_cat_id == "__NONE__":
+    # 分类过滤状态标签
+    if _sel_cat_id == "__NONE__":
         _cat_label_disp = " · 🏷️ 未分类"
-    elif cats and _sel_cat_id is not None:
-        # 从 _cat_opts 反查名称（去除 emoji 前缀）
-        _cat_label_disp = f" · 🏷️ {_sel_cat.lstrip('🏷️ ')}"
+    elif _sel_cat_id is not None and cats:
+        _raw_name = _cf_names.get(_sel_cat_id, "")
+        # 去掉 "🏷️ " 前缀和缩进符，只显示分类名
+        _clean = _raw_name.replace("🏷️ ", "").replace("  └ ", "").strip()
+        _cat_label_disp = f" · 🏷️ {_clean}"
     else:
         _cat_label_disp = ""
     st.markdown(
@@ -461,8 +478,8 @@ def _render_card(item: dict, idx: int, result_map: dict, cats: list = None):
                 )
 
         with col_actions:
-            # 操作按钮：置顶 + TV + 扫描 + 分类 + 删除
-            btn_c1, btn_c2, btn_c3, btn_c4, btn_c5 = st.columns(5)
+            # 操作按钮：置顶 + TV + 分类 + 删除（已移除跳转扫描按钮）
+            btn_c1, btn_c2, btn_c3, btn_c4 = st.columns(4)
             with btn_c1:
                 pin_label = "📌" if not pinned else "🔓"
                 pin_help  = "置顶此品种" if not pinned else "取消置顶"
@@ -472,19 +489,13 @@ def _render_card(item: dict, idx: int, result_map: dict, cats: list = None):
             with btn_c2:
                 st.link_button("📈", tv_link, help=f"在 TradingView 查看 {ticker}")
             with btn_c3:
-                if st.button("🔍", key=f"wl_scan_{ticker}_{idx}",
-                             help=f"跳转扫描 {ticker}"):
-                    st.session_state["page"] = "scanner"
-                    st.session_state["wl_jump_ticker"] = ticker
-                    st.rerun()
-            with btn_c4:
                 # 分类标签按钮
                 if st.button("🏷️", key=f"wl_cat_btn_{ticker}_{idx}",
                              help="设置分类"):
                     _toggle_key = f"wl_cat_editing_{ticker}"
                     st.session_state[_toggle_key] = not st.session_state.get(_toggle_key, False)
                     st.rerun()
-            with btn_c5:
+            with btn_c4:
                 if st.button("🗑", key=f"wl_del_{ticker}_{idx}",
                              help=f"删除（移入存档）{ticker}"):
                     storage.remove_from_watchlist(ticker)
@@ -551,12 +562,7 @@ def _render_card(item: dict, idx: int, result_map: dict, cats: list = None):
                         f'</div>',
                         unsafe_allow_html=True,
                     )
-        else:
-            st.markdown(
-                '<span style="color:#9ca3af;font-size:12px">'
-                '暂无扫描数据 · 请先在扫描页扫描该品种</span>',
-                unsafe_allow_html=True,
-            )
+        # (no scan data message removed per user request)
 
         st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
