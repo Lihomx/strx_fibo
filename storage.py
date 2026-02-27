@@ -588,7 +588,15 @@ def load_wl_categories() -> List[Dict]:
 
 
 def save_wl_categories(cats: List[Dict]) -> bool:
-    return _save(F_WL_CATS, cats)
+    ok = _save(F_WL_CATS, cats)
+    if ok:
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                cloud_sync.push_wl_categories()
+        except Exception:
+            pass
+    return ok
 
 
 def add_wl_category(name: str, parent_id=None) -> Optional[str]:

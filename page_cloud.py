@@ -228,11 +228,12 @@ def _snapshots(configured):
         by_key[s["file_key"]].append(s)
 
     # 关键文件优先显示
-    KEY_PRIORITY = ["watchlist", "watchlist_archive", "config"]
+    KEY_PRIORITY = ["watchlist", "wl_categories", "watchlist_archive", "config"]
     all_keys = KEY_PRIORITY + [k for k in by_key if k not in KEY_PRIORITY]
 
     KEY_LABELS = {
         "watchlist":         "⭐ 收藏夹",
+        "wl_categories":     "🏷️ 分类",
         "watchlist_archive": "🗂️ 存档",
         "config":            "⚙️ 配置",
     }
@@ -267,7 +268,7 @@ def _snapshots(configured):
                         unsafe_allow_html=True,
                     )
                 with col_restore:
-                    if fk in ("watchlist", "watchlist_archive", "config"):
+                    if fk in ("watchlist", "wl_categories", "watchlist_archive", "config"):
                         if st.button(
                             "⬇️ 恢复此版本",
                             key=f"restore_{snap['path'].replace('/','_')}",

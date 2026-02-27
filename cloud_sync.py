@@ -35,6 +35,7 @@ _BACKUP_DIR = "backups"
 _LATEST_FILES = {
     "watchlist":         "watchlist.json",
     "watchlist_archive": "watchlist_archive.json",
+    "wl_categories":     "wl_categories.json",    # ← 收藏夹分类结构
     "scan_history":      "scan_history.json",
     "scan_results":      "scan_results.json",
     "scan_groups":       "scan_groups.json",
@@ -43,7 +44,7 @@ _LATEST_FILES = {
 }
 
 # 需要做历史快照的核心文件
-_SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "config"]
+_SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "wl_categories", "config"]
 
 # 兼容旧接口
 _CLOUD_FILES = _LATEST_FILES
@@ -308,6 +309,9 @@ def delete_old_snapshots(days: int = 30) -> Tuple[int, int, List[str]]:
 # 从历史快照恢复
 # ════════════════════════════════════════════════════════════════════
 def restore_from_snapshot(snapshot_path: str, file_key: str) -> Tuple[bool, str]:
+    """从历史快照文件恢复数据到本地。
+    注意：直接写文件，不触发云端推送（恢复操作不应产生新快照）。
+    """
     import storage as loc
     data = _download_path(snapshot_path)
     if data is None:
@@ -316,13 +320,20 @@ def restore_from_snapshot(snapshot_path: str, file_key: str) -> Tuple[bool, str]
         if file_key == "watchlist":
             if not isinstance(data, list):
                 return False, "格式错误（期望列表）"
-            loc.save_watchlist(data)
+            # 直接写文件，不用 save_watchlist（避免触发云端推送）
+            loc._save_with_backup(loc.F_WATCHLIST, data)
             return True, f"已从快照恢复收藏夹，共 {len(data)} 个品种"
         elif file_key == "watchlist_archive":
             if not isinstance(data, list):
                 return False, "格式错误（期望列表）"
-            loc.save_watchlist_archive(data)
+            loc._save(loc.F_WATCHLIST_ARCHIVE, data)
             return True, f"已从快照恢复存档，共 {len(data)} 个品种"
+        elif file_key == "wl_categories":
+            if not isinstance(data, list):
+                return False, "格式错误（期望列表）"
+            # 直接写文件，不用 save_wl_categories（避免触发云端推送）
+            loc._save(loc.F_WL_CATS, data)
+            return True, f"已从快照恢复分类，共 {len(data)} 个分类"
         elif file_key == "config":
             if not isinstance(data, dict):
                 return False, "格式错误（期望字典）"
@@ -332,6 +343,53 @@ def restore_from_snapshot(snapshot_path: str, file_key: str) -> Tuple[bool, str]
             return False, f"不支持恢复类型：{file_key}"
     except Exception as e:
         return False, f"恢复失败：{e}"
+
+
+
+# ════════════════════════════════════════════════════════════════════
+# 收藏夹分类专项推送 / 拉取
+# ════════════════════════════════════════════════════════════════════
+def push_wl_categories() -> Tuple[bool, str]:
+    """推送分类树 → latest/ + 快照"""
+    try:
+        import storage as loc
+        cats = loc.load_wl_categories()
+        ok1, m1 = _upload_latest("wl_categories", cats)
+        _upload_snapshot("wl_categories", cats)
+        if ok1:
+            return True, f"分类 {len(cats)} 个已同步 + 快照已创建"
+        return False, f"wl_categories: {m1}"
+    except Exception as e:
+        return False, f"push_wl_categories 异常：{e}"
+
+
+def pull_wl_categories() -> Tuple[bool, str]:
+    """从云端拉取分类树，恢复到本地（直接写文件，不触发云端推送）
+    策略：云端优先 + 本地独有保留。重启后本地为空时完全用云端数据。
+    """
+    try:
+        from storage import F_WL_CATS, _save, load_wl_categories
+        cloud_cats = _download_latest("wl_categories")
+        if not isinstance(cloud_cats, list):
+            return False, "云端无分类数据"
+
+        local_cats = load_wl_categories()
+        cloud_ids  = {c["id"] for c in cloud_cats if c.get("id")}
+
+        # 以云端为主，补充本地独有（例如本次会话新建但尚未同步的）
+        merged_map = {c["id"]: c for c in cloud_cats if c.get("id")}
+        added = 0
+        for lc in local_cats:
+            if lc.get("id") and lc["id"] not in cloud_ids:
+                merged_map[lc["id"]] = lc
+                added += 1
+
+        merged = list(merged_map.values())
+        # !! 直接写文件，绝对不能调用 save_wl_categories（会触发云端推送死循环）
+        _save(F_WL_CATS, merged)
+        return True, f"分类已恢复 {len(merged)} 个（云端 {len(cloud_cats)} + 本地新增 {added}）"
+    except Exception as e:
+        return False, f"pull_wl_categories 异常：{e}"
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -353,9 +411,14 @@ def push_watchlist() -> Tuple[bool, str]:
         _upload_snapshot("watchlist",         items)
         _upload_snapshot("watchlist_archive", archive)
 
+        # 同步分类数据（与 watchlist 一起备份，确保 UUID 和名称的对应关系不丢失）
+        cats = loc.load_wl_categories()
+        _upload_latest("wl_categories", cats)
+        _upload_snapshot("wl_categories", cats)
+
         note_cnt = sum(len(i.get("notes", [])) for i in items)
         if ok1 and ok2:
-            return True, f"收藏 {len(items)} 个品种、{note_cnt} 条备注已同步 + 快照已创建"
+            return True, f"收藏 {len(items)} 个品种、{note_cnt} 条备注、{len(cats)} 个分类已同步"
         return False, f"watchlist:{m1} / archive:{m2}"
     except Exception as e:
         return False, f"push_watchlist 异常：{e}"
@@ -387,7 +450,9 @@ def pull_watchlist() -> Tuple[bool, str]:
                         lt.add(cn.get("ts")); merged_notes += 1
                 le["notes"] = sorted(ln, key=lambda x: x.get("ts",""))
                 local_map[tk] = le
-        loc.save_watchlist(list(local_map.values()))
+        # !! 直接写文件，不能用 save_watchlist（会触发 push_watchlist 死循环）
+        from storage import F_WATCHLIST, _save_with_backup
+        _save_with_backup(F_WATCHLIST, list(local_map.values()))
 
         cloud_arch = _download_latest("watchlist_archive")
         arch_added = 0
@@ -399,7 +464,10 @@ def pull_watchlist() -> Tuple[bool, str]:
                     local_arch.append(ai); arch_added += 1
             if arch_added:
                 loc.save_watchlist_archive(local_arch)
-        return True, f"新增品种 {added}，补充备注 {merged_notes} 条，存档补充 {arch_added} 个"
+        # 分类数据也一起恢复（必须在 save_watchlist 之后，避免 UUID 找不到名称）
+        cat_ok, cat_msg = pull_wl_categories()
+        _cat_suffix = f"，分类：{cat_msg}" if cat_ok else ""
+        return True, f"新增品种 {added}，补充备注 {merged_notes} 条，存档补充 {arch_added} 个{_cat_suffix}"
     except Exception as e:
         return False, f"pull_watchlist 异常：{e}"
 
@@ -417,18 +485,20 @@ def push_all() -> Tuple[bool, str]:
         errors.append(f"watchlist: {msg}")
 
     for file_key, loader in [
-        ("scan_history", lambda: loc._load(loc.F_HIST,   [])),
-        ("scan_results", lambda: loc._load(loc.F_ALLRES, [])),
-        ("scan_groups",  lambda: loc.load_scanned_groups()),
-        ("config",       lambda: loc._load(loc.F_CFG,    {})),
+        ("wl_categories", lambda: loc.load_wl_categories()),   # ← 分类：独立备份
+        ("scan_history",  lambda: loc._load(loc.F_HIST,   [])),
+        ("scan_results",  lambda: loc._load(loc.F_ALLRES, [])),
+        ("scan_groups",   lambda: loc.load_scanned_groups()),
+        ("config",        lambda: loc._load(loc.F_CFG,    {})),
     ]:
         try:
             data = loader()
             ok2, msg2 = _upload_latest(file_key, data)
             if not ok2:
                 errors.append(f"{file_key}: {msg2}")
-            if file_key == "config":
-                _upload_snapshot("config", data)
+            # 核心文件也创建快照
+            if file_key in ("config", "wl_categories"):
+                _upload_snapshot(file_key, data)
         except Exception as e:
             errors.append(f"{file_key}: {e}")
 
@@ -500,6 +570,13 @@ def pull_all() -> Dict[str, Any]:
             results["config"] = (False, "无云端数据")
     else:
         results["config"] = (True, "本地已有，跳过")
+
+    # wl_categories 分类数据（pull_watchlist 内部已处理，但 pull_all 直接调用时也要补充）
+    # 注意：pull_watchlist 已调用 pull_wl_categories，此处不重复调用，results 里已有记录
+    # 如果 pull_watchlist 失败（无云端数据），也要尝试单独恢复分类
+    if not results.get("watchlist", (False,))[0]:
+        cat_ok2, cat_msg2 = pull_wl_categories()
+        results["wl_categories"] = (cat_ok2, cat_msg2)
 
     return results
 
