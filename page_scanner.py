@@ -898,34 +898,73 @@ def _render_batch_selector(cfg):
         )
 
     if do_scan and sel_assets:
-        pb  = st.progress(0, "准备中…")
-        msg = st.empty()
+        # ── 进度显示区：进度条 + 实时状态文字 ──────────────────
+        pb      = st.progress(0.0, "🚀 启动扫描引擎…")
+        msg     = st.empty()
+        # 实时统计面板（扫描过程中持续刷新）
+        stats_ph = st.empty()
+
+        _done_ref   = [0]     # 用列表实现可变引用（闭包捕获）
+        _inzone_ref = [0]
 
         def cb(pct, text):
+            # 更新进度条
             pb.progress(min(float(pct), 1.0), text)
-            msg.caption(text)
+            # 从 text 里解析已完成数/黄金区数（格式: "✅ N/M  name  |  黄金区: X 个"）
+            import re as _re
+            m1 = _re.search(r"(\d+)/(\d+)", text)
+            m2 = _re.search(r"黄金区[：:]\s*(\d+)", text)
+            if m1:
+                _done_ref[0]   = int(m1.group(1))
+            if m2:
+                _inzone_ref[0] = int(m2.group(2) if m2.lastindex == 2 else m2.group(1))
+            # 小面板：实时展示进度数字
+            done_n   = _done_ref[0]
+            total_n  = len(sel_assets)
+            inzone_n = _inzone_ref[0]
+            remain   = max(total_n - done_n, 0)
+            stats_ph.markdown(
+                f"<div style='background:#f0fdf4;border:1px solid #bbf7d0;"
+                f"border-radius:8px;padding:8px 16px;font-size:13px;'>"
+                f"📊 已扫描 <b style='color:#166534'>{done_n}</b> / {total_n} 个品种 &nbsp;｜&nbsp; "
+                f"剩余 <b>{remain}</b> &nbsp;｜&nbsp; "
+                f"⭐ 黄金区命中 <b style='color:#d97706'>{inzone_n}</b> 个"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
         group_label = "、".join(g.split(" - ")[-1] for g in sel_list[:3]) + \
                       (f"等{len(sel_list)}组" if len(sel_list) > 3 else "")
 
-        with st.spinner(""):
-            summary, err = sc.run_full_scan(
-                cfg=cfg,
-                assets=sel_assets,
-                note=f"batch:{group_label}",
-                progress_callback=cb,
-            )
+        # 注意：不用 st.spinner（会遮盖进度条），直接调用
+        summary, err = sc.run_full_scan(
+            cfg=cfg,
+            assets=sel_assets,
+            note=f"batch:{group_label}",
+            progress_callback=cb,
+        )
 
-        pb.empty(); msg.empty()
+        pb.empty(); msg.empty(); stats_ph.empty()
         if err:
             st.error(err)
         else:
             storage.save_scanned_groups(sel_list)
-            st.success(
-                f"✅ 完成！品种 **{summary['asset_count']}** | "
-                f"黄金区 **{summary['inzone_count']}** | "
-                f"三框架共振 **{summary['triple_conf']}** | "
-                f"耗时 {summary['elapsed_ms']/1000:.1f}s"
+            inzone_c = summary['inzone_count']
+            triple_c = summary['triple_conf']
+            elapsed  = summary['elapsed_ms'] / 1000
+            asset_c  = summary['asset_count']
+            # 成功完成：绿色结果卡片
+            st.markdown(
+                f"<div style='background:#f0fdf4;border:2px solid #22c55e;"
+                f"border-radius:10px;padding:12px 20px;margin:8px 0;'>"
+                f"<b style='color:#166534;font-size:15px'>✅ 扫描完成！</b><br>"
+                f"<span style='font-size:13px;color:#374151'>"
+                f"扫描品种 <b>{asset_c}</b> 个 &nbsp;·&nbsp; "
+                f"黄金区命中 <b style='color:#d97706'>{inzone_c}</b> 个 &nbsp;·&nbsp; "
+                f"三框架共振 <b style='color:#dc2626'>{triple_c}</b> 个 &nbsp;·&nbsp; "
+                f"耗时 <b>{elapsed:.1f}s</b>"
+                f"</span></div>",
+                unsafe_allow_html=True,
             )
             st.rerun()
 
