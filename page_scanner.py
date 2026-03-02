@@ -715,19 +715,34 @@ def _render_custom_scan(cfg):
 #   4. 底部固定状态栏 + 扫描按钮
 # ════════════════════════════════════════════════════════════════════
 def _render_batch_selector(cfg):
+    """
+    分批扫描选择器 v3 — 修复全选/扫描按钮失效问题
+    ─────────────────────────────────────────────
+    根本原因：
+      Streamlit checkbox 有自己的 widget key，rerun 后 widget state 优先于 value=。
+      旧代码：全选按钮写 _scan_sel → rerun → checkbox widget state 仍是旧值（False）
+              → checkbox 返回 False → _new.discard(g) 把刚加进去的组立刻删掉。
+    
+    修复方案：
+      1. checkbox 不使用固定 key（每次渲染重新生成），强制 value= 参数生效
+      2. checkbox 变化时用 st.rerun() 让整个 UI 刷新，保证视觉一致
+      3. 全选/快捷按钮 → 更新 _scan_sel → rerun（同上，无 key 冲突）
+    """
     from collections import defaultdict
 
     group_names  = list(ASSET_GROUPS.keys())
     total_assets = sum(len(v) for v in ASSET_GROUPS.values())
     n_groups     = len(group_names)
 
-    # ── session state 初始化 ──────────────────────────────────────
+    # ── session state 初始化 ─────────────────────────────────────
     if "_scan_sel" not in st.session_state:
         st.session_state["_scan_sel"] = set()
 
-    sel: set = st.session_state["_scan_sel"]
+    # 读取当前已选（过滤无效组名）
+    sel: set = {g for g in st.session_state["_scan_sel"] if g in ASSET_GROUPS}
+    st.session_state["_scan_sel"] = sel   # 写回清洁版
 
-    # ── 信息栏 ────────────────────────────────────────────────────
+    # ── 信息栏 ───────────────────────────────────────────────────
     st.markdown(
         f'<div class="n-info">📦 品种库：共 <b>{total_assets}</b> 个品种，分 '
         f'<b>{n_groups}</b> 组。每组约 13–30 个品种 × 3 框架，单批约 1–3 分钟。'
@@ -735,21 +750,20 @@ def _render_batch_selector(cfg):
         unsafe_allow_html=True,
     )
 
-    # ── 快捷选择按钮（直接写 _scan_sel，无第二个 key） ────────────
+    # ── 快捷选择按钮 ─────────────────────────────────────────────
     _QUICK = [
-        ("☑️ 全选",    lambda g: True),
-        ("🥇 期货+指数", lambda g: any(k in g for k in ["期货","指数","全球","ETF"])),
-        ("🇺🇸 美股+ETF", lambda g: "美股" in g or "ETF" in g),
-        ("🇨🇳 中股",   lambda g: any(k in g for k in ["中概","港股","A股","中国","中国指数"])),
-        ("💱 外汇",    lambda g: "外汇" in g),
-        ("₿ 加密",    lambda g: "加密" in g),
-        ("🌏 亚太",   lambda g: any(k in g for k in ["日本","韩国","台湾","印度","澳大利亚","东南亚"])),
-        ("🌍 欧洲",   lambda g: any(k in g for k in ["英国","德国","法国","北欧","欧洲"])),
-        ("🌎 新兴",   lambda g: any(k in g for k in ["加拿大","拉美","新兴","非洲","中东"])),
-        ("🔲 清空",   None),
+        ("☑️ 全选",      lambda g: True),
+        ("🥇 期货+指数",  lambda g: any(k in g for k in ["期货","指数","全球","ETF"])),
+        ("🇺🇸 美股+ETF",  lambda g: "美股" in g or "ETF" in g),
+        ("🇨🇳 中股",      lambda g: any(k in g for k in ["中概","港股","A股","中国","中国指数"])),
+        ("💱 外汇",       lambda g: "外汇" in g),
+        ("₿ 加密",       lambda g: "加密" in g),
+        ("🌏 亚太",       lambda g: any(k in g for k in ["日本","韩国","台湾","印度","澳大利亚","东南亚"])),
+        ("🌍 欧洲",       lambda g: any(k in g for k in ["英国","德国","法国","北欧","欧洲"])),
+        ("🌎 新兴",       lambda g: any(k in g for k in ["加拿大","拉美","新兴","非洲","中东"])),
+        ("🔲 清空",       None),
     ]
 
-    # CSS：让快捷按钮紧凑排成一行
     st.markdown("""
     <style>
     div[data-testid="stHorizontalBlock"] > div[data-testid="column"] > div > div > button {
@@ -770,35 +784,34 @@ def _render_batch_selector(cfg):
 
     st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
-    # ── 构建 顶级分类 → [组名列表] ───────────────────────────────
+    # ── 构建 顶级分类 → [组名列表] ──────────────────────────────
     cat_groups: dict = defaultdict(list)
     for g in group_names:
         parts = g.split(" - ", 1)
-        top = parts[0].strip()
-        cat_groups[top].append(g)
+        cat_groups[parts[0].strip()].append(g)
 
-    # 按组数量排序（多的在前，方便操作A股/美股）
     sorted_cats = sorted(cat_groups.items(), key=lambda x: -len(x[1]))
 
-    # ── 分类 checkbox 面板 ─────────────────────────────────────────
+    # ── 分类面板 ─────────────────────────────────────────────────
     scanned = storage.load_scanned_groups()
-
     st.markdown("**📋 按分类选择品种组**（点击分类名展开/收起）：")
+
+    # 用于收集本轮 checkbox 产生的变更
+    _pending_add    = set()
+    _pending_remove = set()
 
     for cat, groups in sorted_cats:
         n_in_cat   = len(groups)
         sel_in_cat = sum(1 for g in groups if g in sel)
-        all_sel    = sel_in_cat == n_in_cat
-        none_sel   = sel_in_cat == 0
+        all_sel    = (sel_in_cat == n_in_cat)
 
-        # 分类行：全选checkbox + 分类名 + 选中数量
         with st.expander(
             f"{'✅' if all_sel else ('☑' if sel_in_cat > 0 else '⬜')} "
             f"{cat}  "
             f"{'（已全选）' if all_sel else f'（{sel_in_cat}/{n_in_cat}）'}",
             expanded=(sel_in_cat > 0),
         ):
-            # 该分类全选/取消全选按钮
+            # ── 该分类全选 / 取消全选 ───────────────────────────
             c_all, c_none, _ = st.columns([2, 2, 6])
             with c_all:
                 if st.button(f"全选 {n_in_cat} 组", key=f"_cat_all_{cat}",
@@ -812,87 +825,79 @@ def _render_batch_selector(cfg):
                         st.session_state["_scan_sel"] = sel - set(groups)
                         st.rerun()
 
-            # 子组 checkbox
+            # ── 子组 checkbox（关键修复：不使用固定 key）────────
+            # 不传 key 参数，Streamlit 每次重新渲染时不保留 widget state，
+            # value= 参数始终生效，与 _scan_sel 完全同步。
             if n_in_cat == 1:
-                # 单组：直接一行
                 g = groups[0]
-                short = g.split(" - ", 1)[-1] if " - " in g else g
-                n_assets = len(ASSET_GROUPS[g])
+                short      = g.split(" - ", 1)[-1] if " - " in g else g
+                n_assets   = len(ASSET_GROUPS[g])
                 is_scanned = g in scanned
-                checked = st.checkbox(
-                    f"{short}  ({n_assets} 品种)"
-                    + (" ✅缓存" if is_scanned else ""),
-                    value=(g in sel),
-                    key=f"_chk_{g}",
-                )
-                _new = set(st.session_state["_scan_sel"])
-                if checked:  _new.add(g)
-                else:        _new.discard(g)
-                st.session_state["_scan_sel"] = _new
+                label_txt  = f"{short}  ({n_assets} 品种)" + (" ✅缓存" if is_scanned else "")
+                new_checked = st.checkbox(label_txt, value=(g in sel))
+                if new_checked != (g in sel):
+                    if new_checked: _pending_add.add(g)
+                    else:           _pending_remove.add(g)
             else:
-                # 多组：按 3 列排
                 _cols = st.columns(3)
                 for ci, g in enumerate(groups):
-                    short = g.split(" - ", 1)[-1] if " - " in g else g
-                    n_assets = len(ASSET_GROUPS[g])
+                    short      = g.split(" - ", 1)[-1] if " - " in g else g
+                    n_assets   = len(ASSET_GROUPS[g])
                     is_scanned = g in scanned
+                    label_txt  = f"{short}  ({n_assets})" + (" ✅" if is_scanned else "")
                     with _cols[ci % 3]:
-                        checked = st.checkbox(
-                            f"{short}  ({n_assets})"
-                            + (" ✅" if is_scanned else ""),
-                            value=(g in sel),
-                            key=f"_chk_{g}",
-                        )
-                        _new = set(st.session_state["_scan_sel"])
-                        if checked:  _new.add(g)
-                        else:        _new.discard(g)
-                        st.session_state["_scan_sel"] = _new
+                        new_checked = st.checkbox(label_txt, value=(g in sel))
+                        if new_checked != (g in sel):
+                            if new_checked: _pending_add.add(g)
+                            else:           _pending_remove.add(g)
 
-    # 每次渲染后重新读取（checkbox 可能在本轮更新了 session_state）
-    sel = st.session_state["_scan_sel"]
-    # 过滤掉已不存在的组名（防止 assets 更新后残留）
-    sel = {g for g in sel if g in ASSET_GROUPS}
-    st.session_state["_scan_sel"] = sel
+    # ── 应用 checkbox 变更（如有则 rerun 刷新 UI）────────────────
+    if _pending_add or _pending_remove:
+        new_sel = (sel | _pending_add) - _pending_remove
+        st.session_state["_scan_sel"] = new_sel
+        st.rerun()
 
     st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
 
-    # ── 状态栏 + 扫描按钮 ─────────────────────────────────────────
-    if not sel:
-        st.info("💡 请在上方选择至少一个品种组，或使用快捷按钮批量选择。")
-        return
-
-    sel_list   = sorted(sel, key=lambda g: group_names.index(g))  # 保持原始顺序
+    # ── 状态栏 + 扫描按钮（始终渲染，即使 sel 为空也显示提示）──
+    sel_list   = sorted(sel, key=lambda g: group_names.index(g))
     sel_assets: dict = {}
     for g in sel_list:
         sel_assets.update(ASSET_GROUPS[g])
     checks = len(sel_assets) * 3
 
-    scanned   = storage.load_scanned_groups()
-    already   = [g for g in sel_list if g in scanned]
-    unscanned = [g for g in sel_list if g not in scanned]
+    scanned_list = storage.load_scanned_groups()
+    already   = [g for g in sel_list if g in scanned_list]
+    unscanned = [g for g in sel_list if g not in scanned_list]
 
     col_info, col_btn = st.columns([5, 2])
     with col_info:
-        st.markdown(
-            f"**已选：{len(sel_list)} 组 · {len(sel_assets)} 个品种 · {checks} 次检查**"
-        )
-        if already:
-            st.caption(
-                f"✅ 已缓存（可跳过）：{'、'.join(g.split(' - ')[-1] for g in already[:5])}"
-                + (f" 等{len(already)}组" if len(already) > 5 else "")
+        if sel_list:
+            st.markdown(
+                f"**已选：{len(sel_list)} 组 · {len(sel_assets)} 个品种 · {checks} 次检查**"
             )
-        if unscanned:
-            st.caption(
-                f"🆕 未扫描：{'、'.join(g.split(' - ')[-1] for g in unscanned[:5])}"
-                + (f" 等{len(unscanned)}组" if len(unscanned) > 5 else "")
-            )
+            if already:
+                st.caption(
+                    f"✅ 已缓存（可跳过）：{'、'.join(g.split(' - ')[-1] for g in already[:5])}"
+                    + (f" 等{len(already)}组" if len(already) > 5 else "")
+                )
+            if unscanned:
+                st.caption(
+                    f"🆕 未扫描：{'、'.join(g.split(' - ')[-1] for g in unscanned[:5])}"
+                    + (f" 等{len(unscanned)}组" if len(unscanned) > 5 else "")
+                )
+        else:
+            st.info("💡 请在上方选择至少一个品种组，或使用快捷按钮批量选择。")
+
     with col_btn:
         do_scan = st.button(
-            f"🚀 扫描选中 {len(sel_assets)} 品种",
-            type="primary", use_container_width=True,
+            f"🚀 扫描选中 {len(sel_assets)} 品种" if sel_assets else "🚀 扫描（请先选择组）",
+            type="primary",
+            use_container_width=True,
+            disabled=(len(sel_assets) == 0),   # 未选时置灰，但按钮始终可见
         )
 
-    if do_scan:
+    if do_scan and sel_assets:
         pb  = st.progress(0, "准备中…")
         msg = st.empty()
 
