@@ -319,18 +319,17 @@ def _render_today_progress(items: list):
 
     c1, c2 = st.columns([7, 2])
     with c1:
-        st.markdown(
-            f"""<div style="margin:4px 0 10px">
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">
-              <span style="font-size:13px;color:#374151">{msg}</span>
-              <span style="font-size:12px;color:#9ca3af">{int(pct*100)}%</span>
-            </div>
-            <div style="background:#e5e7eb;border-radius:99px;height:8px;overflow:hidden">
-              <div style="background:{bar_color};width:{bar_w}%;height:100%;
-                   border-radius:99px;transition:width 0.4s ease"></div>
-            </div></div>""",
-            unsafe_allow_html=True,
+        _prog_html = (
+            '<div style="margin:4px 0 10px">'
+            '<div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">'
+            f'<span style="font-size:13px;color:#374151">{msg}</span>'
+            f'<span style="font-size:12px;color:#9ca3af">{int(pct*100)}%</span>'
+            '</div>'
+            '<div style="background:#e5e7eb;border-radius:99px;height:8px;overflow:hidden">'
+            f'<div style="background:{bar_color};width:{bar_w}%;height:100%;border-radius:99px;transition:width 0.4s ease"></div>'
+            '</div></div>'
         )
+        st.markdown(_prog_html, unsafe_allow_html=True)
     with c2:
         if done_cnt > 0:
             if st.button("🔄 重置今日进度", key="wl_reset_viewed"):
@@ -394,9 +393,14 @@ def _render_add_form():
             "品种全称（可选）", placeholder="如: 苹果公司 / 贵州茅台",
             key="wl_new_name",
         )
+    st.markdown(
+        '<span style="color:#ef4444;font-weight:700;font-size:13px">📝 备注 *（必填）</span>',
+        unsafe_allow_html=True,
+    )
     note_text = st.text_input(
-        "📝 备注 *（必填）", placeholder="如: 关注 0.618 支撑，等待回踩确认",
+        "备注", placeholder="如: 关注 0.618 支撑，等待回踩确认",
         key="wl_new_note_text",
+        label_visibility="collapsed",
     )
     img_url = st.text_input(
         "🖼️ 图片链接（选填）", placeholder="https://...图片URL",
@@ -413,6 +417,9 @@ def _render_add_form():
         else:
             ok = storage.add_to_watchlist(new_ticker, new_name, note_text.strip(), img_url)
             if ok:
+                # 清空所有输入字段（通过删除 session_state 中对应的 key）
+                for _k in ["wl_new_ticker", "wl_new_name", "wl_new_note_text", "wl_new_img_url"]:
+                    st.session_state.pop(_k, None)
                 st.success(f"✅ 已添加 {new_ticker}")
                 st.rerun()
             else:
@@ -504,25 +511,19 @@ def _render_kanban_group(cid: str, cat_name: str, items: list,
                        1 if _is_viewed(x["ticker"]) else 0)
     )
 
-    st.markdown(
-        f"""<div style="background:#f8fafc;border:1.5px solid #e2e8f0;
-        border-radius:10px;padding:10px 16px 4px;margin:10px 0 4px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-          <span style="font-size:15px;font-weight:700;color:#0f172a">
-            📁 {_he(cat_name)}</span>
-          <span style="background:#e0e7ff;color:#3730a3;font-size:11px;
-            padding:1px 8px;border-radius:10px">{total} 个品种</span>
-          <span style="color:#9ca3af;font-size:11px">
-            已看 {viewed_cnt}/{total}</span>
-          {done_badge}
-        </div>
-        <div style="background:#e5e7eb;border-radius:99px;height:4px;
-             overflow:hidden;margin-bottom:8px">
-          <div style="background:{bar_color};width:{bar_w}%;height:100%;
-               border-radius:99px"></div>
-        </div></div>""",
-        unsafe_allow_html=True,
+    _kg_html = (
+        '<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:10px;padding:10px 16px 4px;margin:10px 0 4px">'
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+        f'<span style="font-size:15px;font-weight:700;color:#0f172a">📁 {_he(cat_name)}</span>'
+        f'<span style="background:#e0e7ff;color:#3730a3;font-size:11px;padding:1px 8px;border-radius:10px">{total} 个品种</span>'
+        f'<span style="color:#9ca3af;font-size:11px">已看 {viewed_cnt}/{total}</span>'
+        f'{done_badge}'
+        '</div>'
+        f'<div style="background:#e5e7eb;border-radius:99px;height:4px;overflow:hidden;margin-bottom:8px">'
+        f'<div style="background:{bar_color};width:{bar_w}%;height:100%;border-radius:99px"></div>'
+        '</div></div>'
     )
+    st.markdown(_kg_html, unsafe_allow_html=True)
 
     cols = st.columns(3)
     for i, item in enumerate(items_sorted):
