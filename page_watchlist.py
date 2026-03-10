@@ -587,9 +587,8 @@ def _render_mini_card(item: dict, result_map: dict, cats: list):
         <div style="display:flex;gap:4px;margin-bottom:6px;flex-wrap:wrap">
           {fibo_html or '<span style="color:#d1d5db;font-size:10px">暂无扫描数据</span>'}
         </div>
-        <div style="font-size:11px;color:#64748b;border-top:1px solid {card_bd};
-             padding-top:5px;line-height:1.4">
-          {_he(note_text) if note_text else '<i style="color:#d1d5db">暂无备注</i>'}
+        <div style="border-top:1px solid {card_bd};padding-top:5px;line-height:1.5">
+          {f'<span style="color:#ef4444;font-size:13px;font-weight:700">' + _he(note_text) + '</span>' if note_text else '<i style="color:#d1d5db;font-size:11px">暂无备注</i>'}
         </div></div>""",
         unsafe_allow_html=True,
     )
@@ -823,7 +822,7 @@ def _render_card(item: dict, idx: int, result_map: dict, cats: list = None):
                 f'align-items:flex-start;margin-bottom:4px">'
                 f'<span style="color:#ef4444;font-size:11px;font-weight:600">📝 最新备注</span>'
                 f'<span style="color:#9ca3af;font-size:10px">{_he(ts_str)}</span></div>'
-                f'<span style="color:#1f2937;font-size:13px">{_he(str(latest["text"]))}</span>'
+                f'<span style="color:#ef4444;font-size:15px;font-weight:700;line-height:1.5">{_he(str(latest["text"]))}</span>'
                 f'{("<br>"+thumb) if thumb else ""}</div>',
                 unsafe_allow_html=True,
             )
