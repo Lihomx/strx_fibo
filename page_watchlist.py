@@ -76,6 +76,24 @@ def _all_notes(item: dict) -> list:
 # ════════════════════════════════════════════════════════════════════
 # 速度优化：缓存扫描结果 map（TTL 60s）
 # ════════════════════════════════════════════════════════════════════
+
+# ════════════════════════════════════════════════════════════════════
+# JS 辅助：点击 TV 按钮 → 标记已看 + 打开新标签页
+# ════════════════════════════════════════════════════════════════════
+def _open_tv_and_mark(ticker: str, url: str, btn_key: str) -> bool:
+    """渲染一个普通按钮；点击后标记已看，并用 JS 打开 TradingView 链接。
+    返回 True 表示本轮被点击。"""
+    import streamlit.components.v1 as _stc
+    clicked = st.button("📈", key=btn_key, help=f"在 TradingView 查看 {ticker}")
+    if clicked:
+        _mark_viewed(ticker)
+        # 通过 iframe 注入 JS 打开新标签（Streamlit 唯一可行方式）
+        _stc.html(
+            f"<script>window.open({repr(url)}, '_blank');</script>",
+            height=0,
+        )
+    return clicked
+
 @st.cache_data(ttl=60, show_spinner=False)
 def _cached_result_map() -> dict:
     result_map: dict = {}
@@ -602,7 +620,7 @@ def _render_mini_card(item: dict, result_map: dict, cats: list):
             else:      _mark_viewed(ticker)
             st.rerun()
     with b2:
-        st.link_button("📈", tv_link, help=f"TradingView: {ticker}")
+        _open_tv_and_mark(ticker, tv_link, f"mc_tv_{ticker}")
     with b3:
         if st.button("🔓" if pinned else "📌",
                      key=f"mc_pin_{ticker}", help="置顶/取消"):
@@ -717,7 +735,7 @@ def _render_card(item: dict, idx: int, result_map: dict, cats: list = None):
                     else:      _mark_viewed(ticker)
                     st.rerun()
             with b2:
-                st.link_button("📈", tv_link, help=f"TradingView: {ticker}")
+                _open_tv_and_mark(ticker, tv_link, f"wl_tv_{ticker}_{idx}")
             with b3:
                 if st.button("📌" if not pinned else "🔓",
                              key=f"wl_pin_{ticker}_{idx}",
