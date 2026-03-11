@@ -165,6 +165,30 @@ def render():
 # 当前收藏主页
 # ════════════════════════════════════════════════════════════════════
 def _render_main():
+    # ── 拖拽结果即时保存（query_params 传入） ────────────────────────
+    _drag_param = st.query_params.get("wl_drag")
+    if _drag_param:
+        import json as _json
+        try:
+            _drag_result = _json.loads(_drag_param)
+            _all_wl = storage.load_watchlist()
+            _changed = 0
+            for _wi in _all_wl:
+                _tk  = _wi["ticker"].upper()
+                _new = _drag_result.get(_tk)
+                if _new is not None:
+                    _new_cat = None if _new == "__NONE__" else _new
+                    if _wi.get("category_id") != _new_cat:
+                        _wi["category_id"] = _new_cat
+                        _changed += 1
+            if _changed:
+                storage.save_watchlist(_all_wl)
+                st.toast(f"✅ 已保存 {_changed} 个品种的分类", icon="🎉")
+        except Exception as _e:
+            st.warning(f"拖拽保存失败：{_e}")
+        st.query_params.clear()
+        st.rerun()
+
     items      = storage.load_watchlist()
     cats       = storage.load_wl_categories()
     result_map = _cached_result_map()
@@ -473,80 +497,263 @@ def _render_add_form():
 # 每个分类一个区块，内部品种3列网格，附进度条
 # ════════════════════════════════════════════════════════════════════
 def _render_kanban(items: list, result_map: dict, cats: list):
+    """
+    收藏页看板视图 — 全HTML拖拽实现。
+    拖完后通过 window.location 写入 ?wl_drag=... 触发 Streamlit rerun 保存。
+    """
+    import json
+    import streamlit.components.v1 as _stc
+
+    # ── 构建分类列顺序 ────────────────────────────────────────────
     tree = storage.build_cat_tree(cats)
-
     cat_name_map: dict = {}
-    def _collect_names(nodes):
-        for n in nodes:
-            cat_name_map[n["id"]] = n["name"]
-            if n.get("children"):
-                _collect_names(n["children"])
-    _collect_names(tree)
+    col_order = []
 
-    # 分桶
-    buckets: dict = {}
-    for item in items:
+    def _collect(nodes):
+        for n in sorted(nodes, key=lambda x: x.get("order", 0)):
+            cat_name_map[n["id"]] = n["name"]
+            col_order.append({"id": n["id"], "name": n["name"]})
+            if n.get("children"):
+                _collect(n["children"])
+    _collect(tree)
+    col_order.append({"id": "__NONE__", "name": "❓ 未分类"})
+
+    # ── 分桶（所有 items，不仅 display_items 以保持完整） ─────────
+    all_items = storage.load_watchlist()
+    viewed_set = _get_viewed()
+
+    board: dict = {col["id"]: [] for col in col_order}
+    for item in all_items:
         cid = item.get("category_id") or "__NONE__"
         if cid != "__NONE__" and cid not in cat_name_map:
             matched = next((c["id"] for c in cats if c["name"] == cid), None)
             cid = matched if matched else "__NONE__"
-        buckets.setdefault(cid, []).append(item)
+        if cid not in board:
+            cid = "__NONE__"
+        latest_note = ""
+        notes = item.get("notes") or []
+        if notes:
+            t = notes[-1].get("text","") if isinstance(notes[-1], dict) else str(notes[-1])
+            latest_note = (t[:30]+"…") if len(t)>30 else t
+        # fibo 徽章数据
+        res_list = result_map.get(item["ticker"], [])
+        fibo_badges = []
+        for r in res_list[:3]:
+            fibo_badges.append({
+                "tf": r.get("timeframe","?")[:1],
+                "in_zone": r.get("in_zone", False),
+                "dist": f"{r['dist_pct']:.0f}%" if r.get("dist_pct") is not None else "—",
+            })
+        board[cid].append({
+            "ticker":  item["ticker"],
+            "name":    item.get("name",""),
+            "pinned":  item.get("pinned", False),
+            "viewed":  item["ticker"].upper() in viewed_set,
+            "note":    latest_note,
+            "fibo":    fibo_badges,
+        })
 
-    # 按树顺序渲染
-    rendered = set()
-    def _render_in_order(nodes):
-        for n in sorted(nodes, key=lambda x: x.get("order", 0)):
-            bucket = buckets.get(n["id"], [])
-            if bucket:
-                rendered.add(n["id"])
-                _render_kanban_group(n["id"], cat_name_map.get(n["id"], n["id"]),
-                                     bucket, result_map, cats)
-            if n.get("children"):
-                _render_in_order(n["children"])
-    _render_in_order(tree)
+    board_json   = json.dumps(board,     ensure_ascii=False)
+    columns_json = json.dumps(col_order, ensure_ascii=False)
 
-    uncat = buckets.get("__NONE__", [])
-    if uncat:
-        _render_kanban_group("__NONE__", "❓ 未分类", uncat, result_map, cats)
+    # ── 计算动态高度 ──────────────────────────────────────────────
+    max_col = max((len(v) for v in board.values()), default=1)
+    board_height = max(480, max_col * 82 + 160)
 
+    html = f"""<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0;}}
+body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  background:#f1f5f9;padding:10px 8px 60px;}}
+.board{{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;align-items:flex-start;}}
+.col{{flex:0 0 152px;background:#fff;border-radius:10px;
+  border:1.5px solid #e2e8f0;padding:6px 6px 8px;min-height:100px;
+  transition:border-color .15s,background .15s;}}
+.col.over{{border-color:#3b82f6!important;background:#eff6ff!important;}}
+.col-hd{{font-size:10px;font-weight:700;color:#0f172a;padding:3px 4px 5px;
+  border-bottom:1.5px solid #e2e8f0;margin-bottom:5px;
+  display:flex;justify-content:space-between;align-items:center;
+  line-height:1.3;gap:4px;}}
+.col-hd span{{flex:1;word-break:break-all;}}
+.cnt{{background:#e0e7ff;color:#3730a3;font-size:9px;
+  padding:1px 5px;border-radius:7px;font-weight:700;white-space:nowrap;}}
+.card{{background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px;
+  padding:5px 7px;margin-bottom:4px;cursor:grab;user-select:none;
+  transition:box-shadow .12s,opacity .12s;}}
+.card:hover{{box-shadow:0 2px 8px rgba(0,0,0,.12);border-color:#93c5fd;}}
+.card.dragging{{opacity:.35;cursor:grabbing;}}
+.card.pinned{{background:#fffbeb;border-color:#fde047;}}
+.card.viewed{{background:#f0fdf4;border-color:#86efac;opacity:.82;}}
+.cn{{font-size:11px;font-weight:700;color:#0f172a;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:128px;}}
+.tk{{font-size:9px;color:#94a3b8;font-family:monospace;margin-bottom:3px;}}
+.fibs{{display:flex;gap:2px;flex-wrap:wrap;margin-bottom:3px;}}
+.fb{{font-size:9px;padding:1px 4px;border-radius:4px;text-align:center;line-height:1.4;}}
+.fb.z{{background:#fef9c3;border:1px solid #fde047;color:#78350f;}}
+.fb.n{{background:#f1f5f9;border:1px solid #e2e8f0;color:#475569;}}
+.nt{{font-size:10px;color:#ef4444;font-weight:700;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:132px;}}
+.nt.empty{{color:#d1d5db;font-style:italic;font-weight:400;}}
+.ph{{border:2px dashed #93c5fd;border-radius:7px;height:34px;
+  background:#eff6ff;margin-bottom:4px;}}
+.bar{{position:fixed;bottom:0;left:0;right:0;background:#fff;
+  border-top:1px solid #e2e8f0;padding:8px 12px;
+  display:flex;align-items:center;gap:8px;z-index:99;}}
+.btn-save{{background:#2563eb;color:#fff;border:none;border-radius:7px;
+  padding:6px 18px;font-size:12px;font-weight:700;cursor:pointer;}}
+.btn-save:hover{{background:#1d4ed8;}}
+.btn-save:disabled{{background:#93c5fd;cursor:not-allowed;}}
+.btn-reset{{background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;
+  border-radius:7px;padding:6px 12px;font-size:11px;cursor:pointer;}}
+.badge{{background:#fef9c3;color:#92400e;font-size:10px;font-weight:700;
+  padding:2px 8px;border-radius:7px;display:none;}}
+.badge.on{{display:inline-block;}}
+.hint{{font-size:10px;color:#94a3b8;margin-left:auto;}}
+</style></head>
+<body>
+<div class="board" id="board"></div>
+<div class="bar">
+  <button class="btn-save" id="btnSave" onclick="doSave()" disabled>💾 保存分类</button>
+  <button class="btn-reset" onclick="doReset()">↩ 还原</button>
+  <span class="badge" id="badge"></span>
+  <span class="hint">拖动卡片更换分类 · 保存后页面自动刷新</span>
+</div>
+<script>
+const COLS  = {columns_json};
+const ORIG  = {board_json};
+let   STATE = JSON.parse(JSON.stringify(ORIG));
+let   moved = 0;
+let   dragging = null, fromCol = null;
 
-def _render_kanban_group(cid: str, cat_name: str, items: list,
-                          result_map: dict, cats: list):
-    total       = len(items)
-    viewed_cnt  = sum(1 for i in items if _is_viewed(i["ticker"]))
-    pct         = viewed_cnt / total if total else 0
-    bar_w       = max(int(pct * 100), 0)
-    bar_color   = "#22c55e" if pct >= 1 else "#3b82f6"
-    done_badge  = (
-        '<span style="background:#dcfce7;color:#166534;font-size:10px;'
-        'padding:1px 7px;border-radius:10px;margin-left:6px">✅ 全部已看</span>'
-        if pct >= 1 else ""
-    )
+function render(){{
+  const bd = document.getElementById('board');
+  bd.innerHTML='';
+  COLS.forEach(col=>{{
+    const cards = STATE[col.id]||[];
+    const el = document.createElement('div');
+    el.className='col'; el.dataset.cid=col.id;
+    el.innerHTML=
+      '<div class="col-hd"><span>'+col.name+'</span>'+
+      '<span class="cnt">'+cards.length+'</span></div>';
+    cards.forEach(c=>{{
+      const d=document.createElement('div');
+      let cls='card';
+      if(c.pinned) cls+=' pinned';
+      if(c.viewed) cls+=' viewed';
+      d.className=cls; d.draggable=true;
+      d.dataset.ticker=c.ticker; d.dataset.cid=col.id;
+      // fibo badges
+      let fibs='';
+      if(c.fibo&&c.fibo.length){{
+        c.fibo.forEach(f=>{{
+          fibs+='<span class="fb '+(f.in_zone?'z':'n')+'">'+
+            '<b>'+f.tf+'</b> '+f.dist+'</span>';
+        }});
+      }}
+      const nt = c.note
+        ? '<div class="nt">'+esc(c.note)+'</div>'
+        : '<div class="nt empty">暂无备注</div>';
+      d.innerHTML=
+        '<div class="cn">'+(c.viewed?'✅ ':c.pinned?'📌 ':'')+esc(c.name||c.ticker)+'</div>'+
+        '<div class="tk">'+esc(c.ticker)+'</div>'+
+        (fibs?'<div class="fibs">'+fibs+'</div>':'')+
+        nt;
+      d.addEventListener('dragstart',e=>{{
+        dragging=c.ticker; fromCol=col.id;
+        setTimeout(()=>d.classList.add('dragging'),0);
+        e.dataTransfer.effectAllowed='move';
+      }});
+      d.addEventListener('dragend',()=>{{
+        d.classList.remove('dragging');
+        document.querySelectorAll('.ph').forEach(p=>p.remove());
+        document.querySelectorAll('.col').forEach(c=>c.classList.remove('over'));
+      }});
+      el.appendChild(d);
+    }});
+    el.addEventListener('dragover',e=>{{
+      e.preventDefault();
+      el.classList.add('over');
+      if(!el.querySelector('.ph')){{
+        const ph=document.createElement('div');
+        ph.className='ph'; el.appendChild(ph);
+      }}
+    }});
+    el.addEventListener('dragleave',e=>{{
+      if(!el.contains(e.relatedTarget)){{
+        el.classList.remove('over');
+        el.querySelectorAll('.ph').forEach(p=>p.remove());
+      }}
+    }});
+    el.addEventListener('drop',e=>{{
+      e.preventDefault();
+      el.classList.remove('over');
+      el.querySelectorAll('.ph').forEach(p=>p.remove());
+      const toCid=el.dataset.cid;
+      if(!dragging||toCid===fromCol)return;
+      STATE[fromCol]=STATE[fromCol].filter(c=>c.ticker!==dragging);
+      let item=null;
+      for(const cid in ORIG){{
+        const f=ORIG[cid].find(c=>c.ticker===dragging);
+        if(f){{item=f;break;}}
+      }}
+      if(item&&!(STATE[toCid]||[]).find(c=>c.ticker===dragging)){{
+        if(!STATE[toCid]) STATE[toCid]=[];
+        STATE[toCid].push(item);
+      }}
+      dragging=null; fromCol=null;
+      // count moved
+      moved=0;
+      COLS.forEach(col=>{{
+        const os=new Set((ORIG[col.id]||[]).map(c=>c.ticker));
+        (STATE[col.id]||[]).forEach(c=>{{ if(!os.has(c.ticker)) moved++; }});
+      }});
+      const badge=document.getElementById('badge');
+      const btn=document.getElementById('btnSave');
+      if(moved>0){{
+        badge.textContent=moved+' 个待保存'; badge.classList.add('on');
+        btn.disabled=false;
+      }}else{{
+        badge.classList.remove('on'); btn.disabled=true;
+      }}
+      render();
+    }});
+    bd.appendChild(el);
+  }});
+}}
 
-    items_sorted = sorted(
-        items,
-        key=lambda x: (0 if x.get("pinned") else 1,
-                       1 if _is_viewed(x["ticker"]) else 0)
-    )
+function esc(s){{
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}}
 
-    _kg_html = (
-        '<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:10px;padding:10px 16px 4px;margin:10px 0 4px">'
-        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
-        f'<span style="font-size:15px;font-weight:700;color:#0f172a">📁 {_he(cat_name)}</span>'
-        f'<span style="background:#e0e7ff;color:#3730a3;font-size:11px;padding:1px 8px;border-radius:10px">{total} 个品种</span>'
-        f'<span style="color:#9ca3af;font-size:11px">已看 {viewed_cnt}/{total}</span>'
-        f'{done_badge}'
-        '</div>'
-        f'<div style="background:#e5e7eb;border-radius:99px;height:4px;overflow:hidden;margin-bottom:8px">'
-        f'<div style="background:{bar_color};width:{bar_w}%;height:100%;border-radius:99px"></div>'
-        '</div></div>'
-    )
-    st.markdown(_kg_html, unsafe_allow_html=True)
+function doSave(){{
+  const result={{}};
+  COLS.forEach(col=>{{
+    (STATE[col.id]||[]).forEach(c=>{{ result[c.ticker]=col.id; }});
+  }});
+  const param=encodeURIComponent(JSON.stringify(result));
+  // 写入父窗口 URL 的 query param → Streamlit 检测到变化自动 rerun
+  const url=new URL(window.parent.location.href);
+  url.searchParams.set('wl_drag', decodeURIComponent(param));
+  window.parent.location.href = url.toString();
+}}
 
-    cols = st.columns(3)
-    for i, item in enumerate(items_sorted):
-        with cols[i % 3]:
-            _render_mini_card(item, result_map, cats)
+function doReset(){{
+  STATE=JSON.parse(JSON.stringify(ORIG));
+  moved=0;
+  document.getElementById('badge').classList.remove('on');
+  document.getElementById('btnSave').disabled=true;
+  render();
+}}
+
+render();
+</script>
+</body></html>"""
+
+    _stc.html(html, height=board_height, scrolling=True)
+
 
 
 # ════════════════════════════════════════════════════════════════════
