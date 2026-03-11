@@ -322,7 +322,11 @@ def _render_item_row(item, result_map, cats, viewed_set):
             else:      _mark_viewed(ticker)
             st.rerun()
     with bc2:
-        st.link_button("📈", tv_link, help=f"TradingView: {ticker}")
+        if st.button("📈", key=f"wl_tv_{ticker}", help=f"TradingView: {ticker}（自动标记已看）"):
+            _mark_viewed(ticker)
+            import streamlit.components.v1 as _stc
+            _stc.html(f'<script>window.open({repr(tv_link)},"_blank");</script>', height=0)
+            st.rerun()
     with bc3:
         if st.button("🔓" if pinned else "📌",
                      key=f"wl_pin_{ticker}", help="置顶/取消"):
