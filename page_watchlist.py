@@ -1331,7 +1331,7 @@ renderBoard();
                 _batch_tickers = st.multiselect(
                     "选择品种",
                     options=[f"{i['ticker']} {i.get('name','')}" for i in items_all],
-                    key="cat_batch_tickers",
+                    key="cat_batch_tickers_v1",
                     placeholder="选择要批量设置分类的品种…",
                 )
             with b2:
@@ -1577,7 +1577,7 @@ def _render_categories():
                 _batch_cat_id = None if _bc == "__UNCAT__" else _bc
             with b3:
                 st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("💾 批量设置", key="cat_batch_save",
+                if st.button("💾 批量设置", key="cat_batch_save_v1",
                              type="primary", use_container_width=True):
                     if _batch_tickers:
                         for ts in _batch_tickers:
