@@ -910,6 +910,456 @@ def _render_cat_assign_inline(ticker: str, name: str, item: dict, cats: list):
 # ════════════════════════════════════════════════════════════════════
 # 🏷️ 分类管理
 # ════════════════════════════════════════════════════════════════════
+
+# ════════════════════════════════════════════════════════════════════
+# 🖱️  拖拽分类看板
+# 原理：用 st.components.v1.html 渲染原生 DragAPI 看板
+#       拖完后点「保存」→ 写入隐藏 text_area → Streamlit 检测变化保存
+# ════════════════════════════════════════════════════════════════════
+def _render_drag_board():
+    import json
+    import streamlit.components.v1 as _stc
+
+    cats  = storage.load_wl_categories()
+    items = storage.load_watchlist()
+
+    if not cats:
+        st.info("请先创建分类后再使用拖拽功能。")
+        return
+    if not items:
+        st.info("收藏夹为空。")
+        return
+
+    # ── 构建看板数据：columns = 分类列表 + 未分类列 ──────────────
+    tree = storage.build_cat_tree(cats)
+    # 扁平顺序（按树顺序）
+    col_order = []
+    def _flatten(nodes):
+        for n in sorted(nodes, key=lambda x: x.get("order", 0)):
+            col_order.append({"id": n["id"], "name": n["name"]})
+            if n.get("children"):
+                _flatten(n["children"])
+    _flatten(tree)
+    col_order.append({"id": "__NONE__", "name": "❓ 未分类"})
+
+    # 品种 → 当前列
+    cat_name_map = {c["id"]: c["name"] for c in cats}
+    board = {col["id"]: [] for col in col_order}
+    for item in items:
+        cid = item.get("category_id") or "__NONE__"
+        if cid != "__NONE__" and cid not in cat_name_map:
+            matched = next((c["id"] for c in cats if c["name"] == cid), None)
+            cid = matched if matched else "__NONE__"
+        if cid not in board:
+            cid = "__NONE__"
+        board[cid].append({
+            "ticker": item["ticker"],
+            "name":   item.get("name", ""),
+        })
+
+    board_json   = json.dumps(board,     ensure_ascii=False)
+    columns_json = json.dumps(col_order, ensure_ascii=False)
+
+    # ── 接收拖拽结果 ─────────────────────────────────────────────
+    result_key = "drag_board_result"
+    result_raw = st.text_area(
+        "拖拽结果（内部使用）",
+        key=result_key,
+        value="",
+        label_visibility="collapsed",
+        height=1,
+    )
+
+    # 如果有结果 → 保存 → 清空
+    if result_raw and result_raw.strip().startswith("{"):
+        try:
+            result = json.loads(result_raw)
+            saved_count = 0
+            all_wl = storage.load_watchlist()
+            changed = False
+            for wl_item in all_wl:
+                tk = wl_item["ticker"].upper()
+                new_cat = result.get(tk)   # cat_id or "__NONE__" or None
+                old_cat = wl_item.get("category_id")
+                if new_cat == "__NONE__":
+                    new_cat = None
+                if new_cat != old_cat:
+                    wl_item["category_id"] = new_cat
+                    changed = True
+                    saved_count += 1
+            if changed:
+                storage.save_watchlist(all_wl)
+                st.session_state.pop(result_key, None)
+                st.toast(f"✅ 已保存 {saved_count} 个品种的分类变更", icon="🎉")
+                st.rerun()
+        except Exception as e:
+            st.error(f"保存失败：{e}")
+
+    # ── 渲染拖拽看板 HTML ─────────────────────────────────────────
+    col_count  = len(col_order)
+    board_html = f"""<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f1f5f9;
+    padding: 12px;
+    min-height: 100vh;
+  }}
+  h3 {{
+    font-size: 13px; color: #64748b; margin-bottom: 10px;
+    font-weight: 500;
+  }}
+  .board {{
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    align-items: flex-start;
+  }}
+  .column {{
+    flex: 0 0 160px;
+    background: #fff;
+    border-radius: 10px;
+    border: 1.5px solid #e2e8f0;
+    padding: 8px;
+    min-height: 120px;
+    transition: border-color 0.15s;
+  }}
+  .column.drag-over {{
+    border-color: #3b82f6;
+    background: #eff6ff;
+  }}
+  .col-title {{
+    font-size: 11px;
+    font-weight: 700;
+    color: #0f172a;
+    padding: 4px 6px 6px;
+    border-bottom: 1.5px solid #e2e8f0;
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }}
+  .col-count {{
+    background: #e0e7ff;
+    color: #3730a3;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-weight: 600;
+  }}
+  .card {{
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 7px;
+    padding: 6px 8px;
+    margin-bottom: 5px;
+    cursor: grab;
+    user-select: none;
+    transition: box-shadow 0.15s, opacity 0.15s;
+  }}
+  .card:hover {{
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    border-color: #93c5fd;
+  }}
+  .card.dragging {{
+    opacity: 0.4;
+    box-shadow: 0 4px 16px rgba(59,130,246,0.3);
+    cursor: grabbing;
+  }}
+  .card-name {{
+    font-size: 12px;
+    font-weight: 700;
+    color: #0f172a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 130px;
+  }}
+  .card-ticker {{
+    font-size: 10px;
+    color: #94a3b8;
+    font-family: monospace;
+  }}
+  .drop-placeholder {{
+    border: 2px dashed #93c5fd;
+    border-radius: 7px;
+    height: 36px;
+    background: #eff6ff;
+    margin-bottom: 5px;
+  }}
+  .save-bar {{
+    position: sticky;
+    bottom: 0;
+    background: #fff;
+    border-top: 1px solid #e2e8f0;
+    padding: 10px 12px;
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-radius: 0 0 8px 8px;
+  }}
+  .btn-save {{
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    border-radius: 7px;
+    padding: 7px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }}
+  .btn-save:hover {{ background: #1d4ed8; }}
+  .btn-save:disabled {{ background: #93c5fd; cursor: not-allowed; }}
+  .btn-reset {{
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+    border-radius: 7px;
+    padding: 7px 14px;
+    font-size: 12px;
+    cursor: pointer;
+  }}
+  .change-badge {{
+    background: #fef9c3;
+    color: #92400e;
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 8px;
+    font-weight: 600;
+    display: none;
+  }}
+  .change-badge.visible {{ display: inline-block; }}
+  .hint {{
+    font-size: 11px;
+    color: #94a3b8;
+    margin-left: auto;
+  }}
+</style>
+</head>
+<body>
+<h3>🖱️ 拖动品种卡片到目标分类列，拖完后点「保存分类」</h3>
+<div class="board" id="board"></div>
+<div class="save-bar">
+  <button class="btn-save" id="btnSave" onclick="saveChanges()" disabled>💾 保存分类</button>
+  <button class="btn-reset" onclick="resetBoard()">↩ 还原</button>
+  <span class="change-badge" id="changeBadge"></span>
+  <span class="hint">拖动后保存 → 页面自动刷新</span>
+</div>
+
+<script>
+const BOARD_DATA   = {board_json};
+const COL_ORDER    = {columns_json};
+
+// 深拷贝初始状态（用于还原）
+let boardState     = JSON.parse(JSON.stringify(BOARD_DATA));
+let originalState  = JSON.parse(JSON.stringify(BOARD_DATA));
+let dragTicker     = null;
+let dragFromCol    = null;
+let changeCount    = 0;
+
+function renderBoard() {{
+  const boardEl = document.getElementById('board');
+  boardEl.innerHTML = '';
+  COL_ORDER.forEach(col => {{
+    const cards = boardState[col.id] || [];
+    const colEl = document.createElement('div');
+    colEl.className = 'column';
+    colEl.dataset.colId = col.id;
+    colEl.innerHTML =
+      '<div class="col-title">' +
+        '<span>' + col.name + '</span>' +
+        '<span class="col-count">' + cards.length + '</span>' +
+      '</div>';
+    cards.forEach(item => {{
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.draggable = true;
+      card.dataset.ticker = item.ticker;
+      card.dataset.colId  = col.id;
+      card.innerHTML =
+        '<div class="card-name">' + (item.name || item.ticker) + '</div>' +
+        '<div class="card-ticker">' + item.ticker + '</div>';
+      card.addEventListener('dragstart', onDragStart);
+      card.addEventListener('dragend',   onDragEnd);
+      colEl.appendChild(card);
+    }});
+    colEl.addEventListener('dragover',  onDragOver);
+    colEl.addEventListener('dragleave', onDragLeave);
+    colEl.addEventListener('drop',      onDrop);
+    boardEl.appendChild(colEl);
+  }});
+}}
+
+function onDragStart(e) {{
+  dragTicker  = e.currentTarget.dataset.ticker;
+  dragFromCol = e.currentTarget.dataset.colId;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}}
+function onDragEnd(e) {{
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.column').forEach(c => c.classList.remove('drag-over'));
+  document.querySelectorAll('.drop-placeholder').forEach(p => p.remove());
+}}
+function onDragOver(e) {{
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const col = e.currentTarget;
+  col.classList.add('drag-over');
+  // 占位符
+  if (!col.querySelector('.drop-placeholder')) {{
+    const ph = document.createElement('div');
+    ph.className = 'drop-placeholder';
+    col.appendChild(ph);
+  }}
+}}
+function onDragLeave(e) {{
+  if (!e.currentTarget.contains(e.relatedTarget)) {{
+    e.currentTarget.classList.remove('drag-over');
+    e.currentTarget.querySelectorAll('.drop-placeholder').forEach(p => p.remove());
+  }}
+}}
+function onDrop(e) {{
+  e.preventDefault();
+  const toColId = e.currentTarget.dataset.colId;
+  if (!dragTicker || toColId === dragFromCol) {{
+    renderBoard(); return;
+  }}
+  // 从源列移除
+  boardState[dragFromCol] = boardState[dragFromCol].filter(i => i.ticker !== dragTicker);
+  // 找到被拖项的完整对象（从原始数据）
+  let dragItem = null;
+  for (const cid in BOARD_DATA) {{
+    const found = BOARD_DATA[cid].find(i => i.ticker === dragTicker);
+    if (found) {{ dragItem = found; break; }}
+  }}
+  if (dragItem && !boardState[toColId].find(i => i.ticker === dragTicker)) {{
+    boardState[toColId].push(dragItem);
+  }}
+  dragTicker = null; dragFromCol = null;
+  // 计算变更数
+  changeCount = 0;
+  COL_ORDER.forEach(col => {{
+    const orig = (originalState[col.id] || []).map(i => i.ticker).sort().join(',');
+    const curr = (boardState[col.id]    || []).map(i => i.ticker).sort().join(',');
+    if (orig !== curr) changeCount += Math.abs(
+      (boardState[col.id]||[]).length - (originalState[col.id]||[]).length
+    );
+  }});
+  // 精确计算移动数
+  let moved = 0;
+  COL_ORDER.forEach(col => {{
+    const origSet = new Set((originalState[col.id]||[]).map(i=>i.ticker));
+    const currSet = new Set((boardState[col.id]||[]).map(i=>i.ticker));
+    currSet.forEach(t => {{ if (!origSet.has(t)) moved++; }});
+  }});
+  changeCount = moved;
+  const badge = document.getElementById('changeBadge');
+  const btn   = document.getElementById('btnSave');
+  if (changeCount > 0) {{
+    badge.textContent = changeCount + ' 个品种待保存';
+    badge.classList.add('visible');
+    btn.disabled = false;
+  }} else {{
+    badge.classList.remove('visible');
+    btn.disabled = true;
+  }}
+  renderBoard();
+}}
+
+function saveChanges() {{
+  // 构建 ticker→catId 映射
+  const result = {{}};
+  COL_ORDER.forEach(col => {{
+    (boardState[col.id]||[]).forEach(item => {{
+      result[item.ticker] = col.id;
+    }});
+  }});
+  // 写入 Streamlit 的隐藏 textarea
+  // Streamlit 组件嵌在 iframe 里，用 postMessage 通知父窗口
+  window.parent.postMessage({{
+    type: 'streamlit:setComponentValue',
+    value: JSON.stringify(result)
+  }}, '*');
+  // 同时尝试直接写 textarea（本地运行时可行）
+  try {{
+    const frames = window.parent.document.querySelectorAll('iframe');
+    frames.forEach(fr => {{
+      try {{
+        const ta = fr.contentDocument.querySelector('textarea[data-testid]');
+        if (ta) {{ ta.value = JSON.stringify(result); ta.dispatchEvent(new Event('input', {{bubbles:true}})); }}
+      }} catch(e) {{}}
+    }});
+  }} catch(e) {{}}
+  document.getElementById('btnSave').textContent = '⏳ 保存中…';
+  document.getElementById('btnSave').disabled = true;
+}}
+
+function resetBoard() {{
+  boardState  = JSON.parse(JSON.stringify(originalState));
+  changeCount = 0;
+  document.getElementById('changeBadge').classList.remove('visible');
+  document.getElementById('btnSave').disabled = true;
+  document.getElementById('btnSave').textContent = '💾 保存分类';
+  renderBoard();
+}}
+
+renderBoard();
+</script>
+</body>
+</html>"""
+
+    board_height = max(400, len(items) * 14 + 200)
+    _stc.html(board_html, height=board_height, scrolling=True)
+
+    # ── 备用方案：用 st.form + selectbox 批量修改（折叠） ─────────
+    st.markdown("<br>", unsafe_allow_html=True)
+    with st.expander("📝 备用：下拉选择批量修改分类（不支持拖拽时使用）"):
+        items_all = storage.load_watchlist()
+        if not items_all:
+            st.info("收藏夹为空")
+        else:
+            b1, b2, b3 = st.columns([3,3,2])
+            with b1:
+                _batch_tickers = st.multiselect(
+                    "选择品种",
+                    options=[f"{i['ticker']} {i.get('name','')}" for i in items_all],
+                    key="cat_batch_tickers",
+                    placeholder="选择要批量设置分类的品种…",
+                )
+            with b2:
+                _bb_ids, _bb_names = ["__UNCAT__"], {"__UNCAT__": "（未分类）"}
+                def _fill_b(nodes, depth=0):
+                    pfx = "  " * depth + ("└ " if depth > 0 else "")
+                    for node in sorted(nodes, key=lambda x: x.get("order", 0)):
+                        _bb_ids.append(node["id"])
+                        _bb_names[node["id"]] = f"{pfx}{node['name']}"
+                        if node.get("children"):
+                            _fill_b(node["children"], depth + 1)
+                _fill_b(storage.build_cat_tree(cats))
+                _bc = st.selectbox("目标分类", options=_bb_ids,
+                                   format_func=lambda x: _bb_names.get(x, str(x)),
+                                   key="cat_batch_target_id2")
+                _batch_cat_id = None if _bc == "__UNCAT__" else _bc
+            with b3:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("💾 批量设置", key="cat_batch_save2",
+                             type="primary", use_container_width=True):
+                    if _batch_tickers:
+                        for ts in _batch_tickers:
+                            storage.set_watchlist_item_category(ts.split()[0], _batch_cat_id)
+                        st.success(f"✅ 已为 {len(_batch_tickers)} 个品种设置分类")
+                        st.rerun()
+                    else:
+                        st.warning("请先选择品种")
+
 def _render_categories():
     st.markdown("### 🏷️ 分类管理")
     st.markdown(
@@ -920,6 +1370,12 @@ def _render_categories():
 
     cats = storage.load_wl_categories()
     tree = storage.build_cat_tree(cats)
+
+    # ── 拖拽看板（核心入口） ──────────────────────────────────────
+    if cats:
+        with st.expander("🖱️ 拖拽分类看板（拖动品种到目标分类）", expanded=True):
+            _render_drag_board()
+        st.markdown("---")
 
     with st.expander("➕ 新增分类", expanded=len(cats) == 0):
         _add_col1, _add_col2, _add_col3 = st.columns([3, 3, 2])
