@@ -68,6 +68,15 @@ def _cached_result_map():
 
 # ══════════════════════════════════════════════════════════════════════
 def render():
+    # ── 处理 TV 链接自动标记已看（通过 ?wl_mark=TICKER 参数触发）──
+    _wl_mark = st.query_params.get("wl_mark", "")
+    if _wl_mark:
+        _mark_viewed(_wl_mark)
+        _t_keep = st.query_params.get("_t", "")
+        st.query_params.clear()
+        if _t_keep:
+            st.query_params["_t"] = _t_keep
+
     st.markdown("## ⭐ 自选收藏夹")
 
     _tab_idx = 0
@@ -322,7 +331,20 @@ def _render_item_row(item, result_map, cats, viewed_set):
             else:      _mark_viewed(ticker)
             st.rerun()
     with bc2:
-        st.link_button("📈", tv_link, help=f"TradingView: {ticker}（点击后请用👁️标记已看）")
+        # HTML 버튼: onclick 에서 window.open(TV) + window.location 변경으로 Streamlit rerun 트리거
+        _t_param = st.query_params.get("_t", "")
+        _mark_url = (f"/?_t={_t_param}&wl_mark={ticker}"
+                     if _t_param else f"/?wl_mark={ticker}")
+        _tv_safe = tv_link.replace('"', '%22')
+        _tv_btn_html = (
+            f'<button onclick="window.open(\'{_tv_safe}\', \'_blank\'); '
+            f'window.location.href=\'{_mark_url}\';" '
+            f'style="display:inline-flex;align-items:center;justify-content:center;'
+            f'background:#f0f2f6;border:1px solid #d1d5db;border-radius:6px;'
+            f'padding:4px 10px;font-size:16px;cursor:pointer;width:100%;'
+            f'font-family:inherit;">📈</button>'
+        )
+        st.markdown(_tv_btn_html, unsafe_allow_html=True)
     with bc3:
         if st.button("🔓" if pinned else "📌",
                      key=f"wl_pin_{ticker}", help="置顶/取消"):
