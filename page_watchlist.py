@@ -86,6 +86,16 @@ def render():
 
 # ══════════════════════════════════════════════════════════════════════
 def _render_main():
+    # ── 待跳转 TV URL：rerun 后在页面顶部注入 window.open ──────────
+    _pending = st.session_state.pop("_pending_tv_url", None)
+    if _pending:
+        import streamlit.components.v1 as _cv1
+        _safe = _pending.replace('"', '%22').replace("'", "%27")
+        _cv1.html(
+            f'<script>window.open("{_safe}", "_blank");</script>',
+            height=0,
+        )
+
     items      = storage.load_watchlist()
     cats       = storage.load_wl_categories()
     result_map = _cached_result_map()
@@ -319,22 +329,11 @@ def _render_item_row(item, result_map, cats, viewed_set):
             else:      _mark_viewed(ticker)
             st.rerun()
     with bc2:
-        # fetch 静默调用本地标记服务 + 直接打开 TV 链接
-        # 本地 HTTP 服务在 app.py 启动时开启，端口 17321
-        _tv_safe = tv_link.replace("'", "%27").replace('"', '%22')
-        _btn_html = (
-            f'''<html><body style="margin:0;padding:0">
-<a href="{_tv_safe}" target="_blank"
-   onclick="fetch('http://localhost:17321/mark?ticker={ticker}').catch(()=>{{}})"
-   style="display:flex;align-items:center;justify-content:center;
-          width:100%;height:32px;background:#f0f2f6;
-          border:1px solid #d1d5db;border-radius:6px;
-          font-size:16px;text-decoration:none;color:#111;
-          box-sizing:border-box;">📈</a>
-</body></html>'''
-        )
-        import streamlit.components.v1 as _c
-        _c.html(_btn_html, height=36, scrolling=False)
+        if st.button("📈", key=f"wl_tv_{ticker}",
+                     help=f"打开 TradingView（自动标记已看）"):
+            _mark_viewed(ticker)
+            st.session_state["_pending_tv_url"] = tv_link
+            st.rerun()
     with bc3:
         if st.button("🔓" if pinned else "📌",
                      key=f"wl_pin_{ticker}", help="置顶/取消"):
