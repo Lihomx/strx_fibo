@@ -378,6 +378,29 @@ def main():
     except Exception:
         pass
 
+    # ── 处理 _fav 收藏指令（必须在路由前执行，否则非 scanner 页时丢失）──
+    try:
+        from urllib.parse import unquote as _uq
+        import re as _re
+        _fav_raw = st.query_params.get("_fav", "")
+        if _fav_raw:
+            _fav_act = _uq(_fav_raw)
+            _fav_parts = _fav_act.split("|", 2)
+            if len(_fav_parts) == 3:
+                _fav_op, _fav_tk, _fav_nm = _fav_parts
+                if _fav_op in ("add", "del") and _re.match(r"^[\w.\-\^=]+$", _fav_tk):
+                    if _fav_op == "add":
+                        storage.add_to_watchlist(ticker=_fav_tk, name=_fav_nm[:60])
+                        _t_val = st.query_params.get("_t", "")
+                        st.session_state["_open_wl_tab"] = (_fav_tk, _fav_nm[:40], _t_val)
+                    else:
+                        storage.remove_from_watchlist(_fav_tk)
+                        st.toast(f"已移除：{_fav_nm[:40]}", icon="🗑️")
+            st.query_params.pop("_fav", None)
+            st.rerun()
+    except Exception:
+        pass
+
     # 支持 URL 参数跳转（如收藏后新标签打开自选页）
     # 注意：必须在设置默认 page 之前读取，防止新标签页路由被覆盖
     _VALID_PAGES = ("watchlist","scanner","confluence","alerts","settings",
@@ -401,6 +424,19 @@ def main():
                 pass
     elif "page" not in st.session_state:
         st.session_state.page = "watchlist"
+
+    # ── 收藏成功后：新标签打开自选页 ──────────────────────────────
+    _open_wl = st.session_state.pop("_open_wl_tab", None)
+    if _open_wl:
+        _hl_tk, _hl_nm, _t_val = (_open_wl if len(_open_wl) == 3
+                                   else (*_open_wl, ""))
+        _wl_url = f"/?_t={_t_val}&_page=watchlist&_anchor={_hl_tk}"
+        import streamlit.components.v1 as _stcv1
+        _stcv1.html(
+            f"<script>try{{window.open('{_wl_url}','_blank');}}catch(e){{}}</script>",
+            height=0,
+        )
+        st.success(f"⭐ 已收藏「{_hl_nm}」— 自选页已在新标签打开")
 
     sidebar()
 
