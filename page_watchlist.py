@@ -319,12 +319,22 @@ def _render_item_row(item, result_map, cats, viewed_set):
             else:      _mark_viewed(ticker)
             st.rerun()
     with bc2:
-        # 中转跳转方案：新标签打开 /?wl_mark=TICKER&wl_tv=1
-        # app.py 顶部检测参数 → 标记已看 → meta refresh 跳转到 TradingView
-        _t_param = st.query_params.get("_t", "")
-        _redir_url = (f"/?_t={_t_param}&wl_mark={ticker}&wl_tv=1"
-                      if _t_param else f"/?wl_mark={ticker}&wl_tv=1")
-        st.link_button("📈", _redir_url, help=f"打开 TradingView（自动标记已看）")
+        # fetch 静默调用本地标记服务 + 直接打开 TV 链接
+        # 本地 HTTP 服务在 app.py 启动时开启，端口 17321
+        _tv_safe = tv_link.replace("'", "%27").replace('"', '%22')
+        _btn_html = (
+            f'''<html><body style="margin:0;padding:0">
+<a href="{_tv_safe}" target="_blank"
+   onclick="fetch('http://localhost:17321/mark?ticker={ticker}').catch(()=>{{}})"
+   style="display:flex;align-items:center;justify-content:center;
+          width:100%;height:32px;background:#f0f2f6;
+          border:1px solid #d1d5db;border-radius:6px;
+          font-size:16px;text-decoration:none;color:#111;
+          box-sizing:border-box;">📈</a>
+</body></html>'''
+        )
+        import streamlit.components.v1 as _c
+        _c.html(_btn_html, height=36, scrolling=False)
     with bc3:
         if st.button("🔓" if pinned else "📌",
                      key=f"wl_pin_{ticker}", help="置顶/取消"):

@@ -13,6 +13,9 @@ if _root not in sys.path:
     sys.path.insert(0, _root)
 
 import streamlit as st
+import threading as _threading
+import http.server as _http_server
+import urllib.parse as _urllib_parse
 
 st.set_page_config(
     page_title="STRX Fibo Scanner",
@@ -347,29 +350,51 @@ def _check_password() -> bool:
 
 
 # ── 路由 ──────────────────────────────────────────────────────────
-def main():
-    # ── TV 链接中转：标记已看后跳转 TradingView（新标签打开此页触发）──
-    _wl_mark = st.query_params.get("wl_mark", "")
-    _wl_tv   = st.query_params.get("wl_tv", "")
-    if _wl_mark and _wl_tv == "1":
-        # 无需密码验证，直接标记并跳转
-        try:
-            import storage as _st
-            _tv_dest = _st._tv_link_for_mark(_wl_mark)
-            _st.mark_viewed(_wl_mark)
-        except Exception:
-            _tv_dest = f"https://cn.tradingview.com/chart/?symbol={_wl_mark}"
-        st.markdown(
-            f"""<html><head><meta http-equiv="refresh" content="0;url={_tv_dest}"></head>
-<body style="font-family:sans-serif;padding:40px;text-align:center">
-<p style="font-size:18px">⏳ 正在跳转到 TradingView：<b>{_wl_mark}</b>…</p>
-<p><a href="{_tv_dest}">如未自动跳转请点此</a></p>
-<script>window.location.href="{_tv_dest}";</script>
-</body></html>""",
-            unsafe_allow_html=True,
-        )
-        st.stop()
+# ── 本地标记服务（单次启动，处理 TV 链接自动标记已看）─────────────
+_MARK_PORT = 17321
 
+def _start_mark_server():
+    """启动一个本地 HTTP 服务，接受 /mark?ticker=XXX 请求写入已看文件。
+    线程 daemon=True，随主进程退出自动关闭。"""
+    import storage as _storage
+
+    class _Handler(_http_server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            try:
+                p = _urllib_parse.urlparse(self.path)
+                q = _urllib_parse.parse_qs(p.query)
+                if p.path == "/mark":
+                    ticker = q.get("ticker", [""])[0].strip().upper()
+                    if ticker:
+                        _storage.mark_viewed(ticker)
+            except Exception:
+                pass
+            self.send_response(200)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"ok")
+        def do_OPTIONS(self):
+            self.send_response(200)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+        def log_message(self, *args):
+            pass  # 静默，不输出日志
+
+    try:
+        server = _http_server.HTTPServer(("localhost", _MARK_PORT), _Handler)
+        t = _threading.Thread(target=server.serve_forever, daemon=True)
+        t.start()
+    except OSError:
+        pass  # 端口已占用（热重载时），忽略
+
+# 只启动一次
+if "mark_server_started" not in st.session_state:
+    _start_mark_server()
+    st.session_state["mark_server_started"] = True
+
+
+def main():
     _check_password()
 
     # ── 启动时：从 GitHub Gist 自动恢复所有数据（云备份）──────────
