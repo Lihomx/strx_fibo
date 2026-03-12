@@ -11,6 +11,7 @@ page_watchlist.py — 自选收藏夹 v7
 from datetime import date
 from html import escape as _he
 import streamlit as st
+import streamlit.components.v1 as _components
 import storage
 
 _TODAY_KEY = f"wl_viewed_{date.today().isoformat()}"
@@ -331,20 +332,23 @@ def _render_item_row(item, result_map, cats, viewed_set):
             else:      _mark_viewed(ticker)
             st.rerun()
     with bc2:
-        # HTML 버튼: onclick 에서 window.open(TV) + window.location 변경으로 Streamlit rerun 트리거
+        # components.html iframe 完全绕过 Streamlit HTML 过滤
+        # onclick: window.open 打开 TV + parent.window.location 触发 Streamlit rerun + 标记
         _t_param = st.query_params.get("_t", "")
         _mark_url = (f"/?_t={_t_param}&wl_mark={ticker}"
                      if _t_param else f"/?wl_mark={ticker}")
-        _tv_safe = tv_link.replace('"', '%22')
-        _tv_btn_html = (
-            f'<button onclick="window.open(\'{_tv_safe}\', \'_blank\'); '
-            f'window.location.href=\'{_mark_url}\';" '
-            f'style="display:inline-flex;align-items:center;justify-content:center;'
-            f'background:#f0f2f6;border:1px solid #d1d5db;border-radius:6px;'
-            f'padding:4px 10px;font-size:16px;cursor:pointer;width:100%;'
-            f'font-family:inherit;">📈</button>'
-        )
-        st.markdown(_tv_btn_html, unsafe_allow_html=True)
+        _tv_safe = tv_link.replace("'", "%27").replace('"', "%22")
+        _mark_safe = _mark_url.replace("'", "%27")
+        _iframe_html = f"""<html><body style="margin:0;padding:0;">
+<button onclick="
+  window.open('{_tv_safe}','_blank');
+  try {{ window.top.location.href='{_mark_safe}'; }}
+  catch(e) {{ window.parent.location.href='{_mark_safe}'; }}
+" style="width:100%;height:32px;background:#f0f2f6;border:1px solid #d1d5db;
+  border-radius:6px;font-size:16px;cursor:pointer;display:flex;align-items:center;
+  justify-content:center;">📈</button>
+</body></html>"""
+        _components.html(_iframe_html, height=36, scrolling=False)
     with bc3:
         if st.button("🔓" if pinned else "📌",
                      key=f"wl_pin_{ticker}", help="置顶/取消"):
