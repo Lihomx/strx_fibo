@@ -379,11 +379,11 @@ def main():
         pass
 
     # ── 处理 _fav 收藏指令（必须在路由前执行，否则非 scanner 页时丢失）──
-    try:
-        from urllib.parse import unquote as _uq
-        import re as _re
-        _fav_raw = st.query_params.get("_fav", "")
-        if _fav_raw:
+    from urllib.parse import unquote as _uq
+    import re as _re
+    _fav_raw = st.query_params.get("_fav", "")
+    if _fav_raw:
+        try:
             _fav_act = _uq(_fav_raw)
             _fav_parts = _fav_act.split("|", 2)
             if len(_fav_parts) == 3:
@@ -396,10 +396,11 @@ def main():
                     else:
                         storage.remove_from_watchlist(_fav_tk)
                         st.toast(f"已移除：{_fav_nm[:40]}", icon="🗑️")
-            st.query_params.pop("_fav", None)
-            st.rerun()
-    except Exception:
-        pass
+        except Exception:
+            pass
+        # rerun 必须在 try/except 外面，否则 RerunException 被吞掉
+        st.query_params.pop("_fav", None)
+        st.rerun()
 
     # 支持 URL 参数跳转（如收藏后新标签打开自选页）
     # 注意：必须在设置默认 page 之前读取，防止新标签页路由被覆盖
