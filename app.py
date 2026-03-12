@@ -399,7 +399,7 @@ def main():
             except Exception:
                 pass
     elif "page" not in st.session_state:
-        st.session_state.page = "scanner"
+        st.session_state.page = "watchlist"
 
     sidebar()
 
