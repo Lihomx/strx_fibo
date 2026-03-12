@@ -717,18 +717,18 @@ def _today_str() -> str:
 
 def load_viewed_today() -> set:
     """读取今日已看 ticker 集合"""
-    data = _load_json(_viewed_file()) or {}
+    data = _load(_viewed_file(), {})
     return set(data.get(_today_str(), []))
 
 def save_viewed_today(viewed: set) -> bool:
     """保存今日已看 ticker 集合（只保留最近 7 天）"""
-    f = _viewed_file()
-    data = _load_json(f) or {}
+    fp = _viewed_file()
+    data = _load(fp, {})
     today = _today_str()
     data[today] = sorted(viewed)
     cutoff = (_dt.date.today() - _dt.timedelta(days=7)).isoformat()
     data = {k: v for k, v in data.items() if k >= cutoff}
-    return _save_json(f, data)
+    return _save(fp, data)
 
 def mark_viewed(ticker: str) -> bool:
     """标记某品种今日已看"""
