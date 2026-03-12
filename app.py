@@ -144,6 +144,7 @@ if (!document.querySelector('meta[name="viewport"]')) {
 </script>""", height=0)
 
 # ── 导入页面模块（直接 import，无子文件夹）──────────────────────────
+import storage
 import page_scanner
 import page_confluence
 import page_history
@@ -152,7 +153,6 @@ import page_settings
 import page_watchlist
 import page_universe
 import page_cloud
-import cloud_sync
 import cloud_sync
 
 
