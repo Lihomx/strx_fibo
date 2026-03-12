@@ -708,25 +708,27 @@ def build_cat_tree(cats: List[Dict]) -> List[Dict]:
 # ── 今日已看（文件持久化，跨 session_state 重置不丢失）──────────────
 import datetime as _dt
 
-F_VIEWED = os.path.join(_BASE, "data_wl_viewed.json")
+def _viewed_file() -> str:
+    """每次动态获取路径，避免模块级变量未定义问题"""
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_wl_viewed.json")
 
 def _today_str() -> str:
     return _dt.date.today().isoformat()
 
 def load_viewed_today() -> set:
     """读取今日已看 ticker 集合"""
-    data = _load_json(F_VIEWED) or {}
+    data = _load_json(_viewed_file()) or {}
     return set(data.get(_today_str(), []))
 
 def save_viewed_today(viewed: set) -> bool:
     """保存今日已看 ticker 集合（只保留最近 7 天）"""
-    data = _load_json(F_VIEWED) or {}
+    f = _viewed_file()
+    data = _load_json(f) or {}
     today = _today_str()
     data[today] = sorted(viewed)
-    # 清理 7 天前的旧数据
     cutoff = (_dt.date.today() - _dt.timedelta(days=7)).isoformat()
     data = {k: v for k, v in data.items() if k >= cutoff}
-    return _save_json(F_VIEWED, data)
+    return _save_json(f, data)
 
 def mark_viewed(ticker: str) -> bool:
     """标记某品种今日已看"""
