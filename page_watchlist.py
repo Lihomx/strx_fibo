@@ -65,15 +65,6 @@ def _cached_result_map():
 
 # ══════════════════════════════════════════════════════════════════════
 def render():
-    # ── 处理 TV 链接自动标记已看（通过 ?wl_mark=TICKER 参数触发）──
-    _wl_mark = st.query_params.get("wl_mark", "")
-    if _wl_mark:
-        _mark_viewed(_wl_mark)
-        _t_keep = st.query_params.get("_t", "")
-        st.query_params.clear()
-        if _t_keep:
-            st.query_params["_t"] = _t_keep
-
     st.markdown("## ⭐ 自选收藏夹")
 
     _tab_idx = 0
@@ -328,23 +319,12 @@ def _render_item_row(item, result_map, cats, viewed_set):
             else:      _mark_viewed(ticker)
             st.rerun()
     with bc2:
-        # components.html iframe 完全绕过 Streamlit HTML 过滤
-        # onclick: window.open 打开 TV + parent.window.location 触发 Streamlit rerun + 标记
+        # 中转跳转方案：新标签打开 /?wl_mark=TICKER&wl_tv=1
+        # app.py 顶部检测参数 → 标记已看 → meta refresh 跳转到 TradingView
         _t_param = st.query_params.get("_t", "")
-        _mark_url = (f"/?_t={_t_param}&wl_mark={ticker}"
-                     if _t_param else f"/?wl_mark={ticker}")
-        _tv_safe = tv_link.replace("'", "%27").replace('"', "%22")
-        _mark_safe = _mark_url.replace("'", "%27")
-        _iframe_html = f"""<html><body style="margin:0;padding:0;">
-<button onclick="
-  window.open('{_tv_safe}','_blank');
-  try {{ window.top.location.href='{_mark_safe}'; }}
-  catch(e) {{ window.parent.location.href='{_mark_safe}'; }}
-" style="width:100%;height:32px;background:#f0f2f6;border:1px solid #d1d5db;
-  border-radius:6px;font-size:16px;cursor:pointer;display:flex;align-items:center;
-  justify-content:center;">📈</button>
-</body></html>"""
-        _components.html(_iframe_html, height=36, scrolling=False)
+        _redir_url = (f"/?_t={_t_param}&wl_mark={ticker}&wl_tv=1"
+                      if _t_param else f"/?wl_mark={ticker}&wl_tv=1")
+        st.link_button("📈", _redir_url, help=f"打开 TradingView（自动标记已看）")
     with bc3:
         if st.button("🔓" if pinned else "📌",
                      key=f"wl_pin_{ticker}", help="置顶/取消"):

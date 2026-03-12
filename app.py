@@ -348,6 +348,28 @@ def _check_password() -> bool:
 
 # ── 路由 ──────────────────────────────────────────────────────────
 def main():
+    # ── TV 链接中转：标记已看后跳转 TradingView（新标签打开此页触发）──
+    _wl_mark = st.query_params.get("wl_mark", "")
+    _wl_tv   = st.query_params.get("wl_tv", "")
+    if _wl_mark and _wl_tv == "1":
+        # 无需密码验证，直接标记并跳转
+        try:
+            import storage as _st
+            _tv_dest = _st._tv_link_for_mark(_wl_mark)
+            _st.mark_viewed(_wl_mark)
+        except Exception:
+            _tv_dest = f"https://cn.tradingview.com/chart/?symbol={_wl_mark}"
+        st.markdown(
+            f"""<html><head><meta http-equiv="refresh" content="0;url={_tv_dest}"></head>
+<body style="font-family:sans-serif;padding:40px;text-align:center">
+<p style="font-size:18px">⏳ 正在跳转到 TradingView：<b>{_wl_mark}</b>…</p>
+<p><a href="{_tv_dest}">如未自动跳转请点此</a></p>
+<script>window.location.href="{_tv_dest}";</script>
+</body></html>""",
+            unsafe_allow_html=True,
+        )
+        st.stop()
+
     _check_password()
 
     # ── 启动时：从 GitHub Gist 自动恢复所有数据（云备份）──────────

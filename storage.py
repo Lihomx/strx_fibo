@@ -741,3 +741,12 @@ def unmark_viewed(ticker: str) -> bool:
     viewed = load_viewed_today()
     viewed.discard(ticker.strip().upper())
     return save_viewed_today(viewed)
+
+
+def _tv_link_for_mark(ticker: str) -> str:
+    """给 app.py 中转跳转用：根据 ticker 生成 TradingView URL"""
+    try:
+        import assets
+        return assets.tv_url(ticker)
+    except Exception:
+        return f"https://cn.tradingview.com/chart/?symbol={ticker}"
