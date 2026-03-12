@@ -14,9 +14,6 @@ import streamlit as st
 import streamlit.components.v1 as _components
 import storage
 
-_TODAY_KEY = f"wl_viewed_{date.today().isoformat()}"
-
-
 def _tv_link(ticker: str) -> str:
     try:
         from assets import tv_url as _tv_url
@@ -26,15 +23,14 @@ def _tv_link(ticker: str) -> str:
 
 
 def _get_viewed() -> set:
-    return st.session_state.get(_TODAY_KEY, set())
+    return storage.load_viewed_today()
 
 
 def _mark_viewed(ticker: str):
-    st.session_state.setdefault(_TODAY_KEY, set()).add(ticker.upper())
-
+    storage.mark_viewed(ticker)
 
 def _unmark_viewed(ticker: str):
-    st.session_state.get(_TODAY_KEY, set()).discard(ticker.upper())
+    storage.unmark_viewed(ticker)
 
 
 def _latest_note(item: dict):

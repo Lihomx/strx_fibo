@@ -703,3 +703,39 @@ def build_cat_tree(cats: List[Dict]) -> List[Dict]:
         else:
             roots.append(cat_map[c["id"]])
     return roots
+
+
+# ── 今日已看（文件持久化，跨 session_state 重置不丢失）──────────────
+import datetime as _dt
+
+F_VIEWED = os.path.join(_BASE, "data_wl_viewed.json")
+
+def _today_str() -> str:
+    return _dt.date.today().isoformat()
+
+def load_viewed_today() -> set:
+    """读取今日已看 ticker 集合"""
+    data = _load_json(F_VIEWED) or {}
+    return set(data.get(_today_str(), []))
+
+def save_viewed_today(viewed: set) -> bool:
+    """保存今日已看 ticker 集合（只保留最近 7 天）"""
+    data = _load_json(F_VIEWED) or {}
+    today = _today_str()
+    data[today] = sorted(viewed)
+    # 清理 7 天前的旧数据
+    cutoff = (_dt.date.today() - _dt.timedelta(days=7)).isoformat()
+    data = {k: v for k, v in data.items() if k >= cutoff}
+    return _save_json(F_VIEWED, data)
+
+def mark_viewed(ticker: str) -> bool:
+    """标记某品种今日已看"""
+    viewed = load_viewed_today()
+    viewed.add(ticker.strip().upper())
+    return save_viewed_today(viewed)
+
+def unmark_viewed(ticker: str) -> bool:
+    """取消某品种今日已看"""
+    viewed = load_viewed_today()
+    viewed.discard(ticker.strip().upper())
+    return save_viewed_today(viewed)
