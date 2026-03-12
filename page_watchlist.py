@@ -322,20 +322,7 @@ def _render_item_row(item, result_map, cats, viewed_set):
             else:      _mark_viewed(ticker)
             st.rerun()
     with bc2:
-        # 用隐藏 <a> 标签自动点击打开新标签，浏览器不拦截；同时标记已看
-        _tv_key = f"wl_tv_{ticker}"
-        st.markdown(
-            f'<a id="{_tv_key}_a" href="{tv_link}" target="_blank" '
-            f'style="display:none">open</a>',
-            unsafe_allow_html=True,
-        )
-        if st.button("📈", key=_tv_key, help=f"TradingView: {ticker}（自动标记已看）"):
-            _mark_viewed(ticker)
-            st.markdown(
-                f'<script>document.getElementById("{_tv_key}_a").click();</script>',
-                unsafe_allow_html=True,
-            )
-            st.rerun()
+        st.link_button("📈", tv_link, help=f"TradingView: {ticker}（点击后请用👁️标记已看）")
     with bc3:
         if st.button("🔓" if pinned else "📌",
                      key=f"wl_pin_{ticker}", help="置顶/取消"):
