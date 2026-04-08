@@ -1,29 +1,19 @@
 """
-cloud_sync.py — Supabase 云端备份同步 v6.1
+cloud_sync.py — Supabase 云端备份同步 v6.2
 
 ================================================================
-v6.1 修复：
-- pull_watchlist() 改为"云端权威"策略：
-  启动恢复时直接用云端数据，不再做"只增不减"的合并补充。
-  以前：云端有但本地没有（因为被删了）→ 补回来（BUG）
-  现在：以云端 latest 为准，直接覆盖本地（FIXED）
+v6.2 变更：
+- 移除自动备份：auto_push_if_due / auto_sync_if_due 不再执行任何操作
+  （保留函数名以兼容旧调用，但直接返回 None）
+- 保留手动同步：push_all / push_watchlist 等手动调用不受影响
+- 保留启动恢复：auto_pull_on_startup 仍在 App 冷启动时执行一次
 
-  备注合并逻辑保留：如果本地有云端没有的备注（本次会话新增的），
-  会合并进去，保证备注不丢失。
+v6.1 修复（保留）：
+- pull_watchlist() 改为"云端权威"策略，不再把已删除品种补回来
 
-- pull_wl_categories() 同样改为"云端权威"策略
-================================================================
-原版 v6 架构保持不变：
-- 快照式备份：每次不覆盖旧文件，新建带时间戳+大小的快照文件
+v6 架构（保留）：
+- 快照式备份：每次不覆盖旧文件，新建带时间戳的快照文件
 - latest/ 目录保存最新版本，供启动恢复使用
-- 每 4 小时自动全量备份一次
-- 删除接口只删除 1 个月前的快照（最新快照永远保留）
-
-目录结构：
-  latest/watchlist.json          ← 最新，供恢复
-  latest/watchlist_archive.json
-  latest/config.json / latest/sync_meta.json
-  backups/watchlist_20250115_143022_2048B.json  ← 历史快照
 ================================================================
 """
 
@@ -34,10 +24,8 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-SYNC_INTERVAL_SEC = 4 * 3600  # 4 小时
-
 _LATEST_DIR = "latest"
-_BACKUP_DIR = "backups"
+_BACKUP_DIR  = "backups"
 _LATEST_FILES = {
     "watchlist":           "watchlist.json",
     "watchlist_archive":   "watchlist_archive.json",
@@ -49,13 +37,8 @@ _LATEST_FILES = {
     "meta":                "sync_meta.json",
 }
 
-# 需要做历史快照的核心文件
 _SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "wl_categories", "config"]
-
-# 兼容旧接口
-_CLOUD_FILES = _LATEST_FILES
-
-_last_sync_ts: float = 0.0
+_CLOUD_FILES   = _LATEST_FILES  # 兼容旧接口
 
 # ════════════════════════════════════════════════════════════════════
 # 配置读取
@@ -114,7 +97,7 @@ def ensure_bucket() -> Tuple[bool, str]:
     return False, f"创建 bucket 失败 {create_r.status_code}：{msg}"
 
 # ════════════════════════════════════════════════════════════════════
-# 底层读写删（按完整路径）
+# 底层读写删
 # ════════════════════════════════════════════════════════════════════
 
 def _upload_path(path: str, data: Any) -> Tuple[bool, str]:
@@ -173,7 +156,6 @@ def _delete_path(path: str) -> Tuple[bool, str]:
         return False, f"删除异常：{e}"
 
 def _list_objects(prefix: str) -> List[Dict]:
-    """列出 bucket 内指定前缀下的所有对象"""
     url, key, bucket = _get_secrets()
     if not url or not key:
         return []
@@ -192,7 +174,7 @@ def _list_objects(prefix: str) -> List[Dict]:
     return []
 
 # ════════════════════════════════════════════════════════════════════
-# latest/ 读写（最新版本，供恢复）
+# latest/ 读写
 # ════════════════════════════════════════════════════════════════════
 
 def _upload_latest(file_key: str, data: Any) -> Tuple[bool, str]:
@@ -204,7 +186,7 @@ def _download_latest(file_key: str) -> Optional[Any]:
     return _download_path(f"{_LATEST_DIR}/{fname}")
 
 # ════════════════════════════════════════════════════════════════════
-# backups/ 快照（新文件，不覆盖旧文件）
+# backups/ 快照
 # ════════════════════════════════════════════════════════════════════
 
 def _make_snapshot_path(file_key: str, payload_bytes: bytes) -> str:
@@ -214,7 +196,6 @@ def _make_snapshot_path(file_key: str, payload_bytes: bytes) -> str:
     return f"{_BACKUP_DIR}/{file_key}_{ts_str}_{size_label}.json"
 
 def _upload_snapshot(file_key: str, data: Any) -> Tuple[bool, str]:
-    """创建历史快照（新文件，绝不覆盖旧快照）"""
     payload   = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
     snap_path = _make_snapshot_path(file_key, payload)
     ok, msg   = _upload_path(snap_path, data)
@@ -333,25 +314,19 @@ def push_wl_categories() -> Tuple[bool, str]:
         return False, f"push_wl_categories 异常：{e}"
 
 def pull_wl_categories() -> Tuple[bool, str]:
-    """
-    从云端拉取分类树，恢复到本地。
-    v6.1 修复：以云端为权威，直接覆盖本地，不再做"只增不减"合并。
-    （原逻辑会把已删除的分类重新补回来）
-    """
+    """以云端为权威，直接覆盖本地（v6.1 修复）"""
     try:
         from storage import F_WL_CATS, _save
         cloud_cats = _download_latest("wl_categories")
         if not isinstance(cloud_cats, list):
             return False, "云端无分类数据"
-        # 直接用云端数据覆盖本地，不补充本地独有项
-        # 理由：云端 latest 是上次 push 时的完整状态（含删除操作）
         _save(F_WL_CATS, cloud_cats)
-        return True, f"分类已恢复 {len(cloud_cats)} 个（云端权威覆盖）"
+        return True, f"分类已恢复 {len(cloud_cats)} 个"
     except Exception as e:
         return False, f"pull_wl_categories 异常：{e}"
 
 # ════════════════════════════════════════════════════════════════════
-# 收藏夹专项推送（双写 latest + snapshot）
+# 收藏夹专项推送
 # ════════════════════════════════════════════════════════════════════
 
 def push_watchlist() -> Tuple[bool, str]:
@@ -380,19 +355,8 @@ def push_watchlist() -> Tuple[bool, str]:
 
 def pull_watchlist() -> Tuple[bool, str]:
     """
-    从云端 latest/ 恢复收藏夹到本地。
-
-    v6.1 修复：改为"云端权威"策略。
-    -------------------------------------------------------
-    旧逻辑（BUG）：以本地为基础，云端有但本地没有的全部补进来。
-      → 导致：你删了品种 A → push 成功 → 重启 → pull 时云端有 A
-              但本地没有 → A 被补回来 → 品种复活
-
-    新逻辑（FIXED）：以云端 latest 为准直接覆盖本地。
-      → 云端 latest 是你最后一次 push 时的完整快照（包含删除操作）
-      → 备注合并保留：本地有但云端没有的备注（本次会话新增的）会合入
-      → 这样既保证删除操作生效，又不会丢失最新输入的备注
-    -------------------------------------------------------
+    以云端为权威覆盖本地（v6.1 修复）。
+    本地有但云端没有的备注（本次会话新增）会合并保留。
     """
     try:
         import storage as loc
@@ -400,7 +364,6 @@ def pull_watchlist() -> Tuple[bool, str]:
         if not isinstance(cloud_items, list):
             return False, "云端无收藏夹数据"
 
-        # ── 以云端为基础，仅补入本地"云端没有的备注"（防止本次会话新写备注丢失）
         local_items = loc.load_watchlist()
         local_notes_map: Dict[str, List] = {}
         for li in local_items:
@@ -414,26 +377,22 @@ def pull_watchlist() -> Tuple[bool, str]:
             tk = ci["ticker"].upper()
             cloud_note_ts = {n.get("ts") for n in ci.get("notes", [])
                              if isinstance(n, dict) and n.get("ts")}
-            local_notes = local_notes_map.get(tk, [])
-            for ln in local_notes:
+            for ln in local_notes_map.get(tk, []):
                 if isinstance(ln, dict) and ln.get("ts") and ln["ts"] not in cloud_note_ts:
                     ci.setdefault("notes", []).append(ln)
                     merged_notes_count += 1
             if ci.get("notes"):
                 ci["notes"] = sorted(ci["notes"], key=lambda x: x.get("ts", ""))
 
-        # 直接用（云端为主+本地新备注补入的）结果覆盖本地文件
         from storage import F_WATCHLIST, _save_with_backup
         _save_with_backup(F_WATCHLIST, cloud_items)
 
-        # ── 存档：同样以云端为准
         cloud_arch = _download_latest("watchlist_archive")
         arch_msg = ""
         if isinstance(cloud_arch, list):
             loc._save(loc.F_WATCHLIST_ARCHIVE, cloud_arch)
             arch_msg = f"，存档 {len(cloud_arch)} 个"
 
-        # ── 分类数据也一起恢复
         cat_ok, cat_msg = pull_wl_categories()
         cat_suffix = f"，分类：{cat_msg}" if cat_ok else ""
 
@@ -448,21 +407,20 @@ def pull_watchlist() -> Tuple[bool, str]:
 # ════════════════════════════════════════════════════════════════════
 
 def push_all() -> Tuple[bool, str]:
-    """全量备份：latest/ 更新 + 核心文件创建快照"""
     import storage as loc
     errors = []
     ok, msg = push_watchlist()
     if not ok:
         errors.append(f"watchlist: {msg}")
     for file_key, loader in [
-        ("wl_categories",  lambda: loc.load_wl_categories()),
-        ("scan_history",   lambda: loc._load(loc.F_HIST,   [])),
-        ("scan_results",   lambda: loc._load(loc.F_ALLRES, [])),
-        ("scan_groups",    lambda: loc.load_scanned_groups()),
-        ("config",         lambda: loc._load(loc.F_CFG,    {})),
+        ("wl_categories", lambda: loc.load_wl_categories()),
+        ("scan_history",  lambda: loc._load(loc.F_HIST,   [])),
+        ("scan_results",  lambda: loc._load(loc.F_ALLRES, [])),
+        ("scan_groups",   lambda: loc.load_scanned_groups()),
+        ("config",        lambda: loc._load(loc.F_CFG,    {})),
     ]:
         try:
-            data     = loader()
+            data      = loader()
             ok2, msg2 = _upload_latest(file_key, data)
             if not ok2:
                 errors.append(f"{file_key}: {msg2}")
@@ -472,11 +430,11 @@ def push_all() -> Tuple[bool, str]:
             errors.append(f"{file_key}: {e}")
     try:
         _upload_latest("meta", {
-            "last_sync":         time.strftime("%Y-%m-%d %H:%M:%S"),
-            "last_sync_ts":      time.time(),
-            "version":           "6.1",
-            "watchlist_cnt":     len(loc.load_watchlist()),
-            "scan_results_cnt":  len(loc._load(loc.F_ALLRES, [])),
+            "last_sync":        time.strftime("%Y-%m-%d %H:%M:%S"),
+            "last_sync_ts":     time.time(),
+            "version":          "6.2",
+            "watchlist_cnt":    len(loc.load_watchlist()),
+            "scan_results_cnt": len(loc._load(loc.F_ALLRES, [])),
         })
     except Exception as e:
         errors.append(f"meta: {e}")
@@ -493,8 +451,8 @@ def pull_all() -> Dict[str, Any]:
 
     cloud_hist = _download_latest("scan_history")
     if isinstance(cloud_hist, list):
-        local_hist  = loc._load(loc.F_HIST, []) or []
-        local_ids   = {s.get("session_id") for s in local_hist if isinstance(s, dict)}
+        local_hist = loc._load(loc.F_HIST, []) or []
+        local_ids  = {s.get("session_id") for s in local_hist if isinstance(s, dict)}
         added = sum(1 for s in cloud_hist
                     if isinstance(s, dict) and s.get("session_id") not in local_ids
                     and local_hist.append(s) is None)
@@ -537,7 +495,6 @@ def pull_all() -> Dict[str, Any]:
     else:
         results["config"] = (True, "本地已有，跳过")
 
-    # wl_categories 已在 pull_watchlist 内部处理
     if not results.get("watchlist", (False,))[0]:
         cat_ok2, cat_msg2 = pull_wl_categories()
         results["wl_categories"] = (cat_ok2, cat_msg2)
@@ -565,33 +522,15 @@ def _test_connection() -> Tuple[bool, str]:
         return False, msg
     ok2, msg2 = _upload_latest("meta", {
         "last_sync":    time.strftime("%Y-%m-%d %H:%M:%S"),
-        "last_sync_ts": time.time(), "version": "6.1", "test": True,
+        "last_sync_ts": time.time(), "version": "6.2", "test": True,
     })
     if ok2:
         return True, f"✅ 连接成功！Bucket='{bucket}'，读写测试通过"
     return False, f"连接成功但写入失败：{msg2}"
 
 # ════════════════════════════════════════════════════════════════════
-# 定时备份 / 启动恢复（app.py 调用）
+# 启动恢复（仅保留 pull，自动 push 已移除）
 # ════════════════════════════════════════════════════════════════════
-
-def auto_push_if_due(force: bool = False) -> Optional[Tuple[bool, str]]:
-    """每 4 小时自动全量备份一次（含快照）"""
-    global _last_sync_ts
-    if not is_configured():
-        return None
-    now = time.time()
-    if not force and (now - _last_sync_ts) < SYNC_INTERVAL_SEC:
-        return None
-    if not force:
-        meta = _download_latest("meta")
-        if isinstance(meta, dict):
-            if (now - float(meta.get("last_sync_ts", 0))) < SYNC_INTERVAL_SEC:
-                _last_sync_ts = now
-                return None
-    _last_sync_ts = now
-    ensure_bucket()
-    return push_all()
 
 def auto_pull_on_startup() -> Tuple[bool, str]:
     """App 冷启动时从 latest/ 恢复所有数据，每次会话只执行一次"""
@@ -606,8 +545,8 @@ def auto_pull_on_startup() -> Tuple[bool, str]:
         return False, "未配置云端"
     try:
         ensure_bucket()
-        results  = pull_all()
-        ok_count = sum(1 for v in results.values() if isinstance(v, tuple) and v[0])
+        results   = pull_all()
+        ok_count  = sum(1 for v in results.values() if isinstance(v, tuple) and v[0])
         fail_msgs = [f"{k}:{v[1]}" for k, v in results.items()
                      if isinstance(v, tuple) and not v[0] and "无云端数据" not in v[1]]
         if ok_count == 0 and fail_msgs:
@@ -615,6 +554,16 @@ def auto_pull_on_startup() -> Tuple[bool, str]:
         return True, f"成功恢复 {ok_count} 项数据"
     except Exception as e:
         return False, f"启动恢复异常：{e}"
+
+# ── 自动备份已移除，以下函数保留空壳以兼容旧调用 ─────────────────────
+
+def auto_push_if_due(force: bool = False) -> None:
+    """已禁用：自动备份已移除。"""
+    return None
+
+def auto_sync_if_due(force: bool = False) -> None:
+    """已禁用：自动备份已移除。"""
+    return None
 
 def startup_restore() -> Dict[str, Any]:
     """兼容旧调用"""
@@ -624,14 +573,6 @@ def startup_restore() -> Dict[str, Any]:
     r = pull_all()
     r["configured"] = True
     return r
-
-def auto_sync_if_due(force: bool = False) -> Optional[Dict]:
-    """兼容旧调用"""
-    result = auto_push_if_due(force=force)
-    if result is None:
-        return None
-    ok, msg = result
-    return {"_result": (ok, msg)}
 
 # ════════════════════════════════════════════════════════════════════
 # 状态查询
@@ -656,13 +597,5 @@ def get_sync_status() -> Dict[str, Any]:
     }
 
 def time_to_next_sync_str() -> str:
-    if not is_configured():
-        return "未配置"
-    meta = _download_latest("meta")
-    if not meta or not meta.get("last_sync_ts"):
-        return "立即同步"
-    remain = max(0.0, SYNC_INTERVAL_SEC - (time.time() - float(meta["last_sync_ts"])))
-    if remain <= 0:
-        return "已到期，下次访问触发"
-    h, m = int(remain // 3600), int((remain % 3600) // 60)
-    return f"{h}h {m:02d}m 后"
+    """自动同步已禁用"""
+    return "手动同步"
