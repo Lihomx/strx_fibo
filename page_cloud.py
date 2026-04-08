@@ -7,10 +7,10 @@ import cloud_sync
 
 
 def render():
-    st.markdown("## ☁️ 云端自动同步")
+    st.markdown("## ☁️ 云端同步")
     st.markdown(
         '<p style="color:#6b7280;font-size:13px;margin-top:-8px">'
-        '使用 Supabase（免费永不过期）自动备份所有数据，每4小时创建一次快照，重启后自动恢复。</p>',
+        '使用 Supabase（免费永不过期）手动备份所有数据，重启后自动恢复。</p>',
         unsafe_allow_html=True,
     )
 
@@ -18,11 +18,10 @@ def render():
     status     = cloud_sync.get_sync_status() if configured else {}
 
     if configured:
-        c1, c2, c3, c4 = st.columns(4)
-        c1.markdown(_card("云端状态",   "✅ 已连接",                           "green"), unsafe_allow_html=True)
-        c2.markdown(_card("上次同步",   status.get("last_sync", "—"),          "blue"),  unsafe_allow_html=True)
-        c3.markdown(_card("距下次同步", cloud_sync.time_to_next_sync_str(),     "gray"),  unsafe_allow_html=True)
-        c4.markdown(_card("云端收藏",   f"{status.get('watchlist_cnt',0)} 个",  "teal"), unsafe_allow_html=True)
+        c1, c2, c3 = st.columns(3)
+        c1.markdown(_card("云端状态", "✅ 已连接",                          "green"), unsafe_allow_html=True)
+        c2.markdown(_card("上次同步", status.get("last_sync", "—"),         "blue"),  unsafe_allow_html=True)
+        c3.markdown(_card("云端收藏", f"{status.get('watchlist_cnt',0)} 个", "teal"),  unsafe_allow_html=True)
     else:
         st.warning("⚠️ 尚未配置 Supabase — 请查看配置教程完成设置")
 
@@ -79,7 +78,7 @@ def _setup():
         "3. 看到 连接成功 → 点「立即全量上传」完成首次备份\n\n"
         "Bucket strx-backup 会在首次同步时自动创建，无需手动操作。\n\n"
         "**备份策略说明**\n"
-        "- 每次上传都会在 `backups/` 目录创建带时间戳的新快照文件（不覆盖旧文件）\n"
+        "- 每次手动上传都会在 `backups/` 目录创建带时间戳的新快照文件（不覆盖旧文件）\n"
         "- `latest/` 目录始终保存最新版本，供 App 重启时自动恢复\n"
         "- 文件名格式：`watchlist_20250115_143022_2048B.json`（含大小和时间戳）\n"
         "- 可在「历史快照」Tab 查看和恢复任意历史版本"
@@ -376,7 +375,6 @@ def _status_tab(configured, status):
         last_sync = status.get("last_sync", "—")
         wl_cnt    = status.get("watchlist_cnt", 0)
         res_cnt   = status.get("scan_results_cnt", 0)
-        next_sync = cloud_sync.time_to_next_sync_str()
         st.markdown(
             '<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;'
             'padding:16px 20px;margin:8px 0">'
@@ -387,8 +385,6 @@ def _status_tab(configured, status):
             f'<td style="font-weight:600">{last_sync}</td></tr>'
             f'<tr><td style="padding:5px 0;color:#6b7280">⏱️ 距上次</td>'
             f'<td style="color:{color};font-weight:600">{eh:.1f} 小时前</td></tr>'
-            f'<tr><td style="padding:5px 0;color:#6b7280">⏳ 下次自动同步</td>'
-            f'<td>{next_sync}</td></tr>'
             f'<tr><td style="padding:5px 0;color:#6b7280">⭐ 云端收藏品种</td>'
             f'<td><b>{wl_cnt}</b> 个</td></tr>'
             f'<tr><td style="padding:5px 0;color:#6b7280">📊 云端扫描记录</td>'
@@ -425,9 +421,8 @@ def _status_tab(configured, status):
     st.markdown(
         '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;'
         'padding:12px 16px;margin-top:10px;font-size:12px">'
-        '<b>自动同步时机</b><br>'
-        '⭐ 修改收藏夹 → 立即推送 + 创建快照<br>'
-        '📊 完成扫描 / 每次访问 App → 如距上次 ≥4h 则自动全量备份<br>'
+        '<b>同步说明</b><br>'
+        '⬆️ 点击「立即全量上传」→ 推送所有数据 + 创建历史快照<br>'
         '🔄 App 冷启动重启 → 自动从 latest/ 拉取恢复所有数据<br>'
         '📦 每次备份均创建新快照文件（不覆盖），可在「历史快照」Tab 查看'
         '</div>',
