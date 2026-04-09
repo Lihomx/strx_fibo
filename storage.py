@@ -136,13 +136,6 @@ def save_scan(session_row: Dict, result_rows: List[Dict]) -> bool:
     hist.append(session_row)
     if len(hist) > _MAX_HIST:
         hist = hist[-_MAX_HIST:]
-    result = _save(F_HIST, hist)
-    # 扫描完成后触发云端同步检查
-    try:
-        import cloud_sync
-        cloud_sync.auto_sync_if_due()
-    except Exception:
-        pass
     return result
 
 
@@ -284,15 +277,7 @@ def load_watchlist() -> List[Dict]:
 
 
 def save_watchlist(items: List[Dict]) -> bool:
-    ok = _save_with_backup(F_WATCHLIST, items)
-    if ok:
-        try:
-            import cloud_sync
-            if cloud_sync.is_configured():
-                cloud_sync.push_watchlist()
-        except Exception:
-            pass
-    return ok
+    return _save_with_backup(F_WATCHLIST, items)
 
 
 def load_watchlist_archive() -> List[Dict]:
@@ -588,15 +573,7 @@ def load_wl_categories() -> List[Dict]:
 
 
 def save_wl_categories(cats: List[Dict]) -> bool:
-    ok = _save(F_WL_CATS, cats)
-    if ok:
-        try:
-            import cloud_sync
-            if cloud_sync.is_configured():
-                cloud_sync.push_wl_categories()
-        except Exception:
-            pass
-    return ok
+    return _save(F_WL_CATS, cats)
 
 
 def add_wl_category(name: str, parent_id=None) -> Optional[str]:
