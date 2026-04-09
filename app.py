@@ -280,14 +280,6 @@ def _check_password() -> bool:
 def main():
     _check_password()
 
-    # ── 旧 Secrets 收藏夹恢复（兼容旧版本）────────────────────────
-    if not st.session_state.get("_secrets_restored"):
-        try:
-            ok, msg = storage.restore_from_secrets()
-        except Exception:
-            pass
-        st.session_state["_secrets_restored"] = True
-
     # ── 处理 _fav 收藏指令 ──────────────────────────────────────
     from urllib.parse import unquote as _uq
     import re as _re
