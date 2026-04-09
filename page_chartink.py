@@ -1,0 +1,461 @@
+"""
+page_chartink.py — Chartink · 4 Hour Breakout Scanner
+
+扫描条件（全部满足）：
+  [0] 4H Volume[0]  > 4H Volume[-1] * 2
+  [1] 4H Volume[-1] > 4H Volume[-2] * 1.5
+  [2] Daily Close   > Daily Ichimoku Cloud Top  (9,26,52)
+  [3] Daily RSI(14) > 50
+  [4] Daily Close   > Daily Supertrend(7,3)
+  [5] Daily Close   > Daily Ichimoku Cloud Bottom(9,26,52)
+  [6] Daily Close   > 2H Close[-2]
+"""
+
+import time
+import datetime
+import streamlit as st
+import pandas as pd
+import numpy as np
+
+# ── 依赖安全导入 ────────────────────────────────────────────────────
+try:
+    import yfinance as yf
+    _YF_OK = True
+except ImportError:
+    _YF_OK = False
+
+
+# ════════════════════════════════════════════════════════════════════
+# 指标计算工具
+# ════════════════════════════════════════════════════════════════════
+
+def _rsi(close: pd.Series, period: int = 14) -> pd.Series:
+    delta = close.diff()
+    gain  = delta.clip(lower=0)
+    loss  = (-delta).clip(lower=0)
+    avg_g = gain.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+    avg_l = loss.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+    rs    = avg_g / avg_l.replace(0, np.nan)
+    return 100 - 100 / (1 + rs)
+
+
+def _ichimoku(high: pd.Series, low: pd.Series,
+              t: int = 9, k: int = 26, s: int = 52):
+    """
+    返回 (senkou_a, senkou_b)，即云顶/云底（当前行，已移位 k 个周期回填）。
+    Cloud Top  = max(senkou_a, senkou_b)
+    Cloud Bot  = min(senkou_a, senkou_b)
+    """
+    tenkan  = (high.rolling(t).max() + low.rolling(t).min()) / 2
+    kijun   = (high.rolling(k).max() + low.rolling(k).min()) / 2
+    senkou_a = ((tenkan + kijun) / 2).shift(k)
+    senkou_b = ((high.rolling(s).max() + low.rolling(s).min()) / 2).shift(k)
+    cloud_top = pd.concat([senkou_a, senkou_b], axis=1).max(axis=1)
+    cloud_bot = pd.concat([senkou_a, senkou_b], axis=1).min(axis=1)
+    return cloud_top, cloud_bot
+
+
+def _supertrend(high: pd.Series, low: pd.Series, close: pd.Series,
+                period: int = 7, multiplier: float = 3.0) -> pd.Series:
+    """返回 Supertrend 线（上涨时为支撑线）"""
+    hl2  = (high + low) / 2
+    # ATR
+    tr   = pd.concat([
+        high - low,
+        (high - close.shift()).abs(),
+        (low  - close.shift()).abs(),
+    ], axis=1).max(axis=1)
+    atr  = tr.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+
+    upper = hl2 + multiplier * atr
+    lower = hl2 - multiplier * atr
+
+    st_line = pd.Series(np.nan, index=close.index)
+    trend   = pd.Series(1,      index=close.index)   # 1=up, -1=down
+
+    for i in range(1, len(close)):
+        # lower band
+        lower.iloc[i] = (lower.iloc[i]
+                         if lower.iloc[i] > lower.iloc[i-1] or close.iloc[i-1] < lower.iloc[i-1]
+                         else lower.iloc[i-1])
+        # upper band
+        upper.iloc[i] = (upper.iloc[i]
+                         if upper.iloc[i] < upper.iloc[i-1] or close.iloc[i-1] > upper.iloc[i-1]
+                         else upper.iloc[i-1])
+        if st_line.iloc[i-1] == upper.iloc[i-1]:
+            trend.iloc[i] = -1 if close.iloc[i] > upper.iloc[i] else -1
+        else:
+            trend.iloc[i] =  1 if close.iloc[i] < lower.iloc[i] else  1
+        st_line.iloc[i] = lower.iloc[i] if trend.iloc[i] == 1 else upper.iloc[i]
+
+    return st_line
+
+
+# ════════════════════════════════════════════════════════════════════
+# 核心数据获取 + 条件检测
+# ════════════════════════════════════════════════════════════════════
+
+def _fetch(ticker: str, interval: str, period: str = "6mo") -> pd.DataFrame | None:
+    """下载 OHLCV，失败返回 None"""
+    try:
+        df = yf.download(ticker, period=period, interval=interval,
+                         progress=False, auto_adjust=True)
+        if df is None or df.empty:
+            return None
+        df.columns = [c[0].lower() if isinstance(c, tuple) else c.lower()
+                      for c in df.columns]
+        return df.dropna(subset=["close"])
+    except Exception:
+        return None
+
+
+def _check_ticker(ticker: str) -> dict:
+    """
+    执行 7 条过滤规则，返回结果字典。
+    result keys: passed(bool), details(list[dict]), error(str|None),
+                 close(float), volume_4h(float), rsi(float)
+    """
+    result = {"passed": False, "details": [], "error": None,
+              "close": None, "volume_4h": None, "rsi": None}
+
+    if not _YF_OK:
+        result["error"] = "yfinance 未安装"
+        return result
+
+    # ── 下载数据 ────────────────────────────────────────────────────
+    df_4h  = _fetch(ticker, "4h",  "6mo")
+    df_1d  = _fetch(ticker, "1d",  "1y")
+    df_2h  = _fetch(ticker, "2h",  "3mo")
+
+    if df_4h is None or len(df_4h) < 5:
+        result["error"] = "4H 数据不足"
+        return result
+    if df_1d is None or len(df_1d) < 60:
+        result["error"] = "日线数据不足"
+        return result
+
+    # ── 预计算指标 ──────────────────────────────────────────────────
+    close_d = df_1d["close"]
+    high_d  = df_1d["high"]
+    low_d   = df_1d["low"]
+
+    rsi_ser           = _rsi(close_d, 14)
+    cloud_top, cloud_bot = _ichimoku(high_d, low_d, 9, 26, 52)
+    supertrend_ser    = _supertrend(high_d, low_d, close_d, 7, 3.0)
+
+    # 最新日线值
+    c_d   = float(close_d.iloc[-1])
+    rsi_v = float(rsi_ser.iloc[-1])    if not pd.isna(rsi_ser.iloc[-1])    else None
+    ct_v  = float(cloud_top.iloc[-1])  if not pd.isna(cloud_top.iloc[-1])  else None
+    cb_v  = float(cloud_bot.iloc[-1])  if not pd.isna(cloud_bot.iloc[-1])  else None
+    st_v  = float(supertrend_ser.iloc[-1]) if not pd.isna(supertrend_ser.iloc[-1]) else None
+
+    # 4H 成交量
+    vol_4h = df_4h["volume"]
+    v0 = float(vol_4h.iloc[-1])   # [0]  当前
+    v1 = float(vol_4h.iloc[-2])   # [-1] 前一根
+    v2 = float(vol_4h.iloc[-3])   # [-2] 前两根
+
+    # 2H 收盘（[-2] 前两根）
+    c_2h_m2 = None
+    if df_2h is not None and len(df_2h) >= 3:
+        c_2h_m2 = float(df_2h["close"].iloc[-3])
+
+    result["close"]     = c_d
+    result["volume_4h"] = v0
+    result["rsi"]       = rsi_v
+
+    # ── 7 条规则 ────────────────────────────────────────────────────
+    rules = [
+        {
+            "id":   "[0]",
+            "desc": "4H Volume[0] > 4H Volume[-1] × 2",
+            "ok":   v0 > v1 * 2,
+            "val":  f"{v0:,.0f} vs {v1:,.0f}×2={v1*2:,.0f}",
+        },
+        {
+            "id":   "[1]",
+            "desc": "4H Volume[-1] > 4H Volume[-2] × 1.5",
+            "ok":   v1 > v2 * 1.5,
+            "val":  f"{v1:,.0f} vs {v2:,.0f}×1.5={v2*1.5:,.0f}",
+        },
+        {
+            "id":   "[2]",
+            "desc": "Daily Close > Ichimoku Cloud Top(9,26,52)",
+            "ok":   (ct_v is not None) and (c_d > ct_v),
+            "val":  f"Close={c_d:.4f}  CloudTop={ct_v:.4f}" if ct_v else "数据不足",
+        },
+        {
+            "id":   "[3]",
+            "desc": "Daily RSI(14) > 50",
+            "ok":   (rsi_v is not None) and (rsi_v > 50),
+            "val":  f"RSI={rsi_v:.2f}" if rsi_v else "数据不足",
+        },
+        {
+            "id":   "[4]",
+            "desc": "Daily Close > Supertrend(7,3)",
+            "ok":   (st_v is not None) and (c_d > st_v),
+            "val":  f"Close={c_d:.4f}  ST={st_v:.4f}" if st_v else "数据不足",
+        },
+        {
+            "id":   "[5]",
+            "desc": "Daily Close > Ichimoku Cloud Bottom(9,26,52)",
+            "ok":   (cb_v is not None) and (c_d > cb_v),
+            "val":  f"Close={c_d:.4f}  CloudBot={cb_v:.4f}" if cb_v else "数据不足",
+        },
+        {
+            "id":   "[6]",
+            "desc": "Daily Close > 2H Close[-2]",
+            "ok":   (c_2h_m2 is not None) and (c_d > c_2h_m2),
+            "val":  f"Close={c_d:.4f}  2H[-2]={c_2h_m2:.4f}" if c_2h_m2 else "2H数据不足",
+        },
+    ]
+
+    result["details"] = rules
+    result["passed"]  = all(r["ok"] for r in rules)
+    return result
+
+
+# ════════════════════════════════════════════════════════════════════
+# Streamlit 页面
+# ════════════════════════════════════════════════════════════════════
+
+# 默认扫描的股票池（可在页面内编辑）
+_DEFAULT_TICKERS = (
+    "AAPL MSFT NVDA AMZN GOOGL META TSLA AMD INTC QCOM "
+    "JPM BAC GS MS WFC "
+    "XOM CVX "
+    "MRVL AVGO ARM SMCI "
+    "TSM BABA PDD JD 9988.HK BIDU NTES "
+    "MSTR COIN "
+    "BTC-USD ETH-USD SOL-USD"
+).split()
+
+
+def render():
+    st.markdown("## 📈 Chartink · 4 Hour Breakout")
+    st.markdown(
+        '<p style="color:#6b7280;font-size:13px;margin-top:-8px">'
+        '扫描满足全部 7 个条件的品种：4H 量能爆发 + 日线趋势多头（一云 / RSI / Supertrend）'
+        '</p>',
+        unsafe_allow_html=True,
+    )
+
+    # ── 条件说明卡片 ────────────────────────────────────────────────
+    with st.expander("📋 扫描条件说明", expanded=False):
+        conditions = [
+            ("[0]", "4H Volume[0] > 4H Volume[-1] × 2",         "当前4H成交量 > 前一根4H成交量的2倍"),
+            ("[1]", "4H Volume[-1] > 4H Volume[-2] × 1.5",       "前一根4H成交量 > 再前一根4H成交量的1.5倍"),
+            ("[2]", "Daily Close > Ichimoku Cloud Top(9,26,52)",  "收盘价在一目均衡云顶上方"),
+            ("[3]", "Daily RSI(14) > 50",                         "日线RSI大于50（趋势偏多）"),
+            ("[4]", "Daily Close > Supertrend(7,3)",              "收盘价在SuperTrend支撑线上方"),
+            ("[5]", "Daily Close > Ichimoku Cloud Bottom(9,26,52)","收盘价在一目均衡云底上方"),
+            ("[6]", "Daily Close > 2H Close[-2]",                 "日线收盘 > 2H前第2根收盘（短期强势）"),
+        ]
+        rows = []
+        for idx, cond, meaning in conditions:
+            rows.append({"编号": idx, "条件": cond, "含义": meaning})
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    # ── 股票池设置 ──────────────────────────────────────────────────
+    col_left, col_right = st.columns([3, 1])
+    with col_left:
+        ticker_input = st.text_area(
+            "扫描股票池（空格或换行分隔，支持 yfinance 格式如 9988.HK / BTC-USD）",
+            value=" ".join(_DEFAULT_TICKERS),
+            height=100,
+            key="chartink_tickers",
+        )
+    with col_right:
+        st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+        run_btn  = st.button("🚀 开始扫描", type="primary",  use_container_width=True, key="chartink_run")
+        clear_btn = st.button("🗑️ 清空结果", type="secondary", use_container_width=True, key="chartink_clear")
+
+    if clear_btn:
+        st.session_state.pop("chartink_results", None)
+        st.rerun()
+
+    tickers = [t.strip().upper() for t in ticker_input.replace("\n", " ").split() if t.strip()]
+
+    # ── 执行扫描 ────────────────────────────────────────────────────
+    if run_btn:
+        if not _YF_OK:
+            st.error("❌ yfinance 未安装，请在 requirements.txt 中添加 yfinance")
+            return
+        if not tickers:
+            st.warning("请输入至少一个股票代码")
+            return
+
+        st.session_state.pop("chartink_results", None)
+
+        progress_bar = st.progress(0, text="准备扫描…")
+        status_box   = st.empty()
+
+        passed_list  = []
+        failed_list  = []
+        error_list   = []
+
+        total = len(tickers)
+        for i, tk in enumerate(tickers):
+            pct  = (i + 1) / total
+            progress_bar.progress(pct, text=f"扫描中 {i+1}/{total}：{tk}")
+            status_box.markdown(
+                f'<div class="n-info">⏳ 正在检测 <b>{tk}</b> …</div>',
+                unsafe_allow_html=True,
+            )
+
+            res = _check_ticker(tk)
+            res["ticker"] = tk
+
+            if res["error"]:
+                error_list.append(res)
+            elif res["passed"]:
+                passed_list.append(res)
+            else:
+                failed_list.append(res)
+
+            time.sleep(0.15)   # 避免 yfinance 限流
+
+        progress_bar.empty()
+        status_box.empty()
+
+        st.session_state["chartink_results"] = {
+            "passed":    passed_list,
+            "failed":    failed_list,
+            "errors":    error_list,
+            "scanned_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "total":     total,
+        }
+        st.rerun()
+
+    # ── 结果展示 ────────────────────────────────────────────────────
+    cache = st.session_state.get("chartink_results")
+    if not cache:
+        st.markdown(
+            '<div class="n-info" style="margin-top:16px">'
+            '💡 输入股票池后点击「开始扫描」，满足全部7个条件的品种会显示在下方。'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    passed = cache["passed"]
+    failed = cache["failed"]
+    errors = cache["errors"]
+    total  = cache["total"]
+    scanned_at = cache["scanned_at"]
+
+    # 顶部统计
+    c1, c2, c3, c4 = st.columns(4)
+    c1.markdown(_stat_card("扫描品种", str(total),       "blue"),  unsafe_allow_html=True)
+    c2.markdown(_stat_card("通过筛选", str(len(passed)), "green"), unsafe_allow_html=True)
+    c3.markdown(_stat_card("未通过",   str(len(failed)), "gray"),  unsafe_allow_html=True)
+    c4.markdown(_stat_card("数据错误", str(len(errors)), "red"),   unsafe_allow_html=True)
+
+    st.markdown(
+        f'<div style="font-size:11px;color:#9ca3af;text-align:right;margin-top:4px">'
+        f'扫描时间：{scanned_at}</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── 通过的品种 ──────────────────────────────────────────────────
+    st.markdown("### ✅ 通过筛选的品种")
+    if not passed:
+        st.markdown('<div class="n-warn">本次扫描无品种满足全部7个条件。</div>', unsafe_allow_html=True)
+    else:
+        # 汇总表
+        rows = []
+        for r in passed:
+            rows.append({
+                "品种":     r["ticker"],
+                "收盘价":   f"{r['close']:.4f}" if r["close"] else "—",
+                "4H成交量": f"{r['volume_4h']:,.0f}" if r["volume_4h"] else "—",
+                "RSI(14)":  f"{r['rsi']:.1f}" if r["rsi"] else "—",
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+        # 详细条件展开
+        for r in passed:
+            with st.expander(f"🔍 {r['ticker']} — 条件明细", expanded=False):
+                _render_details(r["details"])
+
+    # ── 未通过（可折叠）────────────────────────────────────────────
+    if failed:
+        with st.expander(f"❌ 未通过品种（{len(failed)} 个）", expanded=False):
+            for r in failed:
+                st.markdown(
+                    f'<div style="font-weight:600;font-size:13px;color:#374151;'
+                    f'margin:10px 0 4px">{r["ticker"]}</div>',
+                    unsafe_allow_html=True,
+                )
+                _render_details(r["details"])
+
+    # ── 数据错误 ────────────────────────────────────────────────────
+    if errors:
+        with st.expander(f"⚠️ 数据获取失败（{len(errors)} 个）", expanded=False):
+            for r in errors:
+                st.markdown(
+                    f'<span style="font-family:monospace;font-size:12px">'
+                    f'{r["ticker"]}</span> — {r["error"]}',
+                    unsafe_allow_html=True,
+                )
+
+
+# ════════════════════════════════════════════════════════════════════
+# UI 小组件
+# ════════════════════════════════════════════════════════════════════
+
+def _stat_card(label: str, value: str, color: str) -> str:
+    COLORS = {
+        "blue":  ("#eff6ff", "#1d4ed8"),
+        "green": ("#f0fdf4", "#15803d"),
+        "gray":  ("#f9fafb", "#4b5563"),
+        "red":   ("#fef2f2", "#b91c1c"),
+    }
+    bg, fg = COLORS.get(color, ("#f9fafb", "#374151"))
+    return (
+        f'<div style="background:{bg};border-radius:10px;padding:14px 12px;'
+        f'text-align:center;margin-bottom:4px">'
+        f'<div style="font-size:11px;color:#6b7280">{label}</div>'
+        f'<div style="font-size:24px;font-weight:800;color:{fg};margin-top:4px">{value}</div>'
+        f'</div>'
+    )
+
+
+def _render_details(details: list):
+    """渲染7条规则的逐条状态表格"""
+    html = (
+        '<table style="width:100%;border-collapse:collapse;font-size:12px">'
+        '<thead><tr>'
+        '<th style="text-align:left;padding:5px 8px;color:#6b7280;font-weight:600;'
+        'border-bottom:1px solid #e5e7eb">编号</th>'
+        '<th style="text-align:left;padding:5px 8px;color:#6b7280;font-weight:600;'
+        'border-bottom:1px solid #e5e7eb">条件</th>'
+        '<th style="text-align:left;padding:5px 8px;color:#6b7280;font-weight:600;'
+        'border-bottom:1px solid #e5e7eb">当前值</th>'
+        '<th style="text-align:center;padding:5px 8px;color:#6b7280;font-weight:600;'
+        'border-bottom:1px solid #e5e7eb">结果</th>'
+        '</tr></thead><tbody>'
+    )
+    for rule in details:
+        ok     = rule["ok"]
+        badge  = (
+            '<span style="background:#dcfce7;color:#15803d;padding:2px 8px;'
+            'border-radius:20px;font-size:11px;font-weight:700">✓ 通过</span>'
+            if ok else
+            '<span style="background:#fee2e2;color:#b91c1c;padding:2px 8px;'
+            'border-radius:20px;font-size:11px;font-weight:700">✗ 未过</span>'
+        )
+        row_bg = "#f0fdf4" if ok else "#fff7f7"
+        html += (
+            f'<tr style="background:{row_bg}">'
+            f'<td style="padding:6px 8px;font-family:monospace;color:#6b7280">{rule["id"]}</td>'
+            f'<td style="padding:6px 8px;color:#374151">{rule["desc"]}</td>'
+            f'<td style="padding:6px 8px;color:#6b7280;font-family:monospace;font-size:11px">{rule["val"]}</td>'
+            f'<td style="padding:6px 8px;text-align:center">{badge}</td>'
+            f'</tr>'
+        )
+    html += '</tbody></table>'
+    st.markdown(html, unsafe_allow_html=True)
