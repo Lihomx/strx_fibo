@@ -280,15 +280,6 @@ def _check_password() -> bool:
 def main():
     _check_password()
 
-    # ── 启动时：从云端自动恢复所有数据 ──────────────────────────
-    if not st.session_state.get("_cloud_pulled"):
-        try:
-            ok, msg = cloud_sync.auto_pull_on_startup()
-            if ok and "成功" in msg:
-                st.toast(f"☁️ 云端数据已恢复：{msg}", icon="✅")
-        except Exception:
-            pass
-
     # ── 旧 Secrets 收藏夹恢复（兼容旧版本）────────────────────────
     if not st.session_state.get("_secrets_restored"):
         try:
