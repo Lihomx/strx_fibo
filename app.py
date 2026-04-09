@@ -135,7 +135,6 @@ import page_settings
 import page_watchlist
 import page_universe
 import page_cloud
-import page_chartink
 import cloud_sync
 
 # ── 侧边栏 ─────────────────────────────────────────────────────────
@@ -154,15 +153,14 @@ def sidebar():
         """, unsafe_allow_html=True)
 
         NAV = [
-            ("📊", "实时扫描",           "scanner"),
-            ("🔥", "共振检测",           "confluence"),
-            ("📈", "4H Breakout",        "chartink"),
-            ("🌍", "全量品种库",         "universe"),
-            ("⭐", "自选收藏",           "watchlist"),
-            ("📂", "历史记录",           "history"),
-            ("🔔", "告警配置",           "alerts"),
-            ("☁️", "云端同步",           "cloud"),
-            ("⚙️", "系统设置",           "settings"),
+            ("📊", "实时扫描",   "scanner"),
+            ("🔥", "共振检测",   "confluence"),
+            ("🌍", "全量品种库", "universe"),
+            ("⭐", "自选收藏",   "watchlist"),
+            ("📂", "历史记录",   "history"),
+            ("🔔", "告警配置",   "alerts"),
+            ("☁️", "云端同步",   "cloud"),
+            ("⚙️", "系统设置",   "settings"),
         ]
         p = st.session_state.get("page", "scanner")
         for icon, label, key in NAV:
@@ -280,23 +278,6 @@ def _check_password() -> bool:
 def main():
     _check_password()
 
-    # ── 启动时：从云端自动恢复所有数据 ──────────────────────────
-    if not st.session_state.get("_cloud_pulled"):
-        try:
-            ok, msg = cloud_sync.auto_pull_on_startup()
-            if ok and "成功" in msg:
-                st.toast(f"☁️ 云端数据已恢复：{msg}", icon="✅")
-        except Exception:
-            pass
-
-    # ── 旧 Secrets 收藏夹恢复（兼容旧版本）────────────────────────
-    if not st.session_state.get("_secrets_restored"):
-        try:
-            ok, msg = storage.restore_from_secrets()
-        except Exception:
-            pass
-        st.session_state["_secrets_restored"] = True
-
     # ── 处理 _fav 收藏指令 ──────────────────────────────────────
     from urllib.parse import unquote as _uq
     import re as _re
@@ -323,7 +304,7 @@ def main():
 
     # ── URL 参数跳转 ────────────────────────────────────────────
     _VALID_PAGES = ("watchlist","scanner","confluence","alerts","settings",
-                    "history","cloud","universe","chartink")
+                    "history","cloud","universe")
     _url_page = st.query_params.get("_page", "")
     _anchor   = st.query_params.get("_anchor", "")
     if _url_page and _url_page in _VALID_PAGES:
@@ -358,7 +339,6 @@ def main():
     dispatch = {
         "scanner":    page_scanner.render,
         "confluence": page_confluence.render,
-        "chartink":   page_chartink.render,
         "universe":   page_universe.render,
         "watchlist":  page_watchlist.render,
         "history":    page_history.render,
