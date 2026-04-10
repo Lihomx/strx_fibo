@@ -1,12 +1,11 @@
 """
-cloud_sync.py — Supabase 云端备份同步 v6.2
+cloud_sync.py — Supabase 云端备份同步 v6.3
 
 ================================================================
-v6.2 变更：
-- 移除自动备份：auto_push_if_due / auto_sync_if_due 不再执行任何操作
-  （保留函数名以兼容旧调用，但直接返回 None）
-- 保留手动同步：push_all / push_watchlist 等手动调用不受影响
-- 保留启动恢复：auto_pull_on_startup 仍在 App 冷启动时执行一次
+v6.3 变更：
+- 恢复自动备份：每 2 小时自动全量备份一次（含快照）
+- 恢复手动同步按钮支持（auto_push_if_due 正常执行）
+- SYNC_INTERVAL_SEC = 2 * 3600
 
 v6.1 修复（保留）：
 - pull_watchlist() 改为"云端权威"策略，不再把已删除品种补回来
@@ -23,6 +22,8 @@ from collections import defaultdict
 import requests
 
 logger = logging.getLogger(__name__)
+
+SYNC_INTERVAL_SEC = 2 * 3600  # 2 小时自动备份一次
 
 _LATEST_DIR = "latest"
 _BACKUP_DIR  = "backups"
@@ -555,15 +556,35 @@ def auto_pull_on_startup() -> Tuple[bool, str]:
     except Exception as e:
         return False, f"启动恢复异常：{e}"
 
-# ── 自动备份已移除，以下函数保留空壳以兼容旧调用 ─────────────────────
+# ── 自动备份（每2小时一次） ───────────────────────────────────────
 
-def auto_push_if_due(force: bool = False) -> None:
-    """已禁用：自动备份已移除。"""
-    return None
+_last_sync_ts: float = 0.0
 
-def auto_sync_if_due(force: bool = False) -> None:
-    """已禁用：自动备份已移除。"""
-    return None
+def auto_push_if_due(force: bool = False) -> Optional[Tuple[bool, str]]:
+    """每 2 小时自动全量备份一次（含快照）"""
+    global _last_sync_ts
+    if not is_configured():
+        return None
+    now = time.time()
+    if not force and (now - _last_sync_ts) < SYNC_INTERVAL_SEC:
+        return None
+    if not force:
+        meta = _download_latest("meta")
+        if isinstance(meta, dict):
+            if (now - float(meta.get("last_sync_ts", 0))) < SYNC_INTERVAL_SEC:
+                _last_sync_ts = now
+                return None
+    _last_sync_ts = now
+    ensure_bucket()
+    return push_all()
+
+def auto_sync_if_due(force: bool = False) -> Optional[Dict]:
+    """兼容旧调用"""
+    result = auto_push_if_due(force=force)
+    if result is None:
+        return None
+    ok, msg = result
+    return {"_result": (ok, msg)}
 
 def startup_restore() -> Dict[str, Any]:
     """兼容旧调用"""
@@ -597,5 +618,13 @@ def get_sync_status() -> Dict[str, Any]:
     }
 
 def time_to_next_sync_str() -> str:
-    """自动同步已禁用"""
-    return "手动同步"
+    if not is_configured():
+        return "未配置"
+    meta = _download_latest("meta")
+    if not meta or not meta.get("last_sync_ts"):
+        return "立即同步"
+    remain = max(0.0, SYNC_INTERVAL_SEC - (time.time() - float(meta["last_sync_ts"])))
+    if remain <= 0:
+        return "已到期，下次访问触发"
+    h, m = int(remain // 3600), int((remain % 3600) // 60)
+    return f"{h}h {m:02d}m 后"
