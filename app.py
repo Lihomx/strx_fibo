@@ -315,7 +315,9 @@ def _check_password() -> bool:
 
 # ── 路由 ──────────────────────────────────────────────────────────
 def main():
-    _check_password()
+    if not _check_password():
+        st.stop()
+        return
 
     # ── 启动时：从云端自动恢复所有数据 ──────────────────────────
     if not st.session_state.get("_cloud_pulled"):
