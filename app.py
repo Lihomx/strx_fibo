@@ -360,8 +360,7 @@ def main():
                 if _fav_op in ("add", "del") and _re.match(r"^[\w.\-\^=]+$", _fav_tk):
                     if _fav_op == "add":
                         storage.add_to_watchlist(ticker=_fav_tk, name=_fav_nm[:60])
-                        _t_val = st.query_params.get("_t", "")
-                        st.session_state["_open_wl_tab"] = (_fav_tk, _fav_nm[:40], _t_val)
+                        st.toast(f"⭐ 已收藏：{_fav_nm[:40]}", icon="⭐")
                     else:
                         storage.remove_from_watchlist(_fav_tk)
                         st.toast(f"已移除：{_fav_nm[:40]}", icon="🗑️")
@@ -374,32 +373,16 @@ def main():
     _VALID_PAGES = ("watchlist","scanner","confluence","alerts","settings",
                     "history","cloud","universe","chartink")
     _url_page = st.query_params.get("_page", "")
-    _anchor   = st.query_params.get("_anchor", "")
     if _url_page and _url_page in _VALID_PAGES:
         st.session_state["page"] = _url_page
-        if _anchor and not st.session_state.get("_wl_highlight"):
-            st.session_state["_wl_highlight"] = _anchor
         if not st.session_state.get("_url_routed"):
             st.session_state["_url_routed"] = True
             try:
-                st.query_params.pop("_page",   None)
-                st.query_params.pop("_anchor", None)
+                st.query_params.pop("_page", None)
             except Exception:
                 pass
     elif "page" not in st.session_state:
         st.session_state.page = "watchlist"
-
-    # ── 收藏成功后：新标签打开自选页 ──────────────────────────────
-    _open_wl = st.session_state.pop("_open_wl_tab", None)
-    if _open_wl:
-        _hl_tk, _hl_nm, _t_val = (_open_wl if len(_open_wl) == 3 else (*_open_wl, ""))
-        _wl_url = f"/?_t={_t_val}&_page=watchlist&_anchor={_hl_tk}"
-        import streamlit.components.v1 as _stcv1
-        _stcv1.html(
-            f"<script>try{{window.open('{_wl_url}','_blank');}}catch(e){{}}</script>",
-            height=0,
-        )
-        st.success(f"⭐ 已收藏「{_hl_nm}」— 自选页已在新标签打开")
 
     sidebar()
 
