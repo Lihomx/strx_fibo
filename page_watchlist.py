@@ -23,14 +23,26 @@ def _tv_link(ticker: str) -> str:
 
 
 def _sina_link(ticker: str):
-    """A股返回新浪财经链接，否则返回 None"""
-    t = ticker.upper()
+    """A股返回新浪财经链接，否则返回 None。
+    支持：600519.SS / 000001.SZ 带后缀格式
+         600519 / 000001 纯6位数字格式
+    """
+    t = ticker.upper().strip()
+    # 带后缀格式
     if t.endswith(".SS"):
         code = t[:-3]
         return f"https://finance.sina.com.cn/realstock/company/sh{code}/nc.shtml"
     if t.endswith(".SZ"):
         code = t[:-3]
         return f"https://finance.sina.com.cn/realstock/company/sz{code}/nc.shtml"
+    # 纯6位数字格式
+    if t.isdigit() and len(t) == 6:
+        if t.startswith("6") or t.startswith("5"):
+            # 6xxxxx / 5xxxxx → 上交所
+            return f"https://finance.sina.com.cn/realstock/company/sh{t}/nc.shtml"
+        if t.startswith("0") or t.startswith("3") or t.startswith("2"):
+            # 0xxxxx / 3xxxxx / 2xxxxx → 深交所
+            return f"https://finance.sina.com.cn/realstock/company/sz{t}/nc.shtml"
     return None
 
 
