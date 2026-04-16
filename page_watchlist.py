@@ -22,6 +22,18 @@ def _tv_link(ticker: str) -> str:
         return f"https://cn.tradingview.com/chart/?symbol={ticker}"
 
 
+def _sina_link(ticker: str):
+    """A股返回新浪财经链接，否则返回 None"""
+    t = ticker.upper()
+    if t.endswith(".SS"):
+        code = t[:-3]
+        return f"https://finance.sina.com.cn/realstock/company/sh{code}/nc.shtml"
+    if t.endswith(".SZ"):
+        code = t[:-3]
+        return f"https://finance.sina.com.cn/realstock/company/sz{code}/nc.shtml"
+    return None
+
+
 def _get_viewed() -> set:
     return storage.load_viewed_today()
 
@@ -277,6 +289,7 @@ def _render_item_row(item, result_map, cats, viewed_set):
     results = result_map.get(ticker.upper(), [])
     latest  = _latest_note(item)
     tv_link = _tv_link(ticker)
+    sina_link = _sina_link(ticker)
 
     if viewed:
         row_style = "background:#f0fdf4;border:1px solid #bbf7d0;opacity:0.85;"
@@ -328,7 +341,11 @@ def _render_item_row(item, result_map, cats, viewed_set):
         unsafe_allow_html=True,
     )
 
-    bc1, bc2, bc3, bc4, bc5 = st.columns([1, 1, 1, 1, 4])
+    if sina_link:
+        bc1, bc2, bc3, bc4, bc5, bc6 = st.columns([1, 1, 1, 1, 1, 4])
+    else:
+        bc1, bc2, bc3, bc4, bc5 = st.columns([1, 1, 1, 1, 4])
+
     with bc1:
         if st.button("✅" if viewed else "👁️",
                      key=f"wl_v_{ticker}",
@@ -338,22 +355,40 @@ def _render_item_row(item, result_map, cats, viewed_set):
             st.rerun()
     with bc2:
         if st.button("📈", key=f"wl_tv_{ticker}",
-                     help=f"打开 TradingView（自动标记已看）"):
+                     help="打开 TradingView（自动标记已看）"):
             _mark_viewed(ticker)
             st.session_state["_pending_tv_url"] = tv_link
             st.rerun()
-    with bc3:
-        if st.button("🔓" if pinned else "📌",
-                     key=f"wl_pin_{ticker}", help="置顶/取消"):
-            storage.toggle_pin_watchlist(ticker)
-            st.rerun()
-    with bc4:
-        if st.button("🗑", key=f"wl_del_{ticker}", help="删除（移入存档）"):
-            storage.remove_from_watchlist(ticker)
-            st.toast(f"已移入存档：{ticker}", icon="🗂️")
-            st.rerun()
-    with bc5:
-        _render_inline_controls(item, ticker, cats)
+    if sina_link:
+        with bc3:
+            if st.button("🏦", key=f"wl_sina_{ticker}", help="新浪财经"):
+                st.session_state["_pending_tv_url"] = sina_link
+                st.rerun()
+        with bc4:
+            if st.button("🔓" if pinned else "📌",
+                         key=f"wl_pin_{ticker}", help="置顶/取消"):
+                storage.toggle_pin_watchlist(ticker)
+                st.rerun()
+        with bc5:
+            if st.button("🗑", key=f"wl_del_{ticker}", help="删除（移入存档）"):
+                storage.remove_from_watchlist(ticker)
+                st.toast(f"已移入存档：{ticker}", icon="🗂️")
+                st.rerun()
+        with bc6:
+            _render_inline_controls(item, ticker, cats)
+    else:
+        with bc3:
+            if st.button("🔓" if pinned else "📌",
+                         key=f"wl_pin_{ticker}", help="置顶/取消"):
+                storage.toggle_pin_watchlist(ticker)
+                st.rerun()
+        with bc4:
+            if st.button("🗑", key=f"wl_del_{ticker}", help="删除（移入存档）"):
+                storage.remove_from_watchlist(ticker)
+                st.toast(f"已移入存档：{ticker}", icon="🗂️")
+                st.rerun()
+        with bc5:
+            _render_inline_controls(item, ticker, cats)
 
     # ── 编辑全称 ────────────────────────────────────────────────
     if st.session_state.get(f"wl_edit_name_open_{ticker}"):
