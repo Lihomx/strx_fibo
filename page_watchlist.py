@@ -197,16 +197,24 @@ def _render_main():
     display = pinned + others
 
     pinned_cnt = len(pinned)
-    st.markdown(
-        f"<div style='color:#6b7280;font-size:12px;margin-bottom:10px'>"
+    _stats_open = st.session_state.get("wl_stats_open", True)
+    _stats_label = (
         f"共 {len(items)} 个 · 显示 {len(display)} 个"
         + (f" · 📌 {pinned_cnt} 个置顶" if pinned_cnt else "")
-        + f" · ✅ {done}/{total} 今日已看</div>",
-        unsafe_allow_html=True,
+        + f" · ✅ {done}/{total} 今日已看"
+        + (" ▲" if _stats_open else " ▼")
     )
+    if st.button(_stats_label, key="wl_stats_toggle",
+                 help="点击收起/展开统计"):
+        st.session_state["wl_stats_open"] = not _stats_open
+        st.rerun()
 
     if not display:
         st.info("没有符合条件的品种。")
+        return
+
+    if not st.session_state.get("wl_stats_open", True):
+        st.info("点击上方统计栏展开品种列表。")
         return
 
     # ── 分组展示 ──────────────────────────────────────────────────
@@ -347,10 +355,36 @@ def _render_item_row(item, result_map, cats, viewed_set):
     with bc5:
         _render_inline_controls(item, ticker, cats)
 
+    # ── 编辑全称 ────────────────────────────────────────────────
+    if st.session_state.get(f"wl_edit_name_open_{ticker}"):
+        en1, en2, en3 = st.columns([4, 1, 1])
+        with en1:
+            new_name_val = st.text_input(
+                "编辑全称", value=name,
+                key=f"wl_edit_name_val_{ticker}",
+                label_visibility="collapsed",
+                placeholder="输入品种全称…",
+            )
+        with en2:
+            if st.button("💾", key=f"wl_edit_name_save_{ticker}", help="保存"):
+                items_all = storage.load_watchlist()
+                for it in items_all:
+                    if it["ticker"].upper() == ticker.upper():
+                        it["name"] = new_name_val.strip()
+                        break
+                storage.save_watchlist(items_all)
+                st.session_state.pop(f"wl_edit_name_open_{ticker}", None)
+                st.toast(f"已更新：{ticker} → {new_name_val.strip()}", icon="✏️")
+                st.rerun()
+        with en3:
+            if st.button("✕", key=f"wl_edit_name_cancel_{ticker}", help="取消"):
+                st.session_state.pop(f"wl_edit_name_open_{ticker}", None)
+                st.rerun()
+
 
 # ══════════════════════════════════════════════════════════════════════
 def _render_inline_controls(item, ticker, cats):
-    cc = st.columns([1, 1, 1, 5])
+    cc = st.columns([1, 1, 1, 1, 5])
     with cc[0]:
         if st.button("🏷️", key=f"wl_cat_btn_{ticker}", help="设置分类"):
             k = f"wl_cat_open_{ticker}"
@@ -365,12 +399,18 @@ def _render_inline_controls(item, ticker, cats):
             st.rerun()
     with cc[2]:
         notes = _all_notes(item)
-        if len(notes) > 1:
-            if st.button("📋", key=f"wl_hist_btn_{ticker}",
-                         help=f"历史备注({len(notes)-1})"):
-                k = f"wl_hist_open_{ticker}"
-                st.session_state[k] = not st.session_state.get(k, False)
+        if len(notes) >= 1:
+            hist_open = st.session_state.get(f"wl_hist_open_{ticker}", True)
+            btn_label = "📋▲" if hist_open else f"📋({len(notes)})"
+            if st.button(btn_label, key=f"wl_hist_btn_{ticker}",
+                         help="收起历史备注" if hist_open else f"展开历史备注({len(notes)})"):
+                st.session_state[f"wl_hist_open_{ticker}"] = not hist_open
                 st.rerun()
+    with cc[3]:
+        if st.button("🖊️", key=f"wl_edit_name_btn_{ticker}", help="编辑全称"):
+            k = f"wl_edit_name_open_{ticker}"
+            st.session_state[k] = not st.session_state.get(k, False)
+            st.rerun()
 
     if st.session_state.get(f"wl_cat_open_{ticker}"):
         if not cats:
@@ -440,16 +480,20 @@ def _render_inline_controls(item, ticker, cats):
                 st.session_state.pop(f"wl_note_open_{ticker}", None)
                 st.rerun()
 
-    if st.session_state.get(f"wl_hist_open_{ticker}"):
+    if st.session_state.get(f"wl_hist_open_{ticker}", True):
         notes = _all_notes(item)
-        for n in reversed(notes[:-1]):
-            st.markdown(
-                f'<div style="border-left:2px solid #e5e7eb;padding:5px 10px;'
-                f'margin:3px 0;font-size:12px;">'
-                f'<span style="color:#9ca3af">{n.get("ts","")}</span>&nbsp;&nbsp;'
-                f'<span style="color:#374151">{_he(str(n["text"]))}</span></div>',
-                unsafe_allow_html=True,
-            )
+        if notes:
+            for n in reversed(notes):
+                img_url_n = n.get("img_url", "")
+                st.markdown(
+                    f'<div style="border-left:2px solid #e5e7eb;padding:5px 10px;'
+                    f'margin:3px 0;font-size:12px;">'
+                    f'<span style="color:#9ca3af">{n.get("ts","")}</span>&nbsp;&nbsp;'
+                    f'<span style="color:#374151">{_he(str(n["text"]))}</span>'
+                    + (f'&nbsp;<a href="{_he(img_url_n)}" target="_blank" style="font-size:11px;color:#3b82f6">🖼️图</a>' if img_url_n else "")
+                    + '</div>',
+                    unsafe_allow_html=True,
+                )
 
 
 # ══════════════════════════════════════════════════════════════════════
