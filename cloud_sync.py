@@ -441,6 +441,7 @@ def push_all() -> Tuple[bool, str]:
         errors.append(f"meta: {e}")
     if errors:
         return False, "部分失败：" + " / ".join(errors[:3])
+    _invalidate_status_cache()   # 推送成功 → 清除缓存，侧边栏立刻显示最新时间
     return True, "全量上传 + 快照完成"
 
 def pull_all() -> Dict[str, Any]:
@@ -596,34 +597,61 @@ def startup_restore() -> Dict[str, Any]:
     return r
 
 # ════════════════════════════════════════════════════════════════════
-# 状态查询
+# 状态查询（带内存缓存，避免侧边栏每次 rerun 都发起 HTTP 请求）
 # ════════════════════════════════════════════════════════════════════
 
+_status_cache: Dict[str, Any] = {}
+_status_cache_ts: float = 0.0
+_STATUS_CACHE_TTL = 120  # 2 分钟内复用缓存，无需再请求云端
+
+def _invalidate_status_cache():
+    """推送成功后主动清除缓存，确保下次侧边栏立刻显示最新同步时间"""
+    global _status_cache, _status_cache_ts
+    _status_cache = {}
+    _status_cache_ts = 0.0
+
 def get_sync_status() -> Dict[str, Any]:
+    global _status_cache, _status_cache_ts
     if not is_configured():
         return {"configured": False, "status": "未配置"}
+    now = time.time()
+    # 缓存未过期：直接返回，无网络请求
+    if _status_cache and (now - _status_cache_ts) < _STATUS_CACHE_TTL:
+        # elapsed_h 是时间敏感字段，每次实时计算
+        result = dict(_status_cache)
+        if result.get("last_sync_ts"):
+            result["elapsed_h"] = round((now - float(result["last_sync_ts"])) / 3600, 1)
+        return result
+    # 缓存过期：请求云端
     meta = _download_latest("meta")
     if not meta:
-        return {"configured": True, "status": "尚未同步", "last_sync": "—",
-                "watchlist_cnt": 0, "scan_results_cnt": 0, "elapsed_h": 0}
-    elapsed_h = (time.time() - float(meta.get("last_sync_ts", 0))) / 3600
-    return {
-        "configured":       True,
-        "status":           "正常",
-        "last_sync":        meta.get("last_sync", "—"),
-        "last_sync_ts":     meta.get("last_sync_ts", 0),
-        "watchlist_cnt":    meta.get("watchlist_cnt", 0),
-        "scan_results_cnt": meta.get("scan_results_cnt", 0),
-        "elapsed_h":        round(elapsed_h, 1),
-    }
+        result = {"configured": True, "status": "尚未同步", "last_sync": "—",
+                  "watchlist_cnt": 0, "scan_results_cnt": 0, "elapsed_h": 0,
+                  "last_sync_ts": 0}
+    else:
+        elapsed_h = (now - float(meta.get("last_sync_ts", 0))) / 3600
+        result = {
+            "configured":       True,
+            "status":           "正常",
+            "last_sync":        meta.get("last_sync", "—"),
+            "last_sync_ts":     meta.get("last_sync_ts", 0),
+            "watchlist_cnt":    meta.get("watchlist_cnt", 0),
+            "scan_results_cnt": meta.get("scan_results_cnt", 0),
+            "elapsed_h":        round(elapsed_h, 1),
+        }
+    _status_cache    = result
+    _status_cache_ts = now
+    return result
 
 def time_to_next_sync_str() -> str:
     if not is_configured():
         return "未配置"
-    meta = _download_latest("meta")
-    if not meta or not meta.get("last_sync_ts"):
+    # 直接复用已缓存的 last_sync_ts，不再单独请求云端
+    status = get_sync_status()
+    last_ts = float(status.get("last_sync_ts", 0))
+    if not last_ts:
         return "立即同步"
-    remain = max(0.0, SYNC_INTERVAL_SEC - (time.time() - float(meta["last_sync_ts"])))
+    remain = max(0.0, SYNC_INTERVAL_SEC - (time.time() - last_ts))
     if remain <= 0:
         return "已到期，下次访问触发"
     h, m = int(remain // 3600), int((remain % 3600) // 60)
