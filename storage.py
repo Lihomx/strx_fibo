@@ -11,6 +11,7 @@ storage.py — JSON 本地存储（支持分批缓存合并）
 
 import json
 import os
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -80,6 +81,14 @@ def _save_with_backup(path: str, data) -> bool:
     return ok
 
 
+# ── 异步推送工具 ────────────────────────────────────────────────────
+
+def _async_push(fn, *args, **kwargs):
+    """在后台守护线程中执行推送，不阻塞主线程。"""
+    t = threading.Thread(target=fn, args=args, kwargs=kwargs, daemon=True)
+    t.start()
+
+
 # ── 配置 ─────────────────────────────────────────────────────────────
 DEFAULT_CFG = {
     "lookback":         100,
@@ -136,6 +145,15 @@ def save_scan(session_row: Dict, result_rows: List[Dict]) -> bool:
     hist.append(session_row)
     if len(hist) > _MAX_HIST:
         hist = hist[-_MAX_HIST:]
+    result = _save(F_HIST, hist)
+
+    # 扫描完成后触发云端同步检查（异步，不阻塞扫描结果展示）
+    try:
+        import cloud_sync
+        _async_push(cloud_sync.auto_sync_if_due)
+    except Exception:
+        pass
+
     return result
 
 
@@ -277,7 +295,15 @@ def load_watchlist() -> List[Dict]:
 
 
 def save_watchlist(items: List[Dict]) -> bool:
-    return _save_with_backup(F_WATCHLIST, items)
+    ok = _save_with_backup(F_WATCHLIST, items)
+    if ok:
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                _async_push(cloud_sync.push_watchlist)  # 异步，不阻塞 UI
+        except Exception:
+            pass
+    return ok
 
 
 def load_watchlist_archive() -> List[Dict]:
@@ -573,7 +599,15 @@ def load_wl_categories() -> List[Dict]:
 
 
 def save_wl_categories(cats: List[Dict]) -> bool:
-    return _save(F_WL_CATS, cats)
+    ok = _save(F_WL_CATS, cats)
+    if ok:
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                _async_push(cloud_sync.push_wl_categories)  # 异步，不阻塞 UI
+        except Exception:
+            pass
+    return ok
 
 
 def add_wl_category(name: str, parent_id=None) -> Optional[str]:
