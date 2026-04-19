@@ -77,14 +77,24 @@ def _cached_result_map():
 def _fetch_ticker_name(ticker: str) -> str:
     """通过 yfinance 查询 ticker 的公司/品种全称。
     结果存入 session_state['_yfname_cache'] 字典，同一会话不重复请求。
+    纯6位数字 A股自动补 .SS / .SZ 后缀后查询。
     """
     cache = st.session_state.setdefault("_yfname_cache", {})
     key   = ticker.upper().strip()
     if key in cache:
         return cache[key]
+
+    # 纯6位数字 A股：自动补后缀
+    yf_ticker = key
+    if key.isdigit() and len(key) == 6:
+        if key.startswith("6") or key.startswith("5"):
+            yf_ticker = key + ".SS"
+        elif key.startswith("0") or key.startswith("3") or key.startswith("2"):
+            yf_ticker = key + ".SZ"
+
     try:
         import yfinance as yf
-        info = yf.Ticker(key).info
+        info = yf.Ticker(yf_ticker).info
         name = (info.get("shortName") or info.get("longName") or "").strip()
     except Exception:
         name = ""
