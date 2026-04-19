@@ -23,9 +23,7 @@ def _tv_link(ticker: str) -> str:
 
 
 def _sina_link(ticker: str):
-    """A股返回新浪财经链接，否则返回 None。
-    支持带后缀（600519.SS / 000001.SZ）和纯6位数字格式。
-    """
+    """A股返回新浪财经链接，支持 600519.SS / 000001.SZ 及纯6位数字。"""
     t = ticker.upper().strip()
     if t.endswith(".SS"):
         return f"https://finance.sina.com.cn/realstock/company/sh{t[:-3]}/nc.shtml"
@@ -75,18 +73,23 @@ def _cached_result_map():
     return rm
 
 
-# ── Ticker 名称自动获取（带缓存，避免重复请求）────────────────────────
-@st.cache_data(ttl=3600, show_spinner=False)
+# ── Ticker 名称自动获取（session_state 缓存，避免 cache_data 与 session_state 冲突）
 def _fetch_ticker_name(ticker: str) -> str:
-    """通过 yfinance 查询 ticker 的公司/品种全称，结果缓存 1 小时。"""
+    """通过 yfinance 查询 ticker 的公司/品种全称。
+    结果存入 session_state['_yfname_cache'] 字典，同一会话不重复请求。
+    """
+    cache = st.session_state.setdefault("_yfname_cache", {})
+    key   = ticker.upper().strip()
+    if key in cache:
+        return cache[key]
     try:
         import yfinance as yf
-        info = yf.Ticker(ticker).info
-        # shortName 优先，fallback 到 longName
-        name = info.get("shortName") or info.get("longName") or ""
-        return name.strip()
+        info = yf.Ticker(key).info
+        name = (info.get("shortName") or info.get("longName") or "").strip()
     except Exception:
-        return ""
+        name = ""
+    cache[key] = name
+    return name
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -505,43 +508,33 @@ def _render_inline_controls(item, ticker, cats):
 def _render_add_form():
     _prev_key    = "_wl_add_prev_ticker"
     _fetched_key = "_wl_add_fetched_name"
-    _loading_key = "_wl_add_loading"
 
-    # ── 第一段：检测ticker变化，触发查询后 rerun ──────────────────
-    # Streamlit规则：widget渲染后本轮无法再修改其session_state值。
-    # 解法：ticker变化时先查询，写入fetched/name，再rerun()，
-    #       下一轮渲染widget时自然读到新值。
-    _cur_ticker = st.session_state.get("wl_new_ticker", "").strip().upper()
-    _prev       = st.session_state.get(_prev_key, "")
-
-    if _cur_ticker and _cur_ticker != _prev:
-        # ticker 有变化 → 查询 → 写入 → rerun
-        st.session_state[_prev_key]    = _cur_ticker
-        st.session_state[_fetched_key] = ""
-        st.session_state[_loading_key] = True
-        fetched = _fetch_ticker_name(_cur_ticker)
-        st.session_state[_loading_key] = False
-        if fetched:
-            st.session_state[_fetched_key] = fetched
-            # 名称栏为空时自动填入（此时widget尚未渲染，写入有效）
-            if not st.session_state.get("wl_new_name", "").strip():
-                st.session_state["wl_new_name"] = fetched
-        st.rerun()
-
-    elif not _cur_ticker and _prev:
-        # ticker 被清空 → 重置
-        st.session_state.pop(_prev_key,    None)
-        st.session_state.pop(_fetched_key, None)
-        st.session_state.pop(_loading_key, None)
-        st.session_state.pop("wl_new_name", None)
-
-    # ── 第二段：渲染 widget（此时 session_state 已是正确值）────────
     c1, c2 = st.columns([2, 2])
     with c1:
         new_ticker = st.text_input(
             "Ticker 代码 *", placeholder="例: AAPL  600519.SS",
             key="wl_new_ticker",
         ).strip().upper()
+
+    # ── 查询逻辑：在 c2 渲染之前执行，写入 wl_new_name 才有效 ────
+    if new_ticker:
+        prev = st.session_state.get(_prev_key, "")
+        if new_ticker != prev:
+            # ticker 变化 → 查询（session_state 缓存，不用 cache_data）
+            st.session_state[_prev_key]    = new_ticker
+            st.session_state[_fetched_key] = ""
+            fetched = _fetch_ticker_name(new_ticker)
+            st.session_state[_fetched_key] = fetched
+            # 名称栏为空才自动填入
+            if fetched and not st.session_state.get("wl_new_name", "").strip():
+                st.session_state["wl_new_name"] = fetched
+    else:
+        st.session_state.pop(_prev_key,    None)
+        st.session_state.pop(_fetched_key, None)
+        if st.session_state.get("wl_new_name") == st.session_state.get(_fetched_key, "__NONE__"):
+            st.session_state.pop("wl_new_name", None)
+
+    # c2 在此渲染，读到的 wl_new_name 已是上面写入的值
     with c2:
         new_name = st.text_input(
             "品种全称（可选）", placeholder="例: 苹果公司",
@@ -550,26 +543,26 @@ def _render_add_form():
 
     # ── 状态提示 ──────────────────────────────────────────────────
     fetched_name = st.session_state.get(_fetched_key, "")
-    if new_ticker:
-        if st.session_state.get(_loading_key):
-            st.markdown(
-                '<div style="font-size:12px;color:#6b7280;margin-top:-10px;margin-bottom:6px">'
-                '⏳ 正在查询全称…</div>', unsafe_allow_html=True)
-        elif fetched_name:
+    if new_ticker and st.session_state.get(_prev_key) == new_ticker:
+        if fetched_name:
             if new_name.strip() == fetched_name:
                 st.markdown(
                     f'<div style="font-size:12px;color:#16a34a;margin-top:-10px;margin-bottom:6px">'
                     f'✅ 已自动填入：<b>{_he(fetched_name)}</b></div>',
-                    unsafe_allow_html=True)
+                    unsafe_allow_html=True,
+                )
             else:
                 st.markdown(
                     f'<div style="font-size:12px;color:#6b7280;margin-top:-10px;margin-bottom:6px">'
                     f'💡 查询到全称：<b>{_he(fetched_name)}</b>（已手动修改）</div>',
-                    unsafe_allow_html=True)
-        elif st.session_state.get(_prev_key) == new_ticker:
+                    unsafe_allow_html=True,
+                )
+        else:
             st.markdown(
                 '<div style="font-size:12px;color:#9ca3af;margin-top:-10px;margin-bottom:6px">'
-                '— 未查询到全称，可手动填写</div>', unsafe_allow_html=True)
+                '— 未查询到全称，可手动填写</div>',
+                unsafe_allow_html=True,
+            )
 
     note_text = st.text_input(
         "📝 备注 *（必填）", placeholder="例: 关注 0.618 支撑",
@@ -592,7 +585,7 @@ def _render_add_form():
                 st.success(f"✅ 已添加 {new_ticker}")
                 for k in ["wl_new_ticker", "wl_new_name",
                           "wl_new_note_text", "wl_new_img_url",
-                          _prev_key, _fetched_key, _loading_key]:
+                          _prev_key, _fetched_key]:
                     st.session_state.pop(k, None)
                 _cached_result_map.clear()
                 st.rerun()
