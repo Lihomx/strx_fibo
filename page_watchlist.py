@@ -75,29 +75,64 @@ def _cached_result_map():
 
 # ── Ticker 名称自动获取（session_state 缓存，避免 cache_data 与 session_state 冲突）
 def _fetch_ticker_name(ticker: str) -> str:
-    """通过 yfinance 查询 ticker 的公司/品种全称。
+    """查询 ticker 的公司/品种全称。
+    - A股（纯6位数字 或 .SS/.SZ 后缀）：优先从新浪财经 API 获取中文名
+    - 其他：yfinance 查询
     结果存入 session_state['_yfname_cache'] 字典，同一会话不重复请求。
-    纯6位数字 A股自动补 .SS / .SZ 后缀后查询。
     """
     cache = st.session_state.setdefault("_yfname_cache", {})
     key   = ticker.upper().strip()
     if key in cache:
         return cache[key]
 
-    # 纯6位数字 A股：自动补后缀
+    # ── 判断是否 A股，确定新浪代码 ──────────────────────────────
+    sina_code = None  # e.g. "sh601138" / "sz000001"
     yf_ticker = key
+
     if key.isdigit() and len(key) == 6:
         if key.startswith("6") or key.startswith("5"):
+            sina_code = "sh" + key
             yf_ticker = key + ".SS"
         elif key.startswith("0") or key.startswith("3") or key.startswith("2"):
+            sina_code = "sz" + key
             yf_ticker = key + ".SZ"
+    elif key.endswith(".SS"):
+        sina_code = "sh" + key[:-3]
+    elif key.endswith(".SZ"):
+        sina_code = "sz" + key[:-3]
 
-    try:
-        import yfinance as yf
-        info = yf.Ticker(yf_ticker).info
-        name = (info.get("shortName") or info.get("longName") or "").strip()
-    except Exception:
-        name = ""
+    name = ""
+
+    # ── A股：新浪实时行情接口（返回中文名）────────────────────────
+    if sina_code:
+        try:
+            import requests
+            r = requests.get(
+                f"https://hq.sinajs.cn/list={sina_code}",
+                headers={"Referer": "https://finance.sina.com.cn"},
+                timeout=5,
+            )
+            r.encoding = "gbk"
+            # 返回格式：var hq_str_sh601138="工业富联,xxx,...";
+            text = r.text
+            start = text.find('"')
+            end   = text.rfind('"')
+            if start != -1 and end > start:
+                fields = text[start+1:end].split(",")
+                if fields and fields[0].strip():
+                    name = fields[0].strip()
+        except Exception:
+            pass
+
+    # ── fallback：yfinance（非A股 或 新浪失败）──────────────────
+    if not name:
+        try:
+            import yfinance as yf
+            info = yf.Ticker(yf_ticker).info
+            name = (info.get("shortName") or info.get("longName") or "").strip()
+        except Exception:
+            name = ""
+
     cache[key] = name
     return name
 
