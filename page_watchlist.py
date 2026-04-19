@@ -521,11 +521,12 @@ def _render_inline_controls(item, ticker, cats):
 
     with cc[2]:
         notes = _all_notes(item)
-        if len(notes) > 1:
-            if st.button("📋", key=f"wl_hist_btn_{ticker}",
-                         help=f"历史备注({len(notes)-1})"):
-                k = f"wl_hist_open_{ticker}"
-                st.session_state[k] = not st.session_state.get(k, False)
+        if notes:
+            hist_open = st.session_state.get(f"wl_hist_open_{ticker}", True)
+            btn_label = f"📋▲" if hist_open else f"📋({len(notes)})"
+            if st.button(btn_label, key=f"wl_hist_btn_{ticker}",
+                         help="收起备注" if hist_open else f"展开备注({len(notes)})"):
+                st.session_state[f"wl_hist_open_{ticker}"] = not hist_open
                 st.rerun()
 
     if st.session_state.get(f"wl_cat_open_{ticker}"):
@@ -597,14 +598,20 @@ def _render_inline_controls(item, ticker, cats):
                 st.session_state.pop(f"wl_note_open_{ticker}", None)
                 st.rerun()
 
-    if st.session_state.get(f"wl_hist_open_{ticker}"):
+    if st.session_state.get(f"wl_hist_open_{ticker}", True):
         notes = _all_notes(item)
-        for n in reversed(notes[:-1]):
+        for n in reversed(notes):
+            img_url_n = n.get("img_url", "")
+            img_part  = (
+                f' &nbsp;<a href="{_he(img_url_n)}" target="_blank" '
+                f'style="font-size:11px;color:#3b82f6;text-decoration:none">🖼️</a>'
+            ) if img_url_n else ""
             st.markdown(
                 f'<div style="border-left:2px solid #e5e7eb;padding:5px 10px;'
                 f'margin:3px 0;font-size:12px;">'
                 f'<span style="color:#9ca3af">{n.get("ts","")}</span>&nbsp;&nbsp;'
-                f'<span style="color:#374151">{_he(str(n["text"]))}</span></div>',
+                f'<span style="color:#374151">{_he(str(n["text"]))}</span>'
+                f'{img_part}</div>',
                 unsafe_allow_html=True,
             )
 
