@@ -505,63 +505,71 @@ def _render_inline_controls(item, ticker, cats):
 def _render_add_form():
     _prev_key    = "_wl_add_prev_ticker"
     _fetched_key = "_wl_add_fetched_name"
+    _loading_key = "_wl_add_loading"
 
-    # ── 先读取上一轮的 ticker 值，查询并写入 session_state ────────
-    # 必须在 widget 渲染之前写好 wl_new_name，否则 Streamlit 忽略写入
+    # ── 第一段：检测ticker变化，触发查询后 rerun ──────────────────
+    # Streamlit规则：widget渲染后本轮无法再修改其session_state值。
+    # 解法：ticker变化时先查询，写入fetched/name，再rerun()，
+    #       下一轮渲染widget时自然读到新值。
     _cur_ticker = st.session_state.get("wl_new_ticker", "").strip().upper()
-    if _cur_ticker:
-        prev = st.session_state.get(_prev_key, "")
-        if _cur_ticker != prev:
-            st.session_state[_prev_key]    = _cur_ticker
-            st.session_state[_fetched_key] = None
-            fetched = _fetch_ticker_name(_cur_ticker)
-            if fetched:
-                st.session_state[_fetched_key] = fetched
-                # 名称栏为空时自动填入
-                if not st.session_state.get("wl_new_name", "").strip():
-                    st.session_state["wl_new_name"] = fetched
-    else:
+    _prev       = st.session_state.get(_prev_key, "")
+
+    if _cur_ticker and _cur_ticker != _prev:
+        # ticker 有变化 → 查询 → 写入 → rerun
+        st.session_state[_prev_key]    = _cur_ticker
+        st.session_state[_fetched_key] = ""
+        st.session_state[_loading_key] = True
+        fetched = _fetch_ticker_name(_cur_ticker)
+        st.session_state[_loading_key] = False
+        if fetched:
+            st.session_state[_fetched_key] = fetched
+            # 名称栏为空时自动填入（此时widget尚未渲染，写入有效）
+            if not st.session_state.get("wl_new_name", "").strip():
+                st.session_state["wl_new_name"] = fetched
+        st.rerun()
+
+    elif not _cur_ticker and _prev:
+        # ticker 被清空 → 重置
         st.session_state.pop(_prev_key,    None)
         st.session_state.pop(_fetched_key, None)
+        st.session_state.pop(_loading_key, None)
+        st.session_state.pop("wl_new_name", None)
 
+    # ── 第二段：渲染 widget（此时 session_state 已是正确值）────────
     c1, c2 = st.columns([2, 2])
     with c1:
         new_ticker = st.text_input(
-            "Ticker 代码 *", placeholder="例: AAPL 600519.SS",
+            "Ticker 代码 *", placeholder="例: AAPL  600519.SS",
             key="wl_new_ticker",
         ).strip().upper()
-
     with c2:
         new_name = st.text_input(
             "品种全称（可选）", placeholder="例: 苹果公司",
             key="wl_new_name",
         )
 
-    # ── 显示自动获取结果的状态提示 ────────────────────────────────
-    fetched_name = st.session_state.get(_fetched_key)
+    # ── 状态提示 ──────────────────────────────────────────────────
+    fetched_name = st.session_state.get(_fetched_key, "")
     if new_ticker:
-        if fetched_name is None and st.session_state.get(_prev_key) == new_ticker:
-            # 正在等待结果（第一次渲染还未查询完成的间隙不显示任何提示）
-            pass
+        if st.session_state.get(_loading_key):
+            st.markdown(
+                '<div style="font-size:12px;color:#6b7280;margin-top:-10px;margin-bottom:6px">'
+                '⏳ 正在查询全称…</div>', unsafe_allow_html=True)
         elif fetched_name:
             if new_name.strip() == fetched_name:
                 st.markdown(
                     f'<div style="font-size:12px;color:#16a34a;margin-top:-10px;margin-bottom:6px">'
                     f'✅ 已自动填入：<b>{_he(fetched_name)}</b></div>',
-                    unsafe_allow_html=True,
-                )
+                    unsafe_allow_html=True)
             else:
                 st.markdown(
                     f'<div style="font-size:12px;color:#6b7280;margin-top:-10px;margin-bottom:6px">'
                     f'💡 查询到全称：<b>{_he(fetched_name)}</b>（已手动修改）</div>',
-                    unsafe_allow_html=True,
-                )
-        else:
+                    unsafe_allow_html=True)
+        elif st.session_state.get(_prev_key) == new_ticker:
             st.markdown(
-                f'<div style="font-size:12px;color:#9ca3af;margin-top:-10px;margin-bottom:6px">'
-                f'— 未查询到全称，可手动填写</div>',
-                unsafe_allow_html=True,
-            )
+                '<div style="font-size:12px;color:#9ca3af;margin-top:-10px;margin-bottom:6px">'
+                '— 未查询到全称，可手动填写</div>', unsafe_allow_html=True)
 
     note_text = st.text_input(
         "📝 备注 *（必填）", placeholder="例: 关注 0.618 支撑",
@@ -584,7 +592,7 @@ def _render_add_form():
                 st.success(f"✅ 已添加 {new_ticker}")
                 for k in ["wl_new_ticker", "wl_new_name",
                           "wl_new_note_text", "wl_new_img_url",
-                          _prev_key, _fetched_key]:
+                          _prev_key, _fetched_key, _loading_key]:
                     st.session_state.pop(k, None)
                 _cached_result_map.clear()
                 st.rerun()
