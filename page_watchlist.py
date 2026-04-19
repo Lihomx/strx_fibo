@@ -21,6 +21,23 @@ def _tv_link(ticker: str) -> str:
     except Exception:
         return f"https://cn.tradingview.com/chart/?symbol={ticker}"
 
+
+def _sina_link(ticker: str):
+    """A股返回新浪财经链接，否则返回 None。
+    支持带后缀（600519.SS / 000001.SZ）和纯6位数字格式。
+    """
+    t = ticker.upper().strip()
+    if t.endswith(".SS"):
+        return f"https://finance.sina.com.cn/realstock/company/sh{t[:-3]}/nc.shtml"
+    if t.endswith(".SZ"):
+        return f"https://finance.sina.com.cn/realstock/company/sz{t[:-3]}/nc.shtml"
+    if t.isdigit() and len(t) == 6:
+        if t.startswith("6") or t.startswith("5"):
+            return f"https://finance.sina.com.cn/realstock/company/sh{t}/nc.shtml"
+        if t.startswith("0") or t.startswith("3") or t.startswith("2"):
+            return f"https://finance.sina.com.cn/realstock/company/sz{t}/nc.shtml"
+    return None
+
 def _get_viewed() -> set:
     return storage.load_viewed_today()
 
@@ -273,7 +290,8 @@ def _render_item_row(item, result_map, cats, viewed_set):
     viewed = ticker.upper() in viewed_set
     results = result_map.get(ticker.upper(), [])
     latest  = _latest_note(item)
-    tv_link = _tv_link(ticker)
+    tv_link   = _tv_link(ticker)
+    sina_link = _sina_link(ticker)
 
     if viewed:
         row_style = "background:#f0fdf4;border:1px solid #bbf7d0;opacity:0.85;"
@@ -325,7 +343,11 @@ def _render_item_row(item, result_map, cats, viewed_set):
         unsafe_allow_html=True,
     )
 
-    bc1, bc2, bc3, bc4, bc5 = st.columns([1, 1, 1, 1, 4])
+    if sina_link:
+        bc1, bc2, bc3, bc4, bc5, bc6 = st.columns([1, 1, 1, 1, 1, 4])
+    else:
+        bc1, bc2, bc3, bc4, bc5 = st.columns([1, 1, 1, 1, 4])
+
     with bc1:
         if st.button("✅" if viewed else "👁️",
                      key=f"wl_v_{ticker}",
@@ -335,22 +357,40 @@ def _render_item_row(item, result_map, cats, viewed_set):
             st.rerun()
     with bc2:
         if st.button("📈", key=f"wl_tv_{ticker}",
-                     help=f"打开 TradingView（自动标记已看）"):
+                     help="打开 TradingView（自动标记已看）"):
             _mark_viewed(ticker)
             st.session_state["_pending_tv_url"] = tv_link
             st.rerun()
-    with bc3:
-        if st.button("🔓" if pinned else "📌",
-                     key=f"wl_pin_{ticker}", help="置顶/取消"):
-            storage.toggle_pin_watchlist(ticker)
-            st.rerun()
-    with bc4:
-        if st.button("🗑", key=f"wl_del_{ticker}", help="删除（移入存档）"):
-            storage.remove_from_watchlist(ticker)
-            st.toast(f"已移入存档：{ticker}", icon="🗂️")
-            st.rerun()
-    with bc5:
-        _render_inline_controls(item, ticker, cats)
+    if sina_link:
+        with bc3:
+            if st.button("🏦", key=f"wl_sina_{ticker}", help="新浪财经"):
+                st.session_state["_pending_tv_url"] = sina_link
+                st.rerun()
+        with bc4:
+            if st.button("🔓" if pinned else "📌",
+                         key=f"wl_pin_{ticker}", help="置顶/取消"):
+                storage.toggle_pin_watchlist(ticker)
+                st.rerun()
+        with bc5:
+            if st.button("🗑", key=f"wl_del_{ticker}", help="删除（移入存档）"):
+                storage.remove_from_watchlist(ticker)
+                st.toast(f"已移入存档：{ticker}", icon="🗂️")
+                st.rerun()
+        with bc6:
+            _render_inline_controls(item, ticker, cats)
+    else:
+        with bc3:
+            if st.button("🔓" if pinned else "📌",
+                         key=f"wl_pin_{ticker}", help="置顶/取消"):
+                storage.toggle_pin_watchlist(ticker)
+                st.rerun()
+        with bc4:
+            if st.button("🗑", key=f"wl_del_{ticker}", help="删除（移入存档）"):
+                storage.remove_from_watchlist(ticker)
+                st.toast(f"已移入存档：{ticker}", icon="🗂️")
+                st.rerun()
+        with bc5:
+            _render_inline_controls(item, ticker, cats)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -463,36 +503,33 @@ def _render_inline_controls(item, ticker, cats):
 
 # ══════════════════════════════════════════════════════════════════════
 def _render_add_form():
-    c1, c2 = st.columns([2, 2])
+    _prev_key    = "_wl_add_prev_ticker"
+    _fetched_key = "_wl_add_fetched_name"
 
+    # ── 先读取上一轮的 ticker 值，查询并写入 session_state ────────
+    # 必须在 widget 渲染之前写好 wl_new_name，否则 Streamlit 忽略写入
+    _cur_ticker = st.session_state.get("wl_new_ticker", "").strip().upper()
+    if _cur_ticker:
+        prev = st.session_state.get(_prev_key, "")
+        if _cur_ticker != prev:
+            st.session_state[_prev_key]    = _cur_ticker
+            st.session_state[_fetched_key] = None
+            fetched = _fetch_ticker_name(_cur_ticker)
+            if fetched:
+                st.session_state[_fetched_key] = fetched
+                # 名称栏为空时自动填入
+                if not st.session_state.get("wl_new_name", "").strip():
+                    st.session_state["wl_new_name"] = fetched
+    else:
+        st.session_state.pop(_prev_key,    None)
+        st.session_state.pop(_fetched_key, None)
+
+    c1, c2 = st.columns([2, 2])
     with c1:
         new_ticker = st.text_input(
             "Ticker 代码 *", placeholder="例: AAPL 600519.SS",
             key="wl_new_ticker",
         ).strip().upper()
-
-    # ── 自动获取品种全称 ──────────────────────────────────────────
-    # 当 ticker 有效且与上次查询不同时，触发 yfinance 查询并写入 session_state
-    _prev_key   = "_wl_add_prev_ticker"
-    _fetched_key = "_wl_add_fetched_name"
-
-    if new_ticker and len(new_ticker) >= 1:
-        prev = st.session_state.get(_prev_key, "")
-        if new_ticker != prev:
-            # ticker 发生变化，重新查询
-            st.session_state[_prev_key]    = new_ticker
-            st.session_state[_fetched_key] = None   # 重置，避免显示旧结果
-
-            fetched = _fetch_ticker_name(new_ticker)
-            if fetched:
-                st.session_state[_fetched_key] = fetched
-                # 如果用户名称栏是空的，自动填入
-                if not st.session_state.get("wl_new_name", "").strip():
-                    st.session_state["wl_new_name"] = fetched
-    elif not new_ticker:
-        # ticker 清空，重置状态
-        st.session_state.pop(_prev_key,    None)
-        st.session_state.pop(_fetched_key, None)
 
     with c2:
         new_name = st.text_input(
