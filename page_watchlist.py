@@ -141,6 +141,29 @@ def _fetch_ticker_name(ticker: str) -> str:
 def render():
     st.markdown("## ⭐ 自选收藏夹")
 
+    # ── 品种名内联编辑按钮样式：去掉边框背景，像文本一样可点击 ──
+    st.markdown("""
+    <style>
+    [data-testid="stButton"] button[kind="secondary"][id*="wl_name_click_"] {
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
+        font-size: 14px !important;
+        font-weight: 700 !important;
+        color: #111 !important;
+        box-shadow: none !important;
+        text-align: left !important;
+        cursor: text !important;
+        text-decoration: underline dotted #9ca3af !important;
+    }
+    [data-testid="stButton"] button[kind="secondary"][id*="wl_name_click_"]:hover {
+        background: #f0f9ff !important;
+        color: #1d4ed8 !important;
+        text-decoration: underline solid #1d4ed8 !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     _tab_idx = 0
     if st.session_state.pop("_wl_go_cats", False):
         _tab_idx = 1
@@ -381,15 +404,52 @@ def _render_item_row(item, result_map, cats, viewed_set):
             f'📝 {_he(nt_s)}</div>'
         )
 
-    st.markdown(
-        f'<div style="{row_style}border-radius:8px;padding:8px 12px;margin-bottom:4px">'
-        f'<div style="font-size:14px;font-weight:700;color:#111">'
-        f'{pin_icon}{view_icon}{display_name}{ticker_badge}</div>'
-        + (f'<div style="margin-top:4px">{fibo_html}</div>' if fibo_html else "")
-        + note_html
-        + '</div>',
-        unsafe_allow_html=True,
-    )
+    # ── 编辑状态key ──────────────────────────────────────────────
+    _edit_key   = f"wl_edit_name_{ticker}"   # True = 编辑中
+    _val_key    = f"wl_edit_val_{ticker}"    # 输入框当前值
+    is_editing  = st.session_state.get(_edit_key, False)
+
+    if is_editing:
+        # ── 编辑模式：显示 text_input，on_change 触发保存 ────────
+        def _save_name():
+            new_val = st.session_state.get(_val_key, "").strip()
+            items_all = storage.load_watchlist()
+            for it in items_all:
+                if it["ticker"].upper() == ticker.upper():
+                    it["name"] = new_val
+                    break
+            storage.save_watchlist(items_all)
+            st.session_state[_edit_key] = False
+
+        st.text_input(
+            "品种全称",
+            value=name,
+            key=_val_key,
+            label_visibility="collapsed",
+            placeholder="输入品种全称，回车保存…",
+            on_change=_save_name,
+        )
+    else:
+        # ── 展示模式：点击品种名进入编辑 ─────────────────────────
+        st.markdown(
+            f'<div style="{row_style}border-radius:8px;padding:8px 12px;margin-bottom:4px">'
+            f'<div style="font-size:14px;font-weight:700;color:#111">'
+            f'{pin_icon}{view_icon}{display_name}{ticker_badge}</div>'
+            + (f'<div style="margin-top:4px">{fibo_html}</div>' if fibo_html else "")
+            + note_html
+            + '</div>',
+            unsafe_allow_html=True,
+        )
+        # 点击品种名按钮 → 进入编辑
+        if st.button(
+            f"✎ {name or ticker}",
+            key=f"wl_name_click_{ticker}",
+            help="点击编辑品种全称",
+            use_container_width=False,
+        ):
+            st.session_state[_edit_key] = True
+            st.session_state[_val_key]  = name
+            st.rerun()
 
     if sina_link:
         bc1, bc2, bc3, bc4, bc5, bc6 = st.columns([1, 1, 1, 1, 1, 4])
