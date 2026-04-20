@@ -238,14 +238,15 @@ def _render_main():
         if cats:
             _cf_ids   = ["__ALL__", "__NONE__"]
             _cf_names = {"__ALL__": "📋 全部", "__NONE__": "❓ 未分类"}
-            def _wc(nodes, depth=0):
-                for n in sorted(nodes, key=lambda x: x.get("order",0)):
-                    _cf_ids.append(n["id"])
-                    _cf_names[n["id"]] = " "*depth + n["name"]
-                    if n.get("children"): _wc(n["children"], depth+1)
+            def _wc(nodes, _ids=_cf_ids, _names=_cf_names, depth=0):
+                for n in sorted(nodes, key=lambda x: x.get("order", 0)):
+                    _ids.append(n["id"])
+                    _names[n["id"]] = " " * depth + n["name"]
+                    if n.get("children"):
+                        _wc(n["children"], _ids, _names, depth + 1)
             _wc(storage.build_cat_tree(cats))
             sel_cat = st.selectbox("分类", _cf_ids,
-                                   format_func=lambda x: _cf_names.get(x, x),
+                                   format_func=lambda x, m=_cf_names: m.get(x, x),
                                    key="wl_cat_filter_id",
                                    label_visibility="collapsed")
     with tc3:
@@ -502,6 +503,23 @@ def _render_item_row(item, result_map, cats, viewed_set):
 
 
 # ══════════════════════════════════════════════════════════════════════
+def _build_cat_options(cats):
+    """构建分类选项列表，每次调用返回全新的列表和字典，避免多品种共享污染。"""
+    ids   = ["__UNCAT__"]
+    names = {"__UNCAT__": "（未分类）"}
+
+    def _walk(nodes, depth=0):
+        pfx = (" " * depth + "└ ") if depth else ""
+        for n in sorted(nodes, key=lambda x: x.get("order", 0)):
+            ids.append(n["id"])
+            names[n["id"]] = pfx + n["name"]
+            if n.get("children"):
+                _walk(n["children"], depth + 1)
+
+    _walk(storage.build_cat_tree(cats))
+    return ids, names
+
+
 def _render_inline_controls(item, ticker, cats):
     cc = st.columns([1, 1, 1, 5])
 
@@ -523,25 +541,19 @@ def _render_inline_controls(item, ticker, cats):
         notes = _all_notes(item)
         if notes:
             hist_open = st.session_state.get(f"wl_hist_open_{ticker}", True)
-            btn_label = f"📋▲" if hist_open else f"📋({len(notes)})"
+            btn_label = "📋▲" if hist_open else f"📋({len(notes)})"
             if st.button(btn_label, key=f"wl_hist_btn_{ticker}",
                          help="收起备注" if hist_open else f"展开备注({len(notes)})"):
                 st.session_state[f"wl_hist_open_{ticker}"] = not hist_open
                 st.rerun()
 
+    # ── 设置分类面板 ──────────────────────────────────────────────
     if st.session_state.get(f"wl_cat_open_{ticker}"):
         if not cats:
             st.warning("尚无分类，请先在「🏷️ 分类管理」标签创建。")
         else:
-            _as_ids   = ["__UNCAT__"]
-            _as_names = {"__UNCAT__": "（未分类）"}
-            def _fill(nodes, depth=0):
-                pfx = (" "*depth+"└ ") if depth else ""
-                for n in sorted(nodes, key=lambda x: x.get("order",0)):
-                    _as_ids.append(n["id"])
-                    _as_names[n["id"]] = pfx + n["name"]
-                    if n.get("children"): _fill(n["children"], depth+1)
-            _fill(storage.build_cat_tree(cats))
+            # 每次调用返回全新列表，不同品种之间完全隔离
+            _as_ids, _as_names = _build_cat_options(cats)
 
             _sel_key  = f"wl_cat_sel_{ticker}"
             _init_key = f"wl_cat_init_{ticker}"
@@ -549,28 +561,32 @@ def _render_inline_controls(item, ticker, cats):
                 cur      = item.get("category_id")
                 _default = "__UNCAT__"
                 if cur:
-                    if cur in _as_ids: _default = cur
+                    if cur in _as_ids:
+                        _default = cur
                     else:
-                        m = next((c["id"] for c in cats if c["name"]==cur), None)
-                        if m: _default = m
+                        m = next((c["id"] for c in cats if c["name"] == cur), None)
+                        if m:
+                            _default = m
                 st.session_state[_sel_key] = _default
 
             if st.session_state.get(_sel_key) not in _as_ids:
                 st.session_state[_sel_key] = "__UNCAT__"
 
+            # format_func 用默认参数固定捕获当前 _as_names，避免闭包问题
             chosen = st.selectbox(
                 f"📂 「{item.get('name') or ticker}」的分类",
-                _as_ids, format_func=lambda x: _as_names.get(x, x),
+                _as_ids,
+                format_func=lambda x, m=_as_names: m.get(x, x),
                 key=_sel_key,
             )
             sc1, sc2 = st.columns(2)
             with sc1:
                 if st.button("💾 保存分类", key=f"wl_cat_save_{ticker}", type="primary"):
                     storage.set_watchlist_item_category(
-                        ticker, None if chosen=="__UNCAT__" else chosen)
+                        ticker, None if chosen == "__UNCAT__" else chosen)
                     st.session_state.pop(f"wl_cat_open_{ticker}", None)
                     st.session_state.pop(_sel_key, None)
-                    st.toast(f"已设置：{_as_names.get(chosen,'')}", icon="🏷️")
+                    st.toast(f"已设置：{_as_names.get(chosen, '')}", icon="🏷️")
                     st.rerun()
             with sc2:
                 if st.button("取消", key=f"wl_cat_cancel_{ticker}"):
@@ -578,25 +594,28 @@ def _render_inline_controls(item, ticker, cats):
                     st.session_state.pop(_sel_key, None)
                     st.rerun()
 
-    if st.session_state.get(f"wl_note_open_{ticker}"):
-        new_text = st.text_input("备注内容 *", key=f"wl_note_txt_{ticker}",
-                                 placeholder="输入本次备注…")
-        new_img  = st.text_input("图片链接（选填）", key=f"wl_note_img_{ticker}",
-                                 placeholder="https://...").strip()
-        sn1, sn2 = st.columns(2)
-        with sn1:
-            if st.button("💾 保存备注", key=f"wl_note_save_{ticker}", type="primary"):
-                if not new_text.strip():
-                    st.warning("备注不能为空")
-                else:
-                    storage.add_watchlist_note(ticker, new_text.strip(), new_img)
-                    st.session_state.pop(f"wl_note_open_{ticker}", None)
-                    st.toast(f"备注已保存：{ticker}", icon="📝")
-                    st.rerun()
-        with sn2:
-            if st.button("取消", key=f"wl_note_cancel_{ticker}"):
-                st.session_state.pop(f"wl_note_open_{ticker}", None)
-                st.rerun()
+    # ── 添加备注面板 ──────────────────────────────────────────────
+    with st.container():
+        if st.session_state.get(f"wl_note_open_{ticker}"):
+            with st.container(border=True):
+                new_text = st.text_input("备注内容 *", key=f"wl_note_txt_{ticker}",
+                                         placeholder="输入本次备注…")
+                new_img  = st.text_input("图片链接（选填）", key=f"wl_note_img_{ticker}",
+                                         placeholder="https://...").strip()
+                sn1, sn2 = st.columns(2)
+                with sn1:
+                    if st.button("💾 保存备注", key=f"wl_note_save_{ticker}", type="primary"):
+                        if not new_text.strip():
+                            st.warning("备注不能为空")
+                        else:
+                            storage.add_watchlist_note(ticker, new_text.strip(), new_img)
+                            st.session_state.pop(f"wl_note_open_{ticker}", None)
+                            st.toast(f"备注已保存：{ticker}", icon="📝")
+                            st.rerun()
+                with sn2:
+                    if st.button("取消", key=f"wl_note_cancel_{ticker}"):
+                        st.session_state.pop(f"wl_note_open_{ticker}", None)
+                        st.rerun()
 
     if st.session_state.get(f"wl_hist_open_{ticker}", True):
         notes = _all_notes(item)
@@ -748,16 +767,16 @@ def _render_categories():
         with nc2:
             _par_ids   = ["__ROOT__"]
             _par_names = {"__ROOT__": "（顶级分类）"}
-            def _fill_par(nodes, depth=0):
-                pfx = (" "*depth+"└ ") if depth else ""
-                for n in sorted(nodes, key=lambda x: x.get("order",0)):
-                    _par_ids.append(n["id"])
-                    _par_names[n["id"]] = pfx + n["name"]
+            def _fill_par(nodes, _ids=_par_ids, _names=_par_names, depth=0):
+                pfx = (" " * depth + "└ ") if depth else ""
+                for n in sorted(nodes, key=lambda x: x.get("order", 0)):
+                    _ids.append(n["id"])
+                    _names[n["id"]] = pfx + n["name"]
                     if n.get("children") and depth < 1:
-                        _fill_par(n["children"], depth+1)
+                        _fill_par(n["children"], _ids, _names, depth + 1)
             _fill_par(storage.build_cat_tree(cats))
             parent_id = st.selectbox("父级分类（可选）", _par_ids,
-                                     format_func=lambda x: _par_names.get(x, x),
+                                     format_func=lambda x, m=_par_names: m.get(x, x),
                                      key="wl_new_cat_parent")
 
         if st.button("➕ 创建分类", key="wl_cat_create", type="primary"):
@@ -845,11 +864,11 @@ def _render_categories():
 
     selected_tickers = st.multiselect(
         "选择品种", list(_b_names.keys()),
-        format_func=lambda x: _b_names.get(x, x),
+        format_func=lambda x, m=_b_names: m.get(x, x),
         key="cat_batch_tickers",
     )
     target_cat = st.selectbox("目标分类", _bt_ids,
-                              format_func=lambda x: _bt_names.get(x, x),
+                              format_func=lambda x, m=_bt_names: m.get(x, x),
                               key="cat_batch_target_id")
 
     if st.button("批量设置分类", key="cat_batch_save", type="primary"):
