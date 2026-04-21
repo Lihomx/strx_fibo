@@ -651,14 +651,14 @@ def _render_add_form():
     if new_ticker:
         prev = st.session_state.get(_prev_key, "")
         if new_ticker != prev:
-            # ticker 变化 → 查询（session_state 缓存，不用 cache_data）
+            # ticker 变化 → 先清空名称栏，再查询填入
             st.session_state[_prev_key]    = new_ticker
             st.session_state[_fetched_key] = ""
+            st.session_state["wl_new_name"] = ""   # 先清空，避免残留旧品种名
             fetched = _fetch_ticker_name(new_ticker)
             st.session_state[_fetched_key] = fetched
-            # 名称栏为空才自动填入
-            if fetched and not st.session_state.get("wl_new_name", "").strip():
-                st.session_state["wl_new_name"] = fetched
+            if fetched:
+                st.session_state["wl_new_name"] = fetched  # 直接填入，不判断是否为空
     else:
         st.session_state.pop(_prev_key,    None)
         st.session_state.pop(_fetched_key, None)
