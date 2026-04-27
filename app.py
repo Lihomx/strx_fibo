@@ -123,6 +123,49 @@ if (!document.querySelector('meta[name="viewport"]')) {
     m.content = 'width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes';
     document.head.appendChild(m);
 }
+
+// ── 禁止 Streamlit rerun 后自动滚动到触发按钮位置 ──────────────
+(function() {
+    var _lastY = 0;
+    // 每次页面变化前记录滚动位置
+    var _mainDoc = function() {
+        try { return window.parent.document; } catch(e) { return document; }
+    };
+    var _getMain = function() {
+        var d = _mainDoc();
+        return d.querySelector('.main') || d.querySelector('[data-testid="stAppViewContainer"]') || d.scrollingElement || d.documentElement;
+    };
+    // MutationObserver 监听 Streamlit 的 rerun 动作（DOM 更新）
+    // rerun 开始时保存 Y，rerun 结束后恢复 Y
+    var _saved = null;
+    var _obs = new MutationObserver(function(mutations) {
+        var el = _getMain();
+        if (_saved !== null) {
+            el.scrollTop = _saved;
+        }
+    });
+    // 监听按钮点击：点击前保存滚动位置
+    _mainDoc().addEventListener('click', function(e) {
+        if (e.target && (e.target.tagName === 'BUTTON' || e.target.closest('button'))) {
+            _saved = _getMain().scrollTop;
+        }
+    }, true);
+    // 500ms 后清除保存的位置（rerun 应已完成）
+    var _clearSaved = function() {
+        setTimeout(function() { _saved = null; }, 500);
+    };
+    // 监听 Streamlit 的 stale/fresh 状态切换
+    var _appEl = _mainDoc().querySelector('[data-testid="stApp"]');
+    if (_appEl) {
+        _obs.observe(_appEl, { attributes: true, attributeFilter: ['data-st-state'] });
+        _appEl.addEventListener('DOMAttrModified', _clearSaved);
+    }
+    // 兜底：监听全局 DOM 子树变化，rerun 完成后 500ms 清除
+    var _obsBody = new MutationObserver(function() { _clearSaved(); });
+    try {
+        _obsBody.observe(_mainDoc().body, { childList: true, subtree: false });
+    } catch(e) {}
+})();
 </script>""", height=0)
 
 # ── 导入页面模块（直接 import，无子文件夹）──────────────────────────
