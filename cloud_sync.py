@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 
 SYNC_INTERVAL_SEC = 2 * 3600  # 2 小时自动备份一次
 
+STARTUP_GRACE_SEC = int(os.environ.get("CLOUD_SYNC_STARTUP_GRACE_SEC", "900"))
+PUSH_DROP_RATIO_LIMIT = float(os.environ.get("CLOUD_SYNC_PUSH_DROP_RATIO_LIMIT", "0.5"))
+MIN_LOCAL_WATCHLIST_FOR_PUSH = int(os.environ.get("CLOUD_SYNC_MIN_LOCAL_WATCHLIST", "1"))
 _LATEST_DIR = "latest"
 _BACKUP_DIR  = "backups"
 _LATEST_FILES = {
@@ -39,6 +42,7 @@ _LATEST_FILES = {
 }
 
 _SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "wl_categories", "config"]
+_APP_BOOT_TS = time.time()
 _CLOUD_FILES   = _LATEST_FILES  # 兼容旧接口
 
 # ════════════════════════════════════════════════════════════════════
@@ -330,8 +334,43 @@ def pull_wl_categories() -> Tuple[bool, str]:
 # 收藏夹专项推送
 # ════════════════════════════════════════════════════════════════════
 
-def push_watchlist() -> Tuple[bool, str]:
+def _cloud_list_len(file_key: str) -> int:
+    data = _download_latest(file_key)
+    return len(data) if isinstance(data, list) else 0
+
+def _validate_push_safety(force: bool = False) -> Tuple[bool, str]:
+    if force:
+        return True, "force push"
     try:
+        import storage as loc
+        local_cnt = len(loc.load_watchlist())
+        local_cat_cnt = len(loc.load_wl_categories())
+        cloud_cnt = _cloud_list_len("watchlist")
+        cloud_cat_cnt = _cloud_list_len("wl_categories")
+    except Exception as e:
+        return False, f"safety check failed: {e}"
+
+    if local_cnt < MIN_LOCAL_WATCHLIST_FOR_PUSH and cloud_cnt >= MIN_LOCAL_WATCHLIST_FOR_PUSH:
+        return False, (
+            f"已拦截：本地收藏仅 {local_cnt}，云端为 {cloud_cnt}。"
+            "请先执行云端恢复，或在确认无误后使用强制上传。"
+        )
+    if cloud_cnt >= 5 and local_cnt == 0:
+        return False, "已拦截：本地收藏为 0，但云端有历史数据。"
+    if cloud_cnt > 0 and local_cnt < max(1, int(cloud_cnt * PUSH_DROP_RATIO_LIMIT)):
+        return False, (
+            f"已拦截：本地收藏 {local_cnt} 相比云端 {cloud_cnt} 降幅过大。"
+            "请先核对数据，必要时使用强制上传。"
+        )
+    if cloud_cat_cnt > 0 and local_cat_cnt == 0:
+        return False, "已拦截：本地分类为空，但云端存在分类数据。"
+    return True, "safety check passed"
+
+def push_watchlist(force: bool = False) -> Tuple[bool, str]:
+    try:
+        safe_ok, safe_msg = _validate_push_safety(force=force)
+        if not safe_ok:
+            return False, safe_msg
         import storage as loc
         items   = loc.load_watchlist()
         archive = loc.load_watchlist_archive()
@@ -407,10 +446,10 @@ def pull_watchlist() -> Tuple[bool, str]:
 # 全量推送 / 拉取
 # ════════════════════════════════════════════════════════════════════
 
-def push_all() -> Tuple[bool, str]:
+def push_all(force: bool = False) -> Tuple[bool, str]:
     import storage as loc
     errors = []
-    ok, msg = push_watchlist()
+    ok, msg = push_watchlist(force=force)
     if not ok:
         errors.append(f"watchlist: {msg}")
     for file_key, loader in [
@@ -567,6 +606,8 @@ def auto_push_if_due(force: bool = False) -> Optional[Tuple[bool, str]]:
     if not is_configured():
         return None
     now = time.time()
+    if not force and (now - _APP_BOOT_TS) < STARTUP_GRACE_SEC:
+        return None
     if not force and (now - _last_sync_ts) < SYNC_INTERVAL_SEC:
         return None
     if not force:
@@ -577,7 +618,7 @@ def auto_push_if_due(force: bool = False) -> Optional[Tuple[bool, str]]:
                 return None
     _last_sync_ts = now
     ensure_bucket()
-    return push_all()
+    return push_all(force=force)
 
 def auto_sync_if_due(force: bool = False) -> Optional[Dict]:
     """兼容旧调用"""
