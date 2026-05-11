@@ -584,6 +584,33 @@ def _resolve_symbol_input_path(path_text: str) -> Path:
     raise FileNotFoundError(f"路径不存在：{raw}（尝试：{tried}）")
 
 
+def _parse_symbol_text(text: str) -> tuple[dict, list[str]]:
+    assets_map: dict[str, tuple[str, str]] = {}
+    unresolved: list[str] = []
+
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        token = line
+        if "," in token:
+            token = token.split(",", 1)[0].strip()
+        if "\t" in token:
+            token = token.split("\t", 1)[0].strip()
+        if not token:
+            continue
+
+        resolved = _resolve_symbol_token(token)
+        if resolved:
+            tk, meta = resolved
+            assets_map[tk] = meta
+        else:
+            unresolved.append(token)
+
+    return assets_map, unresolved
+
+
 def _load_symbols_assets_from_path(path_text: str) -> tuple[dict, list[str]]:
     p = _resolve_symbol_input_path(path_text)
 
@@ -601,25 +628,9 @@ def _load_symbols_assets_from_path(path_text: str) -> tuple[dict, list[str]]:
 
     for file in files:
         text = file.read_text(encoding="utf-8", errors="ignore")
-        for raw in text.splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#"):
-                continue
-
-            token = line
-            if "," in token:
-                token = token.split(",", 1)[0].strip()
-            if "\t" in token:
-                token = token.split("\t", 1)[0].strip()
-            if not token:
-                continue
-
-            resolved = _resolve_symbol_token(token)
-            if resolved:
-                tk, meta = resolved
-                assets_map[tk] = meta
-            else:
-                unresolved.append(token)
+        parsed_assets, parsed_unresolved = _parse_symbol_text(text)
+        assets_map.update(parsed_assets)
+        unresolved.extend(parsed_unresolved)
 
     return assets_map, unresolved
 
@@ -853,6 +864,20 @@ def _render_symbol_path_scan(cfg):
     )
     tf_names = _normalize_scan_timeframes(tf_selected)
 
+    uploaded = st.file_uploader(
+        "上传 symbol 文件（可选）",
+        type=["txt", "csv", "list"],
+        key="symbol_file_upload",
+        help="云端推荐：直接上传 MG.txt，无需依赖服务器路径",
+    )
+    pasted_symbols = st.text_area(
+        "或直接粘贴 symbols（可选）",
+        value="",
+        key="symbol_pasted_text",
+        height=110,
+        placeholder="每行一个代码或名称，例如：\nAAPL\nTSLA\n0700.HK\n贵州茅台",
+    ).strip()
+
     path_text = st.text_input(
         "symbol 文件路径",
         value=st.session_state.get("symbol_file_path", "Doc/symbol"),
@@ -864,18 +889,31 @@ def _render_symbol_path_scan(cfg):
     if not do_file_scan:
         return
 
-    try:
-        file_assets, unresolved = _load_symbols_assets_from_path(path_text)
-    except Exception as e:
-        st.error(f"读取失败：{e}")
-        files = _list_symbol_files()
-        if files:
-            sample = "、".join(f.name for f in files[:12])
-            st.caption(f"可用文件：{sample}")
-            st.caption("建议输入相对路径，例如：`Doc/symbol/MG.txt`")
-        else:
-            st.caption("当前部署环境未发现 `Doc/symbol` 文件，请先把 symbol 文件提交到仓库再部署。")
-        return
+    file_assets: dict[str, tuple[str, str]] = {}
+    unresolved: list[str] = []
+    source_label = ""
+
+    if uploaded is not None:
+        text = uploaded.getvalue().decode("utf-8", errors="ignore")
+        file_assets, unresolved = _parse_symbol_text(text)
+        source_label = f"upload:{uploaded.name}"
+    elif pasted_symbols:
+        file_assets, unresolved = _parse_symbol_text(pasted_symbols)
+        source_label = "paste"
+    else:
+        try:
+            file_assets, unresolved = _load_symbols_assets_from_path(path_text)
+            source_label = f"path:{path_text}"
+        except Exception as e:
+            st.error(f"读取失败：{e}")
+            files = _list_symbol_files()
+            if files:
+                sample = "、".join(f.name for f in files[:12])
+                st.caption(f"可用文件：{sample}")
+                st.caption("建议输入相对路径，例如：`Doc/symbol/MG.txt`")
+            else:
+                st.caption("当前部署环境未发现 `Doc/symbol` 文件。请改用“上传 symbol 文件”或直接粘贴 symbols。")
+            return
 
     if not file_assets:
         st.warning("未解析到有效品种，请检查文件内容。")
@@ -894,7 +932,7 @@ def _render_symbol_path_scan(cfg):
     summary2, err2 = sc.run_full_scan(
         cfg=cfg,
         assets=file_assets,
-        note=f"file:{path_text}",
+        note=source_label,
         timeframe_names=tf_names,
         progress_callback=cb2,
     )
