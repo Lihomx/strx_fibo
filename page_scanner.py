@@ -3,6 +3,7 @@ page_scanner.py — 实时扫描（支持 20 组分批扫描 + 自定义品种 +
 """
 import pandas as pd
 import streamlit as st
+from pathlib import Path
 
 import storage
 import scanner as sc
@@ -44,6 +45,9 @@ def render():
     # ── 自定义品种扫描区 ────────────────────────────────────────────
     with st.expander("🔎 自定义品种扫描（输入单个品种代码）", expanded=False):
         _render_custom_scan(cfg)
+
+    with st.expander("📂 从 Doc/symbol 批量扫描（支持仅月图）", expanded=False):
+        _render_symbol_path_scan(cfg)
 
     # ── 工具栏 ──────────────────────────────────────────────────────
     col_kw, col_tf, col_cat, col_zone, col_sort = st.columns([3, 2, 2, 2, 2])
@@ -497,6 +501,91 @@ def _suggest_corrections(raw: str) -> list[dict]:
     return suggestions[:5]
 
 
+_SCAN_TF_OPTIONS = ["Daily", "Weekly", "Monthly"]
+
+
+def _normalize_scan_timeframes(selected) -> list[str]:
+    tf_names = [t for t in (selected or _SCAN_TF_OPTIONS) if t in TIMEFRAMES]
+    if not tf_names:
+        tf_names = list(TIMEFRAMES.keys())
+    return tf_names
+
+
+def _resolve_symbol_token(token: str) -> tuple[str, tuple[str, str]] | None:
+    key = token.strip()
+    if not key:
+        return None
+
+    upper = key.upper()
+    if upper in ASSETS:
+        return upper, ASSETS[upper]
+
+    # exact name match in assets
+    for tk, (nm, cat) in ASSETS.items():
+        if nm.strip().lower() == key.lower():
+            return tk, (nm, cat)
+
+    # alias fallback
+    alias_match = _NAME_ALIAS.get(key) or _NAME_ALIAS.get(upper)
+    if alias_match:
+        tk = alias_match[0].upper()
+        if tk in ASSETS:
+            return tk, ASSETS[tk]
+        return tk, (alias_match[1], "custom")
+
+    # correction fallback
+    suggestions = _suggest_corrections(key)
+    if suggestions:
+        tk = suggestions[0].get("ticker", "").upper()
+        if tk:
+            if tk in ASSETS:
+                return tk, ASSETS[tk]
+            return tk, (suggestions[0].get("name") or tk, "custom")
+    return None
+
+
+def _load_symbols_assets_from_path(path_text: str) -> tuple[dict, list[str]]:
+    p = Path(path_text).expanduser()
+    if not p.exists():
+        raise FileNotFoundError(f"路径不存在：{p}")
+
+    files: list[Path] = []
+    if p.is_file():
+        files = [p]
+    else:
+        for ext in ("*.txt", "*.csv", "*.list"):
+            files.extend(sorted(p.glob(ext)))
+    if not files:
+        raise ValueError("未找到可读取的 symbol 文件（支持 .txt/.csv/.list）")
+
+    assets_map: dict[str, tuple[str, str]] = {}
+    unresolved: list[str] = []
+
+    for file in files:
+        text = file.read_text(encoding="utf-8", errors="ignore")
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+
+            token = line
+            if "," in token:
+                token = token.split(",", 1)[0].strip()
+            if "\t" in token:
+                token = token.split("\t", 1)[0].strip()
+            if not token:
+                continue
+
+            resolved = _resolve_symbol_token(token)
+            if resolved:
+                tk, meta = resolved
+                assets_map[tk] = meta
+            else:
+                unresolved.append(token)
+
+    return assets_map, unresolved
+
+
 def _try_fetch_ticker(ticker: str) -> bool:
     """尝试用 yfinance 获取该 ticker 最近1条数据，判断是否有效。"""
     try:
@@ -548,6 +637,15 @@ def _render_custom_scan(cfg):
         st.markdown("<br>", unsafe_allow_html=True)
         do_custom = st.button("🔍 立即扫描", type="primary",
                               width="stretch", key="custom_scan_btn")
+
+    tf_selected = st.multiselect(
+        "扫描周期",
+        options=_SCAN_TF_OPTIONS,
+        default=st.session_state.get("custom_scan_tfs", _SCAN_TF_OPTIONS),
+        key="custom_scan_tfs",
+        help="可只选择 Monthly 实现仅月图扫描",
+    )
+    tf_names = _normalize_scan_timeframes(tf_selected)
 
     # 自动触发扫描（来自"建议代码"按钮或"扫描 XX.SS"按钮点击）
     _auto_trig = st.session_state.pop("_auto_scan_trigger", None)
@@ -665,6 +763,7 @@ def _render_custom_scan(cfg):
             cfg=cfg,
             assets=custom_assets,
             note=f"custom:{final_ticker}",
+            timeframe_names=tf_names,
             progress_callback=cb,
         )
 
@@ -702,6 +801,71 @@ def _render_custom_scan(cfg):
     else:
         st.caption(f"✅ {display_name} 已在您的自选收藏中")
 
+    st.rerun()
+
+
+def _render_symbol_path_scan(cfg):
+    st.caption("支持读取文件或目录（.txt/.csv/.list），每行一个 ticker 或品种名称。")
+    tf_selected = st.multiselect(
+        "文件扫描周期",
+        options=_SCAN_TF_OPTIONS,
+        default=st.session_state.get("symbol_file_scan_tfs", _SCAN_TF_OPTIONS),
+        key="symbol_file_scan_tfs",
+        help="可只选择 Monthly 实现仅月图扫描",
+    )
+    tf_names = _normalize_scan_timeframes(tf_selected)
+
+    path_text = st.text_input(
+        "symbol 文件路径",
+        value=st.session_state.get("symbol_file_path", r"D:\Google\strxfibo\Doc\symbol"),
+        key="symbol_file_path",
+        placeholder=r"D:\Google\strxfibo\Doc\symbol",
+    ).strip()
+
+    do_file_scan = st.button("📂 扫描该路径中的品种", key="scan_from_symbol_path", type="primary")
+    if not do_file_scan:
+        return
+
+    try:
+        file_assets, unresolved = _load_symbols_assets_from_path(path_text)
+    except Exception as e:
+        st.error(f"读取失败：{e}")
+        return
+
+    if not file_assets:
+        st.warning("未解析到有效品种，请检查文件内容。")
+        if unresolved:
+            st.caption("未识别条目示例: " + "、".join(unresolved[:10]))
+        return
+
+    st.info(f"将扫描 {len(file_assets)} 个品种，周期：{' / '.join(tf_names)}")
+    pb = st.progress(0, "准备扫描…")
+    msg = st.empty()
+
+    def cb2(pct, text):
+        pb.progress(min(float(pct), 1.0), text)
+        msg.caption(text)
+
+    summary2, err2 = sc.run_full_scan(
+        cfg=cfg,
+        assets=file_assets,
+        note=f"file:{path_text}",
+        timeframe_names=tf_names,
+        progress_callback=cb2,
+    )
+    pb.empty()
+    msg.empty()
+
+    if err2:
+        st.error(f"文件扫描失败: {err2}")
+        return
+    st.success(
+        f"文件扫描完成：{summary2.get('asset_count', len(file_assets))} 个品种，"
+        f"黄金区 {summary2.get('inzone_count', 0)}，"
+        f"周期 {' / '.join(summary2.get('timeframes', tf_names))}"
+    )
+    if unresolved:
+        st.caption("未识别条目: " + "、".join(unresolved[:20]))
     st.rerun()
 
 
@@ -864,7 +1028,15 @@ def _render_batch_selector(cfg):
     sel_assets: dict = {}
     for g in sel_list:
         sel_assets.update(ASSET_GROUPS[g])
-    checks = len(sel_assets) * 3
+    tf_selected = st.multiselect(
+        "批量扫描周期",
+        options=_SCAN_TF_OPTIONS,
+        default=st.session_state.get("batch_scan_tfs", _SCAN_TF_OPTIONS),
+        key="batch_scan_tfs",
+        help="可只选择 Monthly 实现仅月图扫描",
+    )
+    tf_names = _normalize_scan_timeframes(tf_selected)
+    checks = len(sel_assets) * len(tf_names)
 
     scanned_list = storage.load_scanned_groups()
     already   = [g for g in sel_list if g in scanned_list]
@@ -876,6 +1048,7 @@ def _render_batch_selector(cfg):
             st.markdown(
                 f"**已选：{len(sel_list)} 组 · {len(sel_assets)} 个品种 · {checks} 次检查**"
             )
+            st.caption(f"周期：{' / '.join(tf_names) if tf_names else '未选择'}")
             if already:
                 st.caption(
                     f"✅ 已缓存（可跳过）：{'、'.join(g.split(' - ')[-1] for g in already[:5])}"
@@ -894,10 +1067,13 @@ def _render_batch_selector(cfg):
             f"🚀 扫描选中 {len(sel_assets)} 品种" if sel_assets else "🚀 扫描（请先选择组）",
             type="primary",
             use_container_width=True,
-            disabled=(len(sel_assets) == 0),   # 未选时置灰，但按钮始终可见
+            disabled=(len(sel_assets) == 0 or len(tf_names) == 0),   # 未选时置灰，但按钮始终可见
         )
 
-    if do_scan and sel_assets:
+    if sel_assets and not tf_names:
+        st.warning("请至少选择一个扫描周期。")
+
+    if do_scan and sel_assets and tf_names:
         # ── 进度显示区：进度条 + 实时状态文字 ──────────────────
         pb      = st.progress(0.0, "🚀 启动扫描引擎…")
         msg     = st.empty()
@@ -941,6 +1117,7 @@ def _render_batch_selector(cfg):
             cfg=cfg,
             assets=sel_assets,
             note=f"batch:{group_label}",
+            timeframe_names=tf_names,
             progress_callback=cb,
         )
 
@@ -966,6 +1143,7 @@ def _render_batch_selector(cfg):
                 f"</span></div>",
                 unsafe_allow_html=True,
             )
+            st.caption(f"本次周期：{' / '.join(summary.get('timeframes', tf_names))}")
             st.rerun()
 
 

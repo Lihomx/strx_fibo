@@ -570,12 +570,18 @@ def _fetch_ticker_all_tfs(
     zone_hi: float,
     session_id: str,
     scan_date: str,
+    timeframe_names: Optional[List[str]] = None,
 ) -> List[Dict]:
     """抓取一个品种的3个时间框架数据并计算 Fibo，返回3行结果。
     设计为线程安全：不写全局状态，只返回数据。
     """
+    tf_names = [t for t in (timeframe_names or list(TIMEFRAMES.keys())) if t in TIMEFRAMES]
+    if not tf_names:
+        tf_names = list(TIMEFRAMES.keys())
+
     tf_results: Dict[str, Optional[Dict]] = {}
-    for tf_name, (interval, period) in TIMEFRAMES.items():
+    for tf_name in tf_names:
+        interval, period = TIMEFRAMES[tf_name]
         try:
             df   = fetch_data(ticker, interval, period, cfg)
             fibo = compute_fibo(df, lookback, zone_lo, zone_hi)
@@ -586,7 +592,7 @@ def _fetch_ticker_all_tfs(
 
     conf = confluence_score(tf_results)
     rows = []
-    for tf_name in TIMEFRAMES:
+    for tf_name in tf_names:
         fibo = tf_results.get(tf_name)
         rows.append({
             "session_id":       session_id,
@@ -619,6 +625,7 @@ def run_full_scan(
     cfg:               Optional[Dict]     = None,
     assets:            Optional[Dict]     = None,
     note:              str                = "manual",
+    timeframe_names:   Optional[List[str]] = None,
     progress_callback: Optional[Callable] = None,
 ) -> Tuple[Optional[Dict], Optional[str]]:
     """
@@ -633,6 +640,9 @@ def run_full_scan(
 
     cfg    = cfg    or storage.load_config()
     assets = assets or ASSETS
+    tf_names = [t for t in (timeframe_names or list(TIMEFRAMES.keys())) if t in TIMEFRAMES]
+    if not tf_names:
+        tf_names = list(TIMEFRAMES.keys())
 
     lookback = int(cfg.get("lookback", 100))
     zone_lo  = float(cfg.get("fibo_low",  0.5))
@@ -662,6 +672,7 @@ def run_full_scan(
             ticker, name, category, cfg,
             lookback, zone_lo, zone_hi,
             session_id, scan_date,
+            timeframe_names=tf_names,
         )
 
     asset_items = list(assets.items())
@@ -744,7 +755,7 @@ def run_full_scan(
     # 三框架共振：同一 ticker 的3个 tf 都在黄金区
     triple_conf  = sum(
         1 for t in assets
-        if sum(1 for r in all_rows if r["ticker"] == t and r["in_zone"]) == 3
+        if sum(1 for r in all_rows if r["ticker"] == t and r["in_zone"]) == len(tf_names)
     )
 
     session_row = {
@@ -758,6 +769,7 @@ def run_full_scan(
         "data_source":  cfg.get("data_source", "auto"),
         "note":         note,
         "asset_count":  len(assets),
+        "timeframes":   tf_names,
     }
 
     # 写会话日志（不重复写 allres，_flush_rows 已经写过了）
@@ -808,4 +820,5 @@ def run_full_scan(
         "triple_conf":  triple_conf,
         "elapsed_ms":   elapsed_ms,
         "asset_count":  len(assets),
+        "timeframes":   tf_names,
     }, None
