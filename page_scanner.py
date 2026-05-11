@@ -914,6 +914,16 @@ def _render_batch_selector(cfg):
         unsafe_allow_html=True,
     )
 
+    st.markdown("**📅 批量扫描周期（可只选 Monthly）**")
+    tf_selected = st.multiselect(
+        "批量扫描周期",
+        options=_SCAN_TF_OPTIONS,
+        default=st.session_state.get("batch_scan_tfs", _SCAN_TF_OPTIONS),
+        key="batch_scan_tfs",
+        help="可只选择 Monthly 实现仅月图扫描",
+    )
+    tf_names = _normalize_scan_timeframes(tf_selected)
+
     # ── 快捷选择按钮 ─────────────────────────────────────────────
     _QUICK = [
         ("☑️ 全选",      lambda g: True),
@@ -1028,14 +1038,6 @@ def _render_batch_selector(cfg):
     sel_assets: dict = {}
     for g in sel_list:
         sel_assets.update(ASSET_GROUPS[g])
-    tf_selected = st.multiselect(
-        "批量扫描周期",
-        options=_SCAN_TF_OPTIONS,
-        default=st.session_state.get("batch_scan_tfs", _SCAN_TF_OPTIONS),
-        key="batch_scan_tfs",
-        help="可只选择 Monthly 实现仅月图扫描",
-    )
-    tf_names = _normalize_scan_timeframes(tf_selected)
     checks = len(sel_assets) * len(tf_names)
 
     scanned_list = storage.load_scanned_groups()
