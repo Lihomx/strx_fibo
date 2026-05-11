@@ -37,6 +37,9 @@ def _cat_label(cat: str) -> str:
 def render():
     st.markdown("## 📊 Fibonacci 实时扫描")
     cfg = storage.load_config()
+    restored_msg = st.session_state.pop("_scanner_restore_notice", "")
+    if restored_msg:
+        st.success(restored_msg)
 
     # ── 分批扫描控制区 ──────────────────────────────────────────────
     with st.expander("📦 选择扫描批次（点击展开/收起）", expanded=True):

@@ -23,10 +23,12 @@ F_RES     = os.path.join(_BASE, "data_results.json")
 F_ALLRES  = os.path.join(_BASE, "data_allresults.json")
 F_ALERTS  = os.path.join(_BASE, "data_alerts.json")
 F_GROUPS  = os.path.join(_BASE, "data_groups.json")
+F_SCAN_SNAPSHOT_DIR = os.path.join(_BASE, "scan_snapshots")
 
 _MAX_HIST   = 50
 _MAX_ALERTS = 200
 _MAX_ALLRES = 5000   # 所有品种×框架合并缓存上限
+_MAX_SCAN_SNAPSHOTS = 200
 
 # ── 备份目录 ─────────────────────────────────────────────────────────
 _BACKUP_DIR = os.path.join(_BASE, "backups")
@@ -34,6 +36,10 @@ _BACKUP_DIR = os.path.join(_BASE, "backups")
 
 def _ensure_backup_dir():
     os.makedirs(_BACKUP_DIR, exist_ok=True)
+
+
+def _ensure_scan_snapshot_dir():
+    os.makedirs(F_SCAN_SNAPSHOT_DIR, exist_ok=True)
 
 
 # ── 通用 IO ──────────────────────────────────────────────────────────
@@ -184,6 +190,10 @@ def load_latest_results(inzone_only: bool = False) -> List[Dict]:
 
 def load_session_results(session_id: str) -> List[Dict]:
     """读取全量缓存中属于特定会话的记录"""
+    snap_rows = load_scan_snapshot_rows(session_id)
+    if snap_rows:
+        return snap_rows
+
     allres = _load(F_ALLRES, [])
     if not isinstance(allres, list):
         allres = []
@@ -197,6 +207,100 @@ def load_session_results(session_id: str) -> List[Dict]:
         filtered = [r for r in results
                     if isinstance(r, dict) and r.get("session_id") == session_id]
     return filtered
+
+
+def _scan_snapshot_file(session_id: str) -> str:
+    sid = "".join(ch for ch in str(session_id) if ch.isalnum() or ch in ("_", "-"))
+    return os.path.join(F_SCAN_SNAPSHOT_DIR, f"{sid}.json")
+
+
+def save_scan_snapshot(session_row: Dict, result_rows: List[Dict]) -> bool:
+    """按 session 保存完整扫描明细快照，支持后续一键恢复。"""
+    sid = session_row.get("session_id")
+    if not sid:
+        return False
+    try:
+        _ensure_scan_snapshot_dir()
+        payload = {
+            "meta": dict(session_row or {}),
+            "rows": [r for r in (result_rows or []) if isinstance(r, dict)],
+            "saved_at": _now_str(),
+        }
+        ok = _save(_scan_snapshot_file(sid), payload)
+        if not ok:
+            return False
+
+        # 清理旧快照，最多保留 _MAX_SCAN_SNAPSHOTS 个
+        snaps = []
+        for fname in os.listdir(F_SCAN_SNAPSHOT_DIR):
+            if not fname.endswith(".json"):
+                continue
+            fpath = os.path.join(F_SCAN_SNAPSHOT_DIR, fname)
+            try:
+                mtime = os.path.getmtime(fpath)
+            except Exception:
+                mtime = 0
+            snaps.append((mtime, fpath))
+        snaps.sort(reverse=True)
+        for _, old_path in snaps[_MAX_SCAN_SNAPSHOTS:]:
+            try:
+                os.remove(old_path)
+            except Exception:
+                pass
+        return True
+    except Exception:
+        return False
+
+
+def load_scan_snapshot_rows(session_id: str) -> List[Dict]:
+    """读取某次扫描的完整快照明细（若存在）。"""
+    try:
+        fp = _scan_snapshot_file(session_id)
+        if not os.path.exists(fp):
+            return []
+        data = _load(fp, {})
+        rows = data.get("rows", []) if isinstance(data, dict) else []
+        if not isinstance(rows, list):
+            return []
+        return [r for r in rows if isinstance(r, dict) and r.get("ticker")]
+    except Exception:
+        return []
+
+
+def has_scan_snapshot(session_id: str) -> bool:
+    try:
+        return os.path.exists(_scan_snapshot_file(session_id))
+    except Exception:
+        return False
+
+
+def restore_scan_snapshot(session_id: str, replace_allres: bool = True) -> tuple:
+    """恢复某次扫描快照到当前监控面板数据。"""
+    rows = load_scan_snapshot_rows(session_id)
+    if not rows:
+        return False, "未找到该批次快照或快照为空", 0
+
+    ok_res = _save(F_RES, rows)
+    if not ok_res:
+        return False, "写入当前结果失败", 0
+
+    if replace_allres:
+        ok_all = _save(F_ALLRES, rows)
+    else:
+        allres = _load(F_ALLRES, [])
+        if not isinstance(allres, list):
+            allres = []
+        existing = {(r.get("ticker"), r.get("timeframe")): r for r in allres if isinstance(r, dict)}
+        for r in rows:
+            existing[(r.get("ticker"), r.get("timeframe"))] = r
+        merged = list(existing.values())
+        if len(merged) > _MAX_ALLRES:
+            merged = merged[-_MAX_ALLRES:]
+        ok_all = _save(F_ALLRES, merged)
+    if not ok_all:
+        return False, "写入全量缓存失败", 0
+
+    return True, "恢复成功", len(rows)
 
 
 def has_scan_data() -> bool:

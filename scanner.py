@@ -785,6 +785,11 @@ def run_full_scan(
     except Exception as e:
         logger.warning(f"save session: {e}")
 
+    try:
+        storage.save_scan_snapshot(session_row, all_rows)
+    except Exception as e:
+        logger.warning(f"save snapshot: {e}")
+
     # ── 告警发送 ──────────────────────────────────────────────
     try:
         for ticker, (name, _) in assets.items():
