@@ -584,13 +584,27 @@ def _resolve_symbol_input_path(path_text: str) -> Path:
     raise FileNotFoundError(f"路径不存在：{raw}（尝试：{tried}）")
 
 
-def _parse_symbol_text(text: str) -> tuple[dict, list[str]]:
+def _parse_symbol_text(text: str) -> tuple[dict, list[str], dict]:
     assets_map: dict[str, tuple[str, str]] = {}
     unresolved: list[str] = []
+    seen_tokens: set[str] = set()
+    stats = {
+        "total_lines": 0,
+        "blank_or_comment": 0,
+        "parsed_tokens": 0,
+        "duplicate_tokens": 0,
+        "resolved_hits": 0,
+        "duplicate_ticker_overwrites": 0,
+        "unresolved_count": 0,
+        "unique_tickers": 0,
+        "source_files": 1,
+    }
 
     for raw in text.splitlines():
+        stats["total_lines"] += 1
         line = raw.strip()
         if not line or line.startswith("#"):
+            stats["blank_or_comment"] += 1
             continue
 
         token = line
@@ -599,19 +613,31 @@ def _parse_symbol_text(text: str) -> tuple[dict, list[str]]:
         if "\t" in token:
             token = token.split("\t", 1)[0].strip()
         if not token:
+            stats["blank_or_comment"] += 1
             continue
+
+        stats["parsed_tokens"] += 1
+        if token in seen_tokens:
+            stats["duplicate_tokens"] += 1
+        else:
+            seen_tokens.add(token)
 
         resolved = _resolve_symbol_token(token)
         if resolved:
+            stats["resolved_hits"] += 1
             tk, meta = resolved
+            if tk in assets_map:
+                stats["duplicate_ticker_overwrites"] += 1
             assets_map[tk] = meta
         else:
             unresolved.append(token)
 
-    return assets_map, unresolved
+    stats["unresolved_count"] = len(unresolved)
+    stats["unique_tickers"] = len(assets_map)
+    return assets_map, unresolved, stats
 
 
-def _load_symbols_assets_from_path(path_text: str) -> tuple[dict, list[str]]:
+def _load_symbols_assets_from_path(path_text: str) -> tuple[dict, list[str], dict]:
     p = _resolve_symbol_input_path(path_text)
 
     files: list[Path] = []
@@ -625,14 +651,36 @@ def _load_symbols_assets_from_path(path_text: str) -> tuple[dict, list[str]]:
 
     assets_map: dict[str, tuple[str, str]] = {}
     unresolved: list[str] = []
+    merged_stats = {
+        "total_lines": 0,
+        "blank_or_comment": 0,
+        "parsed_tokens": 0,
+        "duplicate_tokens": 0,
+        "resolved_hits": 0,
+        "duplicate_ticker_overwrites": 0,
+        "unresolved_count": 0,
+        "unique_tickers": 0,
+        "source_files": len(files),
+    }
 
     for file in files:
         text = file.read_text(encoding="utf-8", errors="ignore")
-        parsed_assets, parsed_unresolved = _parse_symbol_text(text)
+        parsed_assets, parsed_unresolved, part_stats = _parse_symbol_text(text)
+        cross_file_dup = len(set(assets_map.keys()) & set(parsed_assets.keys()))
         assets_map.update(parsed_assets)
         unresolved.extend(parsed_unresolved)
+        merged_stats["total_lines"] += part_stats["total_lines"]
+        merged_stats["blank_or_comment"] += part_stats["blank_or_comment"]
+        merged_stats["parsed_tokens"] += part_stats["parsed_tokens"]
+        merged_stats["duplicate_tokens"] += part_stats["duplicate_tokens"]
+        merged_stats["resolved_hits"] += part_stats["resolved_hits"]
+        merged_stats["duplicate_ticker_overwrites"] += (
+            part_stats["duplicate_ticker_overwrites"] + cross_file_dup
+        )
+        merged_stats["unresolved_count"] += part_stats["unresolved_count"]
 
-    return assets_map, unresolved
+    merged_stats["unique_tickers"] = len(assets_map)
+    return assets_map, unresolved, merged_stats
 
 
 def _try_fetch_ticker(ticker: str) -> bool:
@@ -891,18 +939,19 @@ def _render_symbol_path_scan(cfg):
 
     file_assets: dict[str, tuple[str, str]] = {}
     unresolved: list[str] = []
+    parse_stats = None
     source_label = ""
 
     if uploaded is not None:
         text = uploaded.getvalue().decode("utf-8", errors="ignore")
-        file_assets, unresolved = _parse_symbol_text(text)
+        file_assets, unresolved, parse_stats = _parse_symbol_text(text)
         source_label = f"upload:{uploaded.name}"
     elif pasted_symbols:
-        file_assets, unresolved = _parse_symbol_text(pasted_symbols)
+        file_assets, unresolved, parse_stats = _parse_symbol_text(pasted_symbols)
         source_label = "paste"
     else:
         try:
-            file_assets, unresolved = _load_symbols_assets_from_path(path_text)
+            file_assets, unresolved, parse_stats = _load_symbols_assets_from_path(path_text)
             source_label = f"path:{path_text}"
         except Exception as e:
             st.error(f"读取失败：{e}")
@@ -917,11 +966,23 @@ def _render_symbol_path_scan(cfg):
 
     if not file_assets:
         st.warning("未解析到有效品种，请检查文件内容。")
+        if parse_stats:
+            st.caption(
+                f"解析统计：总行 {parse_stats['total_lines']} | 可解析行 {parse_stats['parsed_tokens']} | "
+                f"空行/注释 {parse_stats['blank_or_comment']} | 未识别 {parse_stats['unresolved_count']}"
+            )
         if unresolved:
             st.caption("未识别条目示例: " + "、".join(unresolved[:10]))
         return
 
     st.info(f"将扫描 {len(file_assets)} 个品种，周期：{' / '.join(tf_names)}")
+    if parse_stats:
+        st.caption(
+            f"解析统计：总行 {parse_stats['total_lines']} | 可解析行 {parse_stats['parsed_tokens']} | "
+            f"空行/注释 {parse_stats['blank_or_comment']} | 重复行 {parse_stats['duplicate_tokens']} | "
+            f"识别成功 {parse_stats['resolved_hits']} | 去重覆盖 {parse_stats['duplicate_ticker_overwrites']} | "
+            f"未识别 {parse_stats['unresolved_count']} | 最终唯一品种 {parse_stats['unique_tickers']}"
+        )
     pb = st.progress(0, "准备扫描…")
     msg = st.empty()
 
