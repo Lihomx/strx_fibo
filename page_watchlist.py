@@ -10,6 +10,7 @@ page_watchlist.py — 自选收藏夹 v7
 
 from datetime import date
 from html import escape as _he
+import re
 import streamlit as st
 import streamlit.components.v1 as _components
 import storage
@@ -35,6 +36,34 @@ def _sina_link(ticker: str):
         if t.startswith("0") or t.startswith("3") or t.startswith("2"):
             return f"https://finance.sina.com.cn/realstock/company/sz{t}/nc.shtml"
     return None
+
+def _row_anchor_id(ticker: str) -> str:
+    safe = re.sub(r"[^0-9A-Za-z_-]", "_", str(ticker).upper())
+    return f"wl_row_{safe}"
+
+def _remember_focus_row(ticker: str):
+    st.session_state["_wl_focus_anchor"] = _row_anchor_id(ticker)
+
+def _restore_focus_row_if_needed():
+    anchor = st.session_state.pop("_wl_focus_anchor", None)
+    if not anchor:
+        return
+    anchor = str(anchor).replace('"', "").replace("'", "")
+    _components.html(
+        f"""
+        <script>
+        setTimeout(function() {{
+          try {{
+            const el = parent.document.getElementById("{anchor}");
+            if (el) {{
+              el.scrollIntoView({{behavior: "instant", block: "center"}});
+            }}
+          }} catch (e) {{}}
+        }}, 40);
+        </script>
+        """,
+        height=0,
+    )
 
 def _get_viewed() -> set:
     return storage.load_viewed_today()
@@ -184,16 +213,6 @@ def render():
 
 # ══════════════════════════════════════════════════════════════════════
 def _render_main():
-    # ── 待跳转 TV URL：rerun 后在页面顶部注入 window.open ──────────
-    _pending = st.session_state.pop("_pending_tv_url", None)
-    if _pending:
-        import streamlit.components.v1 as _cv1
-        _safe = _pending.replace('"', '%22').replace("'", "%27")
-        _cv1.html(
-            f'<script>window.open("{_safe}", "_blank");</script>',
-            height=0,
-        )
-
     items      = storage.load_watchlist()
     cats       = storage.load_wl_categories()
     result_map = _cached_result_map()
@@ -252,7 +271,6 @@ def _render_main():
     with tc3:
         if st.button("⚙️ 管理分类", key="wl_go_cats_btn", use_container_width=True):
             st.session_state["_wl_go_cats"] = True
-            st.rerun()
     with tc4:
         if st.button("🗑️ 清空", key="wl_clear_all", use_container_width=True):
             st.session_state["wl_confirm_clear"] = True
@@ -264,11 +282,9 @@ def _render_main():
             if st.button("确认清空", key="wl_clear_yes", type="primary"):
                 for item in items: storage.remove_from_watchlist(item["ticker"])
                 st.session_state["wl_confirm_clear"] = False
-                st.rerun()
         with cc2:
             if st.button("取消", key="wl_clear_no"):
                 st.session_state["wl_confirm_clear"] = False
-                st.rerun()
 
     # ── 过滤 ────────────────────────────────────────────────────
     q        = search.strip().upper()
@@ -352,6 +368,7 @@ def _render_main():
     st.download_button("⬇️ 导出收藏夹 CSV", csv,
                        file_name="strx_watchlist.csv", mime="text/csv",
                        key="wl_dl")
+    _restore_focus_row_if_needed()
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -364,6 +381,7 @@ def _render_item_row(item, result_map, cats, viewed_set):
     latest  = _latest_note(item)
     tv_link   = _tv_link(ticker)
     sina_link = _sina_link(ticker)
+    st.markdown(f'<div id="{_row_anchor_id(ticker)}"></div>', unsafe_allow_html=True)
 
     if viewed:
         row_style = "background:#f0fdf4;border:1px solid #bbf7d0;opacity:0.85;"
@@ -450,7 +468,6 @@ def _render_item_row(item, result_map, cats, viewed_set):
         ):
             st.session_state[_edit_key] = True
             st.session_state[_val_key]  = name
-            st.rerun()
 
     if sina_link:
         bc1, bc2, bc3, bc4, bc5, bc6 = st.columns([1, 1, 1, 1, 1, 4])
@@ -461,43 +478,47 @@ def _render_item_row(item, result_map, cats, viewed_set):
         if st.button("✅" if viewed else "👁️",
                      key=f"wl_v_{ticker}",
                      help="取消已看" if viewed else "标记已看"):
+            _remember_focus_row(ticker)
             if viewed: _unmark_viewed(ticker)
             else:      _mark_viewed(ticker)
-            st.rerun()
     with bc2:
-        if st.button("📈", key=f"wl_tv_{ticker}",
-                     help="打开 TradingView（自动标记已看）"):
-            _mark_viewed(ticker)
-            st.session_state["_pending_tv_url"] = tv_link
-            st.rerun()
+        st.link_button(
+            "📈",
+            tv_link,
+            help="打开 TradingView（极速直连，不触发页面重载）",
+            use_container_width=True,
+        )
     if sina_link:
         with bc3:
-            if st.button("🏦", key=f"wl_sina_{ticker}", help="新浪财经"):
-                st.session_state["_pending_tv_url"] = sina_link
-                st.rerun()
+            st.link_button(
+                "🏦",
+                sina_link,
+                help="打开新浪财经（极速直连，不触发页面重载）",
+                use_container_width=True,
+            )
         with bc4:
             if st.button("🔓" if pinned else "📌",
                          key=f"wl_pin_{ticker}", help="置顶/取消"):
+                _remember_focus_row(ticker)
                 storage.toggle_pin_watchlist(ticker)
-                st.rerun()
         with bc5:
             if st.button("🗑", key=f"wl_del_{ticker}", help="删除（移入存档）"):
+                _remember_focus_row(ticker)
                 storage.remove_from_watchlist(ticker)
                 st.toast(f"已移入存档：{ticker}", icon="🗂️")
-                st.rerun()
         with bc6:
             _render_inline_controls(item, ticker, cats)
     else:
         with bc3:
             if st.button("🔓" if pinned else "📌",
                          key=f"wl_pin_{ticker}", help="置顶/取消"):
+                _remember_focus_row(ticker)
                 storage.toggle_pin_watchlist(ticker)
-                st.rerun()
         with bc4:
             if st.button("🗑", key=f"wl_del_{ticker}", help="删除（移入存档）"):
+                _remember_focus_row(ticker)
                 storage.remove_from_watchlist(ticker)
                 st.toast(f"已移入存档：{ticker}", icon="🗂️")
-                st.rerun()
         with bc5:
             _render_inline_controls(item, ticker, cats)
 
@@ -525,17 +546,17 @@ def _render_inline_controls(item, ticker, cats):
 
     with cc[0]:
         if st.button("🏷️", key=f"wl_cat_btn_{ticker}", help="设置分类"):
+            _remember_focus_row(ticker)
             k = f"wl_cat_open_{ticker}"
             st.session_state[k] = not st.session_state.get(k, False)
             if st.session_state[k]:
                 st.session_state[f"wl_cat_init_{ticker}"] = True
-            st.rerun()
 
     with cc[1]:
         if st.button("✏️", key=f"wl_note_btn_{ticker}", help="添加备注"):
+            _remember_focus_row(ticker)
             k = f"wl_note_open_{ticker}"
             st.session_state[k] = not st.session_state.get(k, False)
-            st.rerun()
 
     with cc[2]:
         notes = _all_notes(item)
@@ -544,8 +565,8 @@ def _render_inline_controls(item, ticker, cats):
             btn_label = "📋▲" if hist_open else f"📋({len(notes)})"
             if st.button(btn_label, key=f"wl_hist_btn_{ticker}",
                          help="收起备注" if hist_open else f"展开备注({len(notes)})"):
+                _remember_focus_row(ticker)
                 st.session_state[f"wl_hist_open_{ticker}"] = not hist_open
-                st.rerun()
 
     # ── 设置分类面板 ──────────────────────────────────────────────
     if st.session_state.get(f"wl_cat_open_{ticker}"):
@@ -582,17 +603,17 @@ def _render_inline_controls(item, ticker, cats):
             sc1, sc2 = st.columns(2)
             with sc1:
                 if st.button("💾 保存分类", key=f"wl_cat_save_{ticker}", type="primary"):
+                    _remember_focus_row(ticker)
                     storage.set_watchlist_item_category(
                         ticker, None if chosen == "__UNCAT__" else chosen)
                     st.session_state.pop(f"wl_cat_open_{ticker}", None)
                     st.session_state.pop(_sel_key, None)
                     st.toast(f"已设置：{_as_names.get(chosen, '')}", icon="🏷️")
-                    st.rerun()
             with sc2:
                 if st.button("取消", key=f"wl_cat_cancel_{ticker}"):
+                    _remember_focus_row(ticker)
                     st.session_state.pop(f"wl_cat_open_{ticker}", None)
                     st.session_state.pop(_sel_key, None)
-                    st.rerun()
 
     # ── 添加备注面板 ──────────────────────────────────────────────
     with st.container():
@@ -605,17 +626,17 @@ def _render_inline_controls(item, ticker, cats):
                 sn1, sn2 = st.columns(2)
                 with sn1:
                     if st.button("💾 保存备注", key=f"wl_note_save_{ticker}", type="primary"):
+                        _remember_focus_row(ticker)
                         if not new_text.strip():
                             st.warning("备注不能为空")
                         else:
                             storage.add_watchlist_note(ticker, new_text.strip(), new_img)
                             st.session_state.pop(f"wl_note_open_{ticker}", None)
                             st.toast(f"备注已保存：{ticker}", icon="📝")
-                            st.rerun()
                 with sn2:
                     if st.button("取消", key=f"wl_note_cancel_{ticker}"):
+                        _remember_focus_row(ticker)
                         st.session_state.pop(f"wl_note_open_{ticker}", None)
-                        st.rerun()
 
     if st.session_state.get(f"wl_hist_open_{ticker}", True):
         notes = _all_notes(item)
@@ -719,7 +740,6 @@ def _render_add_form():
                           _prev_key, _fetched_key]:
                     st.session_state.pop(k, None)
                 _cached_result_map.clear()
-                st.rerun()
             else:
                 st.warning(f"⚠️ {new_ticker} 已在收藏夹中")
 
@@ -745,7 +765,6 @@ def _render_add_form():
             st.info(f"跳过：{', '.join(skipped)}")
         if added:
             _cached_result_map.clear()
-            st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -787,7 +806,6 @@ def _render_categories():
                 storage.add_wl_category(new_cat_name.strip(), parent_id=_par)
                 st.session_state.pop("wl_new_cat_name", None)
                 st.toast(f"✅ 已创建：{new_cat_name.strip()}", icon="🏷️")
-                st.rerun()
 
     cats = storage.load_wl_categories()
     if not cats:
@@ -821,15 +839,12 @@ def _render_categories():
                     if new_name.strip() and new_name.strip() != node["name"]:
                         storage.rename_wl_category(node["id"], new_name.strip())
                         st.toast(f"已重命名：{new_name.strip()}", icon="✏️")
-                        st.rerun()
             with ec3:
                 if st.button("⬆️", key=f"wl_cat_up_{node['id']}", help="上移"):
                     storage.move_wl_category(node["id"], -1)
-                    st.rerun()
             with ec4:
                 if st.button("🗑", key=f"wl_cat_del_{node['id']}", help="删除"):
                     st.session_state[f"_del_cat_confirm_{node['id']}"] = True
-                    st.rerun()
 
             if st.session_state.get(f"_del_cat_confirm_{node['id']}"):
                 st.error(f"确认删除「{node['name']}」？品种将变为未分类。")
@@ -841,11 +856,9 @@ def _render_categories():
                         storage.delete_wl_category(node["id"])
                         st.session_state.pop(f"_del_cat_confirm_{node['id']}", None)
                         st.toast(f"已删除：{node['name']}", icon="🗑️")
-                        st.rerun()
                 with dd2:
                     if st.button("取消", key=f"wl_cat_del_no_{node['id']}"):
                         st.session_state.pop(f"_del_cat_confirm_{node['id']}", None)
-                        st.rerun()
 
             if node.get("children"):
                 for child in sorted(node["children"], key=lambda x: x.get("order",0)):
@@ -879,7 +892,6 @@ def _render_categories():
                 storage.set_watchlist_item_category(
                     tk, None if target_cat == "__UNCAT__" else target_cat)
             st.toast(f"✅ 已为 {len(selected_tickers)} 个品种设置分类", icon="🏷️")
-            st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -906,14 +918,12 @@ def _render_archive():
             if st.button("♻️ 恢复", key=f"arc_restore_{ticker}"):
                 storage.restore_from_archive(ticker)
                 st.toast(f"已恢复：{ticker}", icon="♻️")
-                st.rerun()
         with c3:
             if st.button("🗑 永久删除", key=f"arc_perm_{ticker}"):
                 arch = storage.load_watchlist_archive()
                 arch = [a for a in arch if a["ticker"].upper() != ticker.upper()]
                 storage.save_watchlist_archive(arch)
                 st.toast(f"已永久删除：{ticker}", icon="🗑️")
-                st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -939,7 +949,6 @@ def _render_backup():
             if ok:
                 st.success(f"✅ {msg}")
                 _cached_result_map.clear()
-                st.rerun()
             else:
                 st.error(f"❌ {msg}")
 
@@ -962,7 +971,6 @@ def _render_backup():
                         if ok2:
                             st.success(f"✅ {msg2}")
                             _cached_result_map.clear()
-                            st.rerun()
                         else:
                             st.error(f"❌ {msg2}")
         else:

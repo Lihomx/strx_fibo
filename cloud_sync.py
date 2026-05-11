@@ -165,18 +165,30 @@ def _list_objects(prefix: str) -> List[Dict]:
     if not url or not key:
         return []
     list_url = f"{url}/storage/v1/object/list/{bucket}"
+    all_rows: List[Dict] = []
+    limit = 1000
+    offset = 0
+    max_total = 20000
     try:
-        r = requests.post(
-            list_url, headers=_hdrs(key),
-            json={"prefix": prefix, "limit": 1000, "offset": 0,
-                  "sortBy": {"column": "name", "order": "asc"}},
-            timeout=20,
-        )
-        if r.status_code == 200:
-            return r.json() or []
+        while True:
+            r = requests.post(
+                list_url, headers=_hdrs(key),
+                json={"prefix": prefix, "limit": limit, "offset": offset,
+                      "sortBy": {"column": "name", "order": "asc"}},
+                timeout=20,
+            )
+            if r.status_code != 200:
+                break
+            rows = r.json() or []
+            if not rows:
+                break
+            all_rows.extend(rows)
+            if len(rows) < limit or len(all_rows) >= max_total:
+                break
+            offset += limit
     except Exception as e:
         logger.debug(f"_list_objects {prefix}: {e}")
-    return []
+    return all_rows
 
 # ════════════════════════════════════════════════════════════════════
 # latest/ 读写
