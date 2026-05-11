@@ -544,10 +544,48 @@ def _resolve_symbol_token(token: str) -> tuple[str, tuple[str, str]] | None:
     return None
 
 
+def _list_symbol_files() -> list[Path]:
+    base = Path.cwd() / "Doc" / "symbol"
+    files: list[Path] = []
+    if base.exists() and base.is_dir():
+        for ext in ("*.txt", "*.csv", "*.list"):
+            files.extend(sorted(base.glob(ext)))
+    return files
+
+
+def _resolve_symbol_input_path(path_text: str) -> Path:
+    raw = (path_text or "").strip().strip('"').strip("'")
+    if not raw:
+        return Path.cwd() / "Doc" / "symbol"
+
+    candidates: list[Path] = []
+    p = Path(raw).expanduser()
+    candidates.append(p)
+
+    if not p.is_absolute():
+        candidates.append(Path.cwd() / raw)
+
+    normalized = raw.replace("\\", "/")
+    marker = "/doc/symbol/"
+    low = normalized.lower()
+    if marker in low:
+        idx = low.index(marker)
+        tail = normalized[idx + len(marker):].strip("/")
+        mapped_base = Path.cwd() / "Doc" / "symbol"
+        candidates.append(mapped_base / tail if tail else mapped_base)
+    elif ":" in raw:
+        candidates.append(Path.cwd() / "Doc" / "symbol" / Path(raw).name)
+
+    for c in candidates:
+        if c.exists():
+            return c
+
+    tried = " | ".join(str(c) for c in candidates[:4])
+    raise FileNotFoundError(f"路径不存在：{raw}（尝试：{tried}）")
+
+
 def _load_symbols_assets_from_path(path_text: str) -> tuple[dict, list[str]]:
-    p = Path(path_text).expanduser()
-    if not p.exists():
-        raise FileNotFoundError(f"路径不存在：{p}")
+    p = _resolve_symbol_input_path(path_text)
 
     files: list[Path] = []
     if p.is_file():
@@ -817,9 +855,9 @@ def _render_symbol_path_scan(cfg):
 
     path_text = st.text_input(
         "symbol 文件路径",
-        value=st.session_state.get("symbol_file_path", r"D:\Google\strxfibo\Doc\symbol"),
+        value=st.session_state.get("symbol_file_path", "Doc/symbol"),
         key="symbol_file_path",
-        placeholder=r"D:\Google\strxfibo\Doc\symbol",
+        placeholder="Doc/symbol 或 Doc/symbol/MG.txt",
     ).strip()
 
     do_file_scan = st.button("📂 扫描该路径中的品种", key="scan_from_symbol_path", type="primary")
@@ -830,6 +868,13 @@ def _render_symbol_path_scan(cfg):
         file_assets, unresolved = _load_symbols_assets_from_path(path_text)
     except Exception as e:
         st.error(f"读取失败：{e}")
+        files = _list_symbol_files()
+        if files:
+            sample = "、".join(f.name for f in files[:12])
+            st.caption(f"可用文件：{sample}")
+            st.caption("建议输入相对路径，例如：`Doc/symbol/MG.txt`")
+        else:
+            st.caption("当前部署环境未发现 `Doc/symbol` 文件，请先把 symbol 文件提交到仓库再部署。")
         return
 
     if not file_assets:
