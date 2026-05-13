@@ -4,6 +4,7 @@ page_scanner.py — 实时扫描（支持 20 组分批扫描 + 自定义品种 +
 import pandas as pd
 import streamlit as st
 from pathlib import Path
+from datetime import datetime
 
 import storage
 import scanner as sc
@@ -103,8 +104,45 @@ def _render_clear_scan_button(btn_key: str, use_container_width: bool = True):
         type="secondary",
         use_container_width=use_container_width,
     ):
+        # 清空前先把当前结果备份成可恢复批次
+        rows = storage.load_latest_results(inzone_only=False)
+        sessions = storage.load_sessions(limit=1)
+        last_s = sessions[0] if sessions else {}
+        now = datetime.now()
+        backup_sid = f"clearbak_{now.strftime('%Y%m%d_%H%M%S')}"
+
+        backup_session = {
+            "session_id": backup_sid,
+            "scan_date": str(now.date()),
+            "scan_time": now.isoformat(timespec="seconds"),
+            "total_checks": len(rows),
+            "inzone_count": sum(1 for r in rows if r.get("in_zone")),
+            "triple_conf": int(last_s.get("triple_conf", 0) or 0),
+            "elapsed_ms": 0,
+            "data_source": last_s.get("data_source", "yfinance"),
+            "note": "backup_before_clear",
+            "asset_count": len(set(r.get("ticker") for r in rows if r.get("ticker"))),
+            "timeframes": sorted(
+                {
+                    str(r.get("timeframe"))
+                    for r in rows
+                    if isinstance(r, dict) and r.get("timeframe")
+                }
+            ),
+        }
+
+        snap_ok = bool(rows) and storage.save_scan_snapshot(backup_session, rows)
         storage.clear_all_scan_data()
-        st.toast("✅ 扫描结果已清空，可重新扫描", icon="🗑️")
+
+        # 清空会删除 history；写回这条备份批次，确保可在“恢复批次”中选择
+        if snap_ok:
+            storage._save(storage.F_HIST, [backup_session])
+            st.toast(
+                f"✅ 已先备份批次 {backup_sid[:18]}…，再完成清空",
+                icon="🗑️",
+            )
+        else:
+            st.toast("✅ 扫描结果已清空（无可备份数据）", icon="🗑️")
         st.rerun()
 
 
