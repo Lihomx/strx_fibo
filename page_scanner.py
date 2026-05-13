@@ -143,6 +143,17 @@ def _render_clear_scan_button(btn_key: str, use_container_width: bool = True):
             )
         else:
             st.toast("✅ 扫描结果已清空（无可备份数据）", icon="🗑️")
+
+        # 避免刷新后被“云端旧扫描数据”自动回填：清空后立即覆盖同步扫描相关 latest
+        try:
+            import cloud_sync
+            _r1 = cloud_sync._upload_latest("scan_history", storage._load(storage.F_HIST, []))
+            _r2 = cloud_sync._upload_latest("scan_results", [])
+            _r3 = cloud_sync._upload_latest("scan_groups", [])
+            if not (_r1 and _r1[0] and _r2 and _r2[0] and _r3 and _r3[0]):
+                st.warning("已清空本地；云端扫描缓存覆盖未完全成功，刷新后可能被云端旧数据补回。")
+        except Exception:
+            st.warning("已清空本地；云端同步异常，刷新后可能被云端旧数据补回。")
         st.rerun()
 
 
