@@ -31,45 +31,65 @@ def _cat_label(cat: str) -> str:
     return CATEGORY_LABELS.get(cat, cat)
 
 
-def _pick_restore_session_id() -> str:
-    """优先选择“上一批”可恢复快照；无历史时回退到最近快照。"""
-    sessions = storage.load_sessions(limit=5)
-    latest_sid = sessions[0].get("session_id") if sessions else None
+def _load_restorable_sessions(limit: int = 50) -> list[dict]:
+    """读取可恢复的扫描批次（必须存在快照）。"""
+    sessions = storage.load_sessions(limit=limit)
+    return [
+        s for s in sessions
+        if isinstance(s, dict)
+        and s.get("session_id")
+        and storage.has_scan_snapshot(s.get("session_id"))
+    ]
 
-    if len(sessions) >= 2:
-        prev_sid = sessions[1].get("session_id")
-        if prev_sid and storage.has_scan_snapshot(prev_sid):
-            return prev_sid
 
-    sid = storage.find_latest_snapshot_session(
-        exclude_session_ids=[latest_sid] if latest_sid else None
+def _render_restore_session_controls():
+    sessions = _load_restorable_sessions(limit=50)
+    options = []
+    sid_map = {}
+    for s in sessions:
+        sid = str(s.get("session_id", "")).strip()
+        scan_time = s.get("scan_time") or s.get("scan_date") or "—"
+        inz = s.get("inzone_count", 0)
+        tri = s.get("triple_conf", 0)
+        label = f"{scan_time} | 黄金区 {inz} | 三共振 {tri} | {sid[:12]}…"
+        options.append(label)
+        sid_map[label] = sid
+
+    if not options:
+        st.selectbox(
+            "恢复批次",
+            ["暂无可恢复批次（无快照）"],
+            key="restore_session_picker_empty",
+            disabled=True,
+            label_visibility="collapsed",
+        )
+        st.button(
+            "♻️ 恢复所选批次",
+            key="restore_selected_scan_btn_disabled",
+            disabled=True,
+            use_container_width=True,
+        )
+        return
+
+    selected_label = st.selectbox(
+        "恢复批次",
+        options,
+        key="restore_session_picker",
+        label_visibility="collapsed",
     )
-    if sid:
-        return sid
-
-    if latest_sid and storage.has_scan_snapshot(latest_sid):
-        return latest_sid
-    return ""
-
-
-def _render_restore_previous_button(btn_key: str, use_container_width: bool = True):
-    restore_sid = _pick_restore_session_id()
-    help_text = "恢复之前扫描批次记录（若无“上一批”，则恢复最近可用快照）"
-    if restore_sid:
-        help_text += f"｜目标: {restore_sid[:12]}…"
-
+    sid = sid_map.get(selected_label, "")
     if st.button(
-        "♻️ 恢复之前扫描批次",
-        key=btn_key,
-        help=help_text,
+        "♻️ 恢复所选批次",
+        key="restore_selected_scan_btn",
+        help="恢复你当前选择的扫描批次快照",
         type="secondary",
-        use_container_width=use_container_width,
-        disabled=not restore_sid,
+        use_container_width=True,
+        disabled=not sid,
     ):
-        ok, msg, n = storage.restore_scan_snapshot(restore_sid, replace_allres=True)
+        ok, msg, n = storage.restore_scan_snapshot(sid, replace_allres=True)
         if ok:
             st.session_state["_scanner_restore_notice"] = (
-                f"已恢复批次 {restore_sid[:12]}…（{n} 条）"
+                f"已恢复批次 {sid[:12]}…（{n} 条）"
             )
             st.rerun()
         st.error(msg)
@@ -128,11 +148,13 @@ def render():
         sort_by = st.selectbox("排序", ["共振评分↓","回撤%↑","距离%↑","名称"],
                                label_visibility="collapsed")
 
-    action_col1, action_col2, _action_sp = st.columns([2, 2, 6])
+    action_col1, action_col2, action_col3 = st.columns([2, 4, 2])
     with action_col1:
         _render_clear_scan_button("clear_scan_results_top_btn")
     with action_col2:
-        _render_restore_previous_button("restore_prev_scan_top_btn")
+        _render_restore_session_controls()
+    with action_col3:
+        st.write("")
 
     # ── 数据展示区 ───────────────────────────────────────────────────
     if not storage.has_scan_data():
