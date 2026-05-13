@@ -274,6 +274,48 @@ def has_scan_snapshot(session_id: str) -> bool:
         return False
 
 
+def find_latest_snapshot_session(exclude_session_ids: Optional[List[str]] = None) -> Optional[str]:
+    """按快照时间倒序返回最近可恢复的 session_id。"""
+    try:
+        _ensure_scan_snapshot_dir()
+        excludes = {
+            str(s).strip() for s in (exclude_session_ids or [])
+            if str(s).strip()
+        }
+
+        candidates = []
+        for fname in os.listdir(F_SCAN_SNAPSHOT_DIR):
+            if not fname.endswith(".json"):
+                continue
+            fpath = os.path.join(F_SCAN_SNAPSHOT_DIR, fname)
+            stem = os.path.splitext(fname)[0]
+
+            data = _load(fpath, {})
+            meta = data.get("meta", {}) if isinstance(data, dict) else {}
+            sid = str(meta.get("session_id") or stem).strip()
+            if not sid or sid in excludes:
+                continue
+
+            scan_time = ""
+            if isinstance(meta, dict):
+                scan_time = str(meta.get("scan_time") or meta.get("scan_date") or "")
+            if not scan_time and isinstance(data, dict):
+                scan_time = str(data.get("saved_at") or "")
+
+            try:
+                mtime = os.path.getmtime(fpath)
+            except Exception:
+                mtime = 0
+            candidates.append((scan_time, mtime, sid))
+
+        if not candidates:
+            return None
+        candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+        return candidates[0][2]
+    except Exception:
+        return None
+
+
 def restore_scan_snapshot(session_id: str, replace_allres: bool = True) -> tuple:
     """恢复某次扫描快照到当前监控面板数据。"""
     rows = load_scan_snapshot_rows(session_id)

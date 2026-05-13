@@ -31,11 +31,69 @@ def _cat_label(cat: str) -> str:
     return CATEGORY_LABELS.get(cat, cat)
 
 
+def _pick_restore_session_id() -> str:
+    """优先选择“上一批”可恢复快照；无历史时回退到最近快照。"""
+    sessions = storage.load_sessions(limit=5)
+    latest_sid = sessions[0].get("session_id") if sessions else None
+
+    if len(sessions) >= 2:
+        prev_sid = sessions[1].get("session_id")
+        if prev_sid and storage.has_scan_snapshot(prev_sid):
+            return prev_sid
+
+    sid = storage.find_latest_snapshot_session(
+        exclude_session_ids=[latest_sid] if latest_sid else None
+    )
+    if sid:
+        return sid
+
+    if latest_sid and storage.has_scan_snapshot(latest_sid):
+        return latest_sid
+    return ""
+
+
+def _render_restore_previous_button(btn_key: str, use_container_width: bool = True):
+    restore_sid = _pick_restore_session_id()
+    help_text = "恢复之前扫描批次记录（若无“上一批”，则恢复最近可用快照）"
+    if restore_sid:
+        help_text += f"｜目标: {restore_sid[:12]}…"
+
+    if st.button(
+        "♻️ 恢复之前扫描批次",
+        key=btn_key,
+        help=help_text,
+        type="secondary",
+        use_container_width=use_container_width,
+        disabled=not restore_sid,
+    ):
+        ok, msg, n = storage.restore_scan_snapshot(restore_sid, replace_allres=True)
+        if ok:
+            st.session_state["_scanner_restore_notice"] = (
+                f"已恢复批次 {restore_sid[:12]}…（{n} 条）"
+            )
+            st.rerun()
+        st.error(msg)
+
+
+def _render_clear_scan_button(btn_key: str, use_container_width: bool = True):
+    if st.button(
+        "🗑️ 清空扫描结果",
+        key=btn_key,
+        help="仅清除本次扫描结果缓存，不影响自选收藏和系统配置",
+        type="secondary",
+        use_container_width=use_container_width,
+    ):
+        storage.clear_all_scan_data()
+        st.toast("✅ 扫描结果已清空，可重新扫描", icon="🗑️")
+        st.rerun()
+
+
 # ════════════════════════════════════════════════════════════════════
 # 主渲染
 # ════════════════════════════════════════════════════════════════════
 def render():
     st.markdown("## 📊 Fibonacci 实时扫描")
+    st.caption("Scanner UI v2026-05-13-2")
     cfg = storage.load_config()
     restored_msg = st.session_state.pop("_scanner_restore_notice", "")
     if restored_msg:
@@ -69,6 +127,12 @@ def render():
     with col_sort:
         sort_by = st.selectbox("排序", ["共振评分↓","回撤%↑","距离%↑","名称"],
                                label_visibility="collapsed")
+
+    action_col1, action_col2, _action_sp = st.columns([2, 2, 6])
+    with action_col1:
+        _render_clear_scan_button("clear_scan_results_top_btn")
+    with action_col2:
+        _render_restore_previous_button("restore_prev_scan_top_btn")
 
     # ── 数据展示区 ───────────────────────────────────────────────────
     if not storage.has_scan_data():
@@ -372,21 +436,13 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
 
     csv = df.drop(columns=[c for c in ["_r", "_d"] if c in df.columns],
                   errors="ignore").to_csv(index=False).encode("utf-8-sig")
-    _dl_col, _spacer, _clear_col = st.columns([3, 1, 2])
+    _dl_col, _spacer = st.columns([3, 5])
     with _dl_col:
         st.download_button(
             "⬇️ 下载 CSV", csv,
             file_name=f"strx_fibo_{last_s.get('scan_date', 'today')}.csv",
             mime="text/csv",
         )
-    with _clear_col:
-        # 仅清空本页扫描结果（保留自选收藏、配置、告警日志）
-        if st.button("🗑️ 清空扫描结果", key="clear_scan_results_btn",
-                     help="仅清除本次扫描结果缓存，不影响自选收藏和系统配置",
-                     type="secondary", use_container_width=True):
-            storage.clear_all_scan_data()
-            st.toast("✅ 扫描结果已清空，可重新扫描", icon="🗑️")
-            st.rerun()
 
 # ════════════════════════════════════════════════════════════════════
 
