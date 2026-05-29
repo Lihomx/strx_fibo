@@ -3,6 +3,7 @@ page_scanner.py — 实时扫描（支持 20 组分批扫描 + 自定义品种 +
 """
 import pandas as pd
 import streamlit as st
+import json
 from pathlib import Path
 from datetime import datetime
 
@@ -369,6 +370,66 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
 
     watchlist         = storage.load_watchlist()
     watchlist_tickers = {w["ticker"] for w in watchlist if isinstance(w, dict)}
+
+    # 批量打开 TradingView（基于当前筛选结果）
+    if not df.empty:
+        tv_items = []
+        tv_seen = set()
+        for _, _r in df.iterrows():
+            _ticker = str(_r.get("ticker", "")).strip()
+            _tf = str(_r.get("timeframe", "")).strip()
+            if not _ticker or not _tf:
+                continue
+            _k = (_ticker, _tf)
+            if _k in tv_seen:
+                continue
+            tv_seen.add(_k)
+            _name = str(_r.get("name", _ticker)).strip() or _ticker
+            tv_items.append((_name, _ticker, _tf, tv_url(_ticker, _tf)))
+
+        if tv_items:
+            st.markdown("### 批量打开 TradingView")
+            labels = [f"{n} ({t} | {tf})" for n, t, tf, _ in tv_items]
+            label_to_url = {f"{n} ({t} | {tf})": u for n, t, tf, u in tv_items}
+            all_key = "_tv_batch_all"
+            ms_key = "_tv_batch_selected"
+            if all_key not in st.session_state:
+                st.session_state[all_key] = False
+            if ms_key not in st.session_state:
+                st.session_state[ms_key] = []
+
+            col_a, _ = st.columns([1, 3])
+            with col_a:
+                sel_all = st.checkbox("全选", key=all_key)
+            if sel_all:
+                st.session_state[ms_key] = labels
+
+            selected_labels = st.multiselect(
+                "选择要打开的品种（基于当前筛选结果）",
+                options=labels,
+                key=ms_key,
+            )
+
+            if st.button("打开选中 TV 链接", key="_open_selected_tv_batch", type="primary"):
+                urls = [label_to_url[x] for x in selected_labels if x in label_to_url]
+                if not urls:
+                    st.warning("请先至少选择 1 个品种。")
+                else:
+                    import streamlit.components.v1 as _stc_v1
+                    max_open = 30
+                    open_urls = urls[:max_open]
+                    _urls_js = json.dumps(open_urls, ensure_ascii=False)
+                    _stc_v1.html(
+                        f"""<script>
+                        const urls = {_urls_js};
+                        urls.forEach((u, i) => setTimeout(() => window.open(u, '_blank'), i * 80));
+                        </script>""",
+                        height=0,
+                    )
+                    if len(urls) > max_open:
+                        st.info(f"已打开前 {max_open} 个链接（本次最多 30 个）。")
+                    else:
+                        st.success(f"已打开 {len(open_urls)} 个 TradingView 标签页。")
 
     # ── CSS ──────────────────────────────────────────────────────
     st.markdown("""
