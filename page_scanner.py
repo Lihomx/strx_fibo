@@ -437,8 +437,6 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
                     )
                     opened_today.update(open_urls)
                     st.session_state[opened_map_key][today_key] = sorted(opened_today)
-                    st.session_state[ms_key] = [x for x in st.session_state[ms_key] if label_to_url.get(x) not in opened_today]
-                    st.session_state[all_key] = False
                     if len(urls) > max_open:
                         st.info(f"已打开前 {max_open} 个链接（本次最多 30 个）。")
                     else:
