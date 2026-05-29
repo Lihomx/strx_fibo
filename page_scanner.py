@@ -33,6 +33,108 @@ def _cat_label(cat: str) -> str:
     return CATEGORY_LABELS.get(cat, cat)
 
 
+def _render_tv_batch_opener(df: pd.DataFrame):
+    if df.empty:
+        return
+
+    tv_items = []
+    tv_seen = set()
+    for _, row in df.iterrows():
+        ticker = str(row.get("ticker", "")).strip()
+        tf = str(row.get("timeframe", "")).strip()
+        if not ticker or not tf:
+            continue
+        key = (ticker, tf)
+        if key in tv_seen:
+            continue
+        tv_seen.add(key)
+        name = str(row.get("name", ticker)).strip() or ticker
+        tv_items.append((name, ticker, tf, tv_url(ticker, tf)))
+
+    if not tv_items:
+        return
+
+    st.markdown("### 批量打开 TradingView")
+    base_labels = [f"{n} ({t} | {tf})" for n, t, tf, _ in tv_items]
+    label_to_url = {f"{n} ({t} | {tf})": u for n, t, tf, u in tv_items}
+
+    today_key = datetime.now().date().isoformat()
+    opened_map_key = "tv_opened_by_day"
+    cfg = storage.load_config()
+    opened_map = cfg.get(opened_map_key, {})
+    if not isinstance(opened_map, dict):
+        opened_map = {}
+    opened_today = set(opened_map.get(today_key, []))
+
+    show_opened_key = "_tv_batch_show_opened"
+    all_key = "_tv_batch_all"
+    ms_key = "_tv_batch_selected"
+    if show_opened_key not in st.session_state:
+        st.session_state[show_opened_key] = False
+    if all_key not in st.session_state:
+        st.session_state[all_key] = False
+    if ms_key not in st.session_state:
+        st.session_state[ms_key] = []
+
+    display_labels = []
+    display_to_base = {}
+    for lb in base_labels:
+        is_opened = label_to_url.get(lb) in opened_today
+        if is_opened and not st.session_state[show_opened_key]:
+            continue
+        disp = f"✅ 今日已打开 | {lb}" if is_opened else lb
+        display_labels.append(disp)
+        display_to_base[disp] = lb
+
+    st.session_state[ms_key] = [x for x in st.session_state[ms_key] if x in display_labels]
+
+    col_a, col_b = st.columns([1, 1.6])
+    with col_a:
+        sel_all = st.checkbox("全选", key=all_key)
+    with col_b:
+        st.checkbox("显示已打开项", key=show_opened_key)
+    if sel_all:
+        st.session_state[ms_key] = list(display_labels)
+
+    st.caption(f"今日已打开：{len(opened_today)} | 当前可选：{len(display_labels)}")
+
+    selected_display = st.multiselect(
+        "选择要打开的品种（基于当前筛选结果）",
+        options=display_labels,
+        key=ms_key,
+    )
+
+    if st.button("打开选中 TV 链接", key="_open_selected_tv_batch", type="primary"):
+        selected_base = [display_to_base[x] for x in selected_display if x in display_to_base]
+        urls = [label_to_url[x] for x in selected_base if x in label_to_url]
+        if not urls:
+            st.warning("请先至少选择 1 个品种。")
+            return
+
+        import streamlit.components.v1 as _stc_v1
+        max_open = 30
+        open_urls = urls[:max_open]
+        _urls_js = json.dumps(open_urls, ensure_ascii=False)
+        _stc_v1.html(
+            f"""<script>
+            const urls = {_urls_js};
+            urls.forEach((u, i) => setTimeout(() => window.open(u, '_blank'), i * 80));
+            </script>""",
+            height=0,
+        )
+
+        opened_today.update(open_urls)
+        opened_map[today_key] = sorted(opened_today)
+        cfg[opened_map_key] = opened_map
+        storage.save_config(cfg)
+
+        if len(urls) > max_open:
+            st.info(f"已打开前 {max_open} 个链接（本次最多 30 个）。")
+        else:
+            st.success(f"已打开 {len(open_urls)} 个 TradingView 标签页。")
+        st.rerun()
+
+
 def _load_restorable_sessions(limit: int = 50) -> list[dict]:
     """读取可恢复的扫描批次（必须存在快照）。"""
     sessions = storage.load_sessions(limit=limit)
@@ -370,9 +472,10 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
 
     watchlist         = storage.load_watchlist()
     watchlist_tickers = {w["ticker"] for w in watchlist if isinstance(w, dict)}
+    _render_tv_batch_opener(df)
 
     # 批量打开 TradingView（基于当前筛选结果）
-    if not df.empty:
+    if False and not df.empty:
         tv_items = []
         tv_seen = set()
         for _, _r in df.iterrows():
