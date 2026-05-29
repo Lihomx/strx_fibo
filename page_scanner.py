@@ -392,10 +392,12 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
             labels = [f"{n} ({t} | {tf})" for n, t, tf, _ in tv_items]
             label_to_url = {f"{n} ({t} | {tf})": u for n, t, tf, u in tv_items}
             today_key = datetime.now().date().isoformat()
-            opened_map_key = "_tv_opened_by_day"
-            if opened_map_key not in st.session_state or not isinstance(st.session_state[opened_map_key], dict):
-                st.session_state[opened_map_key] = {}
-            opened_today = set(st.session_state[opened_map_key].get(today_key, []))
+            opened_map_key = "tv_opened_by_day"
+            _cfg = storage.load_config()
+            _opened_map = _cfg.get(opened_map_key, {})
+            if not isinstance(_opened_map, dict):
+                _opened_map = {}
+            opened_today = set(_opened_map.get(today_key, []))
             filtered_labels = [lb for lb in labels if label_to_url.get(lb) not in opened_today]
             all_key = "_tv_batch_all"
             ms_key = "_tv_batch_selected"
@@ -436,7 +438,9 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
                         height=0,
                     )
                     opened_today.update(open_urls)
-                    st.session_state[opened_map_key][today_key] = sorted(opened_today)
+                    _opened_map[today_key] = sorted(opened_today)
+                    _cfg[opened_map_key] = _opened_map
+                    storage.save_config(_cfg)
                     if len(urls) > max_open:
                         st.info(f"已打开前 {max_open} 个链接（本次最多 30 个）。")
                     else:
