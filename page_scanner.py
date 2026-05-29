@@ -391,22 +391,31 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
             st.markdown("### 批量打开 TradingView")
             labels = [f"{n} ({t} | {tf})" for n, t, tf, _ in tv_items]
             label_to_url = {f"{n} ({t} | {tf})": u for n, t, tf, u in tv_items}
+            today_key = datetime.now().date().isoformat()
+            opened_map_key = "_tv_opened_by_day"
+            if opened_map_key not in st.session_state or not isinstance(st.session_state[opened_map_key], dict):
+                st.session_state[opened_map_key] = {}
+            opened_today = set(st.session_state[opened_map_key].get(today_key, []))
+            filtered_labels = [lb for lb in labels if label_to_url.get(lb) not in opened_today]
             all_key = "_tv_batch_all"
             ms_key = "_tv_batch_selected"
             if all_key not in st.session_state:
                 st.session_state[all_key] = False
             if ms_key not in st.session_state:
                 st.session_state[ms_key] = []
+            st.session_state[ms_key] = [x for x in st.session_state[ms_key] if x in filtered_labels]
 
             col_a, _ = st.columns([1, 3])
             with col_a:
                 sel_all = st.checkbox("全选", key=all_key)
             if sel_all:
-                st.session_state[ms_key] = labels
+                st.session_state[ms_key] = filtered_labels
+
+            st.caption(f"今日已打开：{len(opened_today)} | 当前可选：{len(filtered_labels)}")
 
             selected_labels = st.multiselect(
                 "选择要打开的品种（基于当前筛选结果）",
-                options=labels,
+                options=filtered_labels,
                 key=ms_key,
             )
 
@@ -426,6 +435,10 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
                         </script>""",
                         height=0,
                     )
+                    opened_today.update(open_urls)
+                    st.session_state[opened_map_key][today_key] = sorted(opened_today)
+                    st.session_state[ms_key] = [x for x in st.session_state[ms_key] if label_to_url.get(x) not in opened_today]
+                    st.session_state[all_key] = False
                     if len(urls) > max_open:
                         st.info(f"已打开前 {max_open} 个链接（本次最多 30 个）。")
                     else:
