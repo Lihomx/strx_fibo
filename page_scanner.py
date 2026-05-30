@@ -135,8 +135,6 @@ def _render_tv_batch_opener(df: pd.DataFrame):
     display_to_base = {}
     for lb in base_labels:
         is_opened = label_to_url.get(lb) in opened_today
-        if is_opened and not st.session_state[show_opened_key]:
-            continue
         disp = f"✅ 今日已打开 | {lb}" if is_opened else lb
         display_labels.append(disp)
         display_to_base[disp] = lb
