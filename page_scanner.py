@@ -8,6 +8,8 @@ import base64
 import time
 import os
 import webbrowser
+import subprocess
+import shutil
 from pathlib import Path
 from datetime import datetime
 
@@ -90,6 +92,39 @@ def _open_urls_via_system(urls: list[str]) -> int:
         except Exception:
             pass
     return ok
+
+
+def _find_browser_executable() -> str | None:
+    """Prefer Chrome, then Edge."""
+    candidates = [
+        shutil.which("chrome"),
+        shutil.which("msedge"),
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    ]
+    for p in candidates:
+        if p and os.path.exists(p):
+            return p
+    return None
+
+
+def _open_urls_via_browser_process(urls: list[str]) -> int:
+    """
+    Strong batch open: launch browser process with multiple URLs.
+    Works around in-page popup blockers.
+    """
+    if not urls:
+        return 0
+    browser = _find_browser_executable()
+    if not browser:
+        return 0
+    try:
+        subprocess.Popen([browser, *urls])
+        return len(urls)
+    except Exception:
+        return 0
 
 
 def _render_tv_open_list(urls: list[str]):
@@ -181,7 +216,8 @@ def _render_tv_batch_opener(df: pd.DataFrame):
 
         max_open = 30
         open_urls = urls[:max_open]
-        sys_opened = _open_urls_via_system(open_urls)
+        proc_opened = _open_urls_via_browser_process(open_urls)
+        sys_opened = proc_opened if proc_opened > 0 else _open_urls_via_system(open_urls)
         if sys_opened < len(open_urls):
             _render_tv_open_list(open_urls)
 
@@ -190,8 +226,10 @@ def _render_tv_batch_opener(df: pd.DataFrame):
         cfg[opened_map_key] = opened_map
         storage.save_config(cfg)
 
-        if sys_opened > 0:
-            st.success(f"已尝试系统批量打开 {sys_opened} 个链接。")
+        if proc_opened > 0:
+            st.success(f"已通过浏览器进程批量打开 {proc_opened} 个链接。")
+        elif sys_opened > 0:
+            st.success(f"已尝试系统方式打开 {sys_opened} 个链接。")
         if len(urls) > max_open:
             st.info(f"已打开前 {max_open} 个链接（本次最多 30 个）。")
         elif sys_opened < len(open_urls):
