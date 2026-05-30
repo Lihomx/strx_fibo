@@ -4,6 +4,9 @@ page_scanner.py — 实时扫描（支持 20 组分批扫描 + 自定义品种 +
 import pandas as pd
 import streamlit as st
 import json
+import base64
+import time
+import webbrowser
 from pathlib import Path
 from datetime import datetime
 
@@ -31,6 +34,58 @@ def _conf_badge(label: str) -> str:
 
 def _cat_label(cat: str) -> str:
     return CATEGORY_LABELS.get(cat, cat)
+
+
+def _batch_open_launcher_url(urls: list[str]) -> str:
+    """Build a one-click launcher page as a data URL to open tabs in browser context."""
+    payload = json.dumps(urls, ensure_ascii=False)
+    html = f"""<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>TV Batch Open</title></head>
+<body>
+<script>
+const urls = {payload};
+for (let i = 0; i < urls.length; i++) {{
+  window.open(urls[i], '_blank');
+}}
+window.close();
+</script>
+<p>If tabs did not open, please allow pop-ups for this site and retry.</p>
+</body>
+</html>"""
+    b64 = base64.b64encode(html.encode("utf-8")).decode("ascii")
+    return f"data:text/html;base64,{b64}"
+
+
+def _trigger_batch_open_in_parent(urls: list[str]):
+    """Try opening tabs from the parent window to reduce iframe popup blocking."""
+    if not urls:
+        return
+    import streamlit.components.v1 as _stc_v1
+    payload = json.dumps(urls, ensure_ascii=False)
+    _stc_v1.html(
+        f"""<script>
+const urls = {payload};
+const op = (window.parent && window.parent.open) ? window.parent.open.bind(window.parent) : window.open.bind(window);
+for (let i = 0; i < urls.length; i++) {{
+  setTimeout(() => op(urls[i], '_blank'), i * 120);
+}}
+</script>""",
+        height=0,
+    )
+
+
+def _open_urls_via_system(urls: list[str]) -> int:
+    """Open URLs via OS default browser, returns success count."""
+    ok = 0
+    for u in urls:
+        try:
+            if webbrowser.open_new_tab(u):
+                ok += 1
+            time.sleep(0.08)
+        except Exception:
+            pass
+    return ok
 
 
 def _render_tv_batch_opener(df: pd.DataFrame):
@@ -111,24 +166,23 @@ def _render_tv_batch_opener(df: pd.DataFrame):
             st.warning("请先至少选择 1 个品种。")
             return
 
-        import streamlit.components.v1 as _stc_v1
         max_open = 30
         open_urls = urls[:max_open]
-        _urls_js = json.dumps(open_urls, ensure_ascii=False)
-        _stc_v1.html(
-            f"""<script>
-            const urls = {_urls_js};
-            urls.forEach((u, i) => setTimeout(() => window.open(u, '_blank'), i * 80));
-            </script>""",
-            height=0,
-        )
+        sys_opened = _open_urls_via_system(open_urls)
+        if sys_opened == 0:
+            _trigger_batch_open_in_parent(open_urls)
+        launcher_url = _batch_open_launcher_url(open_urls)
+        st.link_button("若未自动打开，点这里手动触发", launcher_url, type="secondary")
+        st.caption("若浏览器拦截弹窗，请允许当前站点弹窗后重试。")
 
         opened_today.update(open_urls)
         opened_map[today_key] = sorted(opened_today)
         cfg[opened_map_key] = opened_map
         storage.save_config(cfg)
 
-        if len(urls) > max_open:
+        if sys_opened > 0:
+            st.success(f"系统方式已打开 {sys_opened} 个 TradingView 标签页。")
+        elif len(urls) > max_open:
             st.info(f"已打开前 {max_open} 个链接（本次最多 30 个）。")
         else:
             st.success(f"已打开 {len(open_urls)} 个 TradingView 标签页。")
@@ -529,22 +583,21 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
                 if not urls:
                     st.warning("请先至少选择 1 个品种。")
                 else:
-                    import streamlit.components.v1 as _stc_v1
                     max_open = 30
                     open_urls = urls[:max_open]
-                    _urls_js = json.dumps(open_urls, ensure_ascii=False)
-                    _stc_v1.html(
-                        f"""<script>
-                        const urls = {_urls_js};
-                        urls.forEach((u, i) => setTimeout(() => window.open(u, '_blank'), i * 80));
-                        </script>""",
-                        height=0,
-                    )
+                    sys_opened = _open_urls_via_system(open_urls)
+                    if sys_opened == 0:
+                        _trigger_batch_open_in_parent(open_urls)
+                    launcher_url = _batch_open_launcher_url(open_urls)
+                    st.link_button("若未自动打开，点这里手动触发", launcher_url, type="secondary")
+                    st.caption("若浏览器拦截弹窗，请允许当前站点弹窗后重试。")
                     opened_today.update(open_urls)
                     _opened_map[today_key] = sorted(opened_today)
                     _cfg[opened_map_key] = _opened_map
                     storage.save_config(_cfg)
-                    if len(urls) > max_open:
+                    if sys_opened > 0:
+                        st.success(f"系统方式已打开 {sys_opened} 个 TradingView 标签页。")
+                    elif len(urls) > max_open:
                         st.info(f"已打开前 {max_open} 个链接（本次最多 30 个）。")
                     else:
                         st.success(f"已打开 {len(open_urls)} 个 TradingView 标签页。")
