@@ -6,6 +6,7 @@ import streamlit as st
 import json
 import base64
 import time
+import os
 import webbrowser
 from pathlib import Path
 from datetime import datetime
@@ -80,7 +81,10 @@ def _open_urls_via_system(urls: list[str]) -> int:
     ok = 0
     for u in urls:
         try:
-            if webbrowser.open_new_tab(u):
+            if os.name == "nt":
+                os.startfile(u)  # type: ignore[attr-defined]
+                ok += 1
+            elif webbrowser.open_new_tab(u):
                 ok += 1
             time.sleep(0.08)
         except Exception:
@@ -177,16 +181,20 @@ def _render_tv_batch_opener(df: pd.DataFrame):
 
         max_open = 30
         open_urls = urls[:max_open]
-        _render_tv_open_list(open_urls)
+        sys_opened = _open_urls_via_system(open_urls)
+        if sys_opened < len(open_urls):
+            _render_tv_open_list(open_urls)
 
         opened_today.update(open_urls)
         opened_map[today_key] = sorted(opened_today)
         cfg[opened_map_key] = opened_map
         storage.save_config(cfg)
 
+        if sys_opened > 0:
+            st.success(f"已尝试系统批量打开 {sys_opened} 个链接。")
         if len(urls) > max_open:
             st.info(f"已打开前 {max_open} 个链接（本次最多 30 个）。")
-        else:
+        elif sys_opened < len(open_urls):
             st.success(f"已准备 {len(open_urls)} 个 TradingView 链接，请点击下方按钮逐个打开。")
 
 
