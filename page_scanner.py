@@ -88,6 +88,17 @@ def _open_urls_via_system(urls: list[str]) -> int:
     return ok
 
 
+def _render_tv_open_list(urls: list[str]):
+    """Reliable fallback: render clickable links instead of popup-based batch open."""
+    if not urls:
+        return
+    st.markdown("#### 待打开链接")
+    joined = "\n".join(urls)
+    st.text_area("复制全部链接", value=joined, height=120, key="_tv_urls_copy")
+    for i, u in enumerate(urls, start=1):
+        st.link_button(f"打开 TV {i}", u, type="secondary")
+
+
 def _render_tv_batch_opener(df: pd.DataFrame):
     if df.empty:
         return
@@ -166,25 +177,17 @@ def _render_tv_batch_opener(df: pd.DataFrame):
 
         max_open = 30
         open_urls = urls[:max_open]
-        sys_opened = _open_urls_via_system(open_urls)
-        if sys_opened == 0:
-            _trigger_batch_open_in_parent(open_urls)
-        launcher_url = _batch_open_launcher_url(open_urls)
-        st.link_button("若未自动打开，点这里手动触发", launcher_url, type="secondary")
-        st.caption("若浏览器拦截弹窗，请允许当前站点弹窗后重试。")
+        _render_tv_open_list(open_urls)
 
         opened_today.update(open_urls)
         opened_map[today_key] = sorted(opened_today)
         cfg[opened_map_key] = opened_map
         storage.save_config(cfg)
 
-        if sys_opened > 0:
-            st.success(f"系统方式已打开 {sys_opened} 个 TradingView 标签页。")
-        elif len(urls) > max_open:
+        if len(urls) > max_open:
             st.info(f"已打开前 {max_open} 个链接（本次最多 30 个）。")
         else:
-            st.success(f"已打开 {len(open_urls)} 个 TradingView 标签页。")
-        st.rerun()
+            st.success(f"已准备 {len(open_urls)} 个 TradingView 链接，请点击下方按钮逐个打开。")
 
 
 def _load_restorable_sessions(limit: int = 50) -> list[dict]:
