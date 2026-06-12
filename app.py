@@ -169,18 +169,44 @@ if (!document.querySelector('meta[name="viewport"]')) {
 </script>""", height=0)
 
 # ── 导入页面模块（直接 import，无子文件夹）──────────────────────────
+import importlib
+
 import storage
+importlib.reload(storage)
+
 import page_scanner
+importlib.reload(page_scanner)
+
 import page_confluence
+importlib.reload(page_confluence)
+
 import page_history
+importlib.reload(page_history)
+
 import page_alerts
+importlib.reload(page_alerts)
+
 import page_settings
+importlib.reload(page_settings)
+
 import page_watchlist
+importlib.reload(page_watchlist)
+
 import page_hotlist
+importlib.reload(page_hotlist)
+
 import page_universe
+importlib.reload(page_universe)
+
 import page_cloud
+importlib.reload(page_cloud)
+
 import page_chartink
+importlib.reload(page_chartink)
+
 import cloud_sync
+importlib.reload(cloud_sync)
+
 
 # ── 侧边栏 ─────────────────────────────────────────────────────────
 def sidebar():
