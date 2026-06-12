@@ -293,6 +293,7 @@ def _render_restore_session_controls():
     ):
         ok, msg, n = storage.restore_scan_snapshot(sid, replace_allres=True)
         if ok:
+            st.session_state["_scanner_active_session_id"] = sid
             st.session_state["_scanner_restore_notice"] = (
                 f"已恢复批次 {sid[:12]}…（{n} 条）"
             )
@@ -418,9 +419,39 @@ def render():
 
     # load_latest_results 已内置"同 ticker+timeframe 取最新"合并逻辑
     # 直接使用，比 session 循环更健壮（session_id 过滤不一定覆盖所有来源）
-    merged_rows = storage.load_latest_results(inzone_only=False)
-    sessions    = storage.load_sessions(limit=5)
-    last_s      = sessions[0] if sessions else {}
+    sessions = storage.load_sessions(limit=20)
+    if "_scanner_active_session_id" not in st.session_state:
+        st.session_state["_scanner_active_session_id"] = (
+            sessions[0].get("session_id") if sessions else ""
+        )
+    active_sid = str(st.session_state.get("_scanner_active_session_id") or "").strip()
+
+    sid_options = []
+    sid_map = {}
+    for s in sessions:
+        sid = str(s.get("session_id") or "").strip()
+        if not sid:
+            continue
+        scan_time = s.get("scan_time") or s.get("scan_date") or "-"
+        lb = f"{scan_time} | {sid[:12]}..."
+        sid_options.append(lb)
+        sid_map[lb] = sid
+    if sid_options:
+        default_idx = 0
+        for i, lb in enumerate(sid_options):
+            if sid_map.get(lb) == active_sid:
+                default_idx = i
+                break
+        selected_sid_lb = st.selectbox("Current Session", sid_options, index=default_idx, key="_scanner_active_sid_picker")
+        selected_sid = sid_map.get(selected_sid_lb, active_sid)
+        if selected_sid and selected_sid != active_sid:
+            st.session_state["_scanner_active_session_id"] = selected_sid
+            active_sid = selected_sid
+
+    merged_rows = storage.load_session_results(active_sid) if active_sid else []
+    if not merged_rows:
+        merged_rows = storage.load_latest_results(inzone_only=False)
+    last_s = next((s for s in sessions if str(s.get("session_id") or "") == active_sid), (sessions[0] if sessions else {}))
 
     total  = len(set(r["ticker"] for r in merged_rows))
     inzone = sum(1 for r in merged_rows if r.get("in_zone"))
@@ -1278,6 +1309,7 @@ def _render_custom_scan(cfg):
     if err:
         st.error(f"扫描失败：{err}"); return
 
+    st.session_state["_scanner_active_session_id"] = summary.get("session_id", "")
     inzone  = summary.get("inzone_count", 0)
     elapsed = summary.get("elapsed_ms", 0) / 1000
 
@@ -1412,6 +1444,7 @@ def _render_symbol_path_scan(cfg):
     if err2:
         st.error(f"文件扫描失败: {err2}")
         return
+    st.session_state["_scanner_active_session_id"] = summary2.get("session_id", "")
     st.success(
         f"文件扫描完成：{summary2.get('asset_count', len(file_assets))} 个品种，"
         f"黄金区 {summary2.get('inzone_count', 0)}，"
@@ -1681,6 +1714,7 @@ def _render_batch_selector(cfg):
             st.error(err)
         else:
             storage.save_scanned_groups(sel_list)
+            st.session_state["_scanner_active_session_id"] = summary.get("session_id", "")
             inzone_c = summary['inzone_count']
             triple_c = summary['triple_conf']
             elapsed  = summary['elapsed_ms'] / 1000

@@ -39,9 +39,12 @@ _LATEST_FILES = {
     "scan_groups":         "scan_groups.json",
     "config":              "config.json",
     "meta":                "sync_meta.json",
+    "hotlist":             "hotlist.json",
+    "hotlist_archive":     "hotlist_archive.json",
+    "hl_categories":       "hl_categories.json",
 }
 
-_SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "wl_categories", "config"]
+_SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "wl_categories", "config", "hotlist", "hotlist_archive", "hl_categories"]
 _APP_BOOT_TS = time.time()
 _CLOUD_FILES   = _LATEST_FILES  # 兼容旧接口
 
@@ -309,6 +312,21 @@ def restore_from_snapshot(snapshot_path: str, file_key: str) -> Tuple[bool, str]
                 return False, "格式错误（期望字典）"
             loc._save(loc.F_CFG, data)
             return True, "已从快照恢复配置"
+        elif file_key == "hotlist":
+            if not isinstance(data, list):
+                return False, "格式错误（期望列表）"
+            loc._save_with_backup(loc.F_HOTLIST, data)
+            return True, f"已从快照恢复热门品种，共 {len(data)} 个品种"
+        elif file_key == "hotlist_archive":
+            if not isinstance(data, list):
+                return False, "格式错误（期望列表）"
+            loc._save(loc.F_HOTLIST_ARCHIVE, data)
+            return True, f"已从快照恢复热门品种存档，共 {len(data)} 个品种"
+        elif file_key == "hl_categories":
+            if not isinstance(data, list):
+                return False, "格式错误（期望列表）"
+            loc._save(loc.F_HL_CATS, data)
+            return True, f"已从快照恢复热门分类，共 {len(data)} 个分类"
         else:
             return False, f"不支持恢复类型：{file_key}"
     except Exception as e:
@@ -454,6 +472,107 @@ def pull_watchlist() -> Tuple[bool, str]:
     except Exception as e:
         return False, f"pull_watchlist 异常：{e}"
 
+
+# ════════════════════════════════════════════════════════════════════
+# 热门品种专项推送 / 拉取
+# ════════════════════════════════════════════════════════════════════
+
+def push_hl_categories() -> Tuple[bool, str]:
+    try:
+        import storage as loc
+        cats     = loc.load_hl_categories()
+        ok1, m1  = _upload_latest("hl_categories", cats)
+        _upload_snapshot("hl_categories", cats)
+        if ok1:
+            return True, f"分类 {len(cats)} 个已同步 + 快照已创建"
+        return False, f"hl_categories: {m1}"
+    except Exception as e:
+        return False, f"push_hl_categories 异常：{e}"
+
+
+def pull_hl_categories() -> Tuple[bool, str]:
+    try:
+        from storage import F_HL_CATS, _save
+        cloud_cats = _download_latest("hl_categories")
+        if not isinstance(cloud_cats, list):
+            return False, "云端无热门分类数据"
+        _save(F_HL_CATS, cloud_cats)
+        return True, f"热门分类已恢复 {len(cloud_cats)} 个"
+    except Exception as e:
+        return False, f"pull_hl_categories 异常：{e}"
+
+
+def push_hotlist(force: bool = False) -> Tuple[bool, str]:
+    try:
+        import storage as loc
+        items   = loc.load_hotlist()
+        archive = loc.load_hotlist_archive()
+        for item in items:
+            if not isinstance(item.get("notes"), list):
+                item["notes"] = []
+            for note in item["notes"]:
+                note.setdefault("text", ""); note.setdefault("img_url", ""); note.setdefault("ts", "")
+        ok1, m1 = _upload_latest("hotlist", items)
+        ok2, m2 = _upload_latest("hotlist_archive", archive)
+        _upload_snapshot("hotlist", items)
+        _upload_snapshot("hotlist_archive", archive)
+        cats = loc.load_hl_categories()
+        _upload_latest("hl_categories", cats)
+        _upload_snapshot("hl_categories", cats)
+        note_cnt = sum(len(i.get("notes", [])) for i in items)
+        if ok1 and ok2:
+            return True, f"热门 {len(items)} 个品种、{note_cnt} 条备注、{len(cats)} 个分类已同步"
+        return False, f"hotlist:{m1} / archive:{m2}"
+    except Exception as e:
+        return False, f"push_hotlist 异常：{e}"
+
+
+def pull_hotlist() -> Tuple[bool, str]:
+    try:
+        import storage as loc
+        cloud_items = _download_latest("hotlist")
+        if not isinstance(cloud_items, list):
+            return False, "云端无热门品种数据"
+
+        local_items = loc.load_hotlist()
+        local_notes_map: Dict[str, List] = {}
+        for li in local_items:
+            if isinstance(li, dict) and li.get("ticker"):
+                local_notes_map[li["ticker"].upper()] = li.get("notes", [])
+
+        merged_notes_count = 0
+        for ci in cloud_items:
+            if not isinstance(ci, dict) or not ci.get("ticker"):
+                continue
+            tk = ci["ticker"].upper()
+            cloud_note_ts = {n.get("ts") for n in ci.get("notes", [])
+                             if isinstance(n, dict) and n.get("ts")}
+            for ln in local_notes_map.get(tk, []):
+                if isinstance(ln, dict) and ln.get("ts") and ln["ts"] not in cloud_note_ts:
+                    ci.setdefault("notes", []).append(ln)
+                    merged_notes_count += 1
+            if ci.get("notes"):
+                ci["notes"] = sorted(ci["notes"], key=lambda x: x.get("ts", ""))
+
+        from storage import F_HOTLIST, _save_with_backup
+        _save_with_backup(F_HOTLIST, cloud_items)
+
+        cloud_arch = _download_latest("hotlist_archive")
+        arch_msg = ""
+        if isinstance(cloud_arch, list):
+            loc._save(loc.F_HOTLIST_ARCHIVE, cloud_arch)
+            arch_msg = f"，存档 {len(cloud_arch)} 个"
+
+        cat_ok, cat_msg = pull_hl_categories()
+        cat_suffix = f"，分类：{cat_msg}" if cat_ok else ""
+
+        return True, (f"热门品种已恢复 {len(cloud_items)} 个品种"
+                      f"（补入本地新备注 {merged_notes_count} 条）"
+                      f"{arch_msg}{cat_suffix}")
+    except Exception as e:
+        return False, f"pull_hotlist 异常：{e}"
+
+
 # ════════════════════════════════════════════════════════════════════
 # 全量推送 / 拉取
 # ════════════════════════════════════════════════════════════════════
@@ -464,8 +583,12 @@ def push_all(force: bool = False) -> Tuple[bool, str]:
     ok, msg = push_watchlist(force=force)
     if not ok:
         errors.append(f"watchlist: {msg}")
+    ok_hl, msg_hl = push_hotlist(force=force)
+    if not ok_hl:
+        errors.append(f"hotlist: {msg_hl}")
     for file_key, loader in [
         ("wl_categories", lambda: loc.load_wl_categories()),
+        ("hl_categories", lambda: loc.load_hl_categories()),
         ("scan_history",  lambda: loc._load(loc.F_HIST,   [])),
         ("scan_results",  lambda: loc._load(loc.F_ALLRES, [])),
         ("scan_groups",   lambda: loc.load_scanned_groups()),
@@ -476,7 +599,7 @@ def push_all(force: bool = False) -> Tuple[bool, str]:
             ok2, msg2 = _upload_latest(file_key, data)
             if not ok2:
                 errors.append(f"{file_key}: {msg2}")
-            if file_key in ("config", "wl_categories"):
+            if file_key in ("config", "wl_categories", "hl_categories"):
                 _upload_snapshot(file_key, data)
         except Exception as e:
             errors.append(f"{file_key}: {e}")
@@ -484,8 +607,9 @@ def push_all(force: bool = False) -> Tuple[bool, str]:
         _upload_latest("meta", {
             "last_sync":        time.strftime("%Y-%m-%d %H:%M:%S"),
             "last_sync_ts":     time.time(),
-            "version":          "6.2",
+            "version":          "6.3",
             "watchlist_cnt":    len(loc.load_watchlist()),
+            "hotlist_cnt":      len(loc.load_hotlist()),
             "scan_results_cnt": len(loc._load(loc.F_ALLRES, [])),
         })
     except Exception as e:
@@ -501,6 +625,9 @@ def pull_all() -> Dict[str, Any]:
 
     ok, msg = pull_watchlist()
     results["watchlist"] = (ok, msg)
+
+    ok_hl, msg_hl = pull_hotlist()
+    results["hotlist"] = (ok_hl, msg_hl)
 
     cloud_hist = _download_latest("scan_history")
     if isinstance(cloud_hist, list):
@@ -551,6 +678,10 @@ def pull_all() -> Dict[str, Any]:
     if not results.get("watchlist", (False,))[0]:
         cat_ok2, cat_msg2 = pull_wl_categories()
         results["wl_categories"] = (cat_ok2, cat_msg2)
+
+    if not results.get("hotlist", (False,))[0]:
+        cat_ok3, cat_msg3 = pull_hl_categories()
+        results["hl_categories"] = (cat_ok3, cat_msg3)
 
     return results
 

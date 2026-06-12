@@ -176,6 +176,7 @@ import page_history
 import page_alerts
 import page_settings
 import page_watchlist
+import page_hotlist
 import page_universe
 import page_cloud
 import page_chartink
@@ -198,10 +199,11 @@ def sidebar():
 
         NAV = [
             ("📊", "实时扫描",           "scanner"),
-            ("🔥", "共振检测",           "confluence"),
+            ("⚡", "共振检测",           "confluence"),
             ("📈", "4H Breakout",        "chartink"),
             ("🌍", "全量品种库",         "universe"),
             ("⭐", "自选收藏",           "watchlist"),
+            ("🔥", "热门品种",           "hotlist"),
             ("📂", "历史记录",           "history"),
             ("🔔", "告警配置",           "alerts"),
             ("☁️", "云端同步",           "cloud"),
@@ -413,7 +415,7 @@ def main():
         st.rerun()
 
     # ── URL 参数跳转 ────────────────────────────────────────────
-    _VALID_PAGES = ("watchlist","scanner","confluence","alerts","settings",
+    _VALID_PAGES = ("watchlist","hotlist","scanner","confluence","alerts","settings",
                     "history","cloud","universe","chartink")
     _url_page = st.query_params.get("_page", "")
     if _url_page and _url_page in _VALID_PAGES:
@@ -436,6 +438,7 @@ def main():
         "chartink":   page_chartink.render,
         "universe":   page_universe.render,
         "watchlist":  page_watchlist.render,
+        "hotlist":    page_hotlist.render,
         "history":    page_history.render,
         "alerts":     page_alerts.render,
         "cloud":      page_cloud.render,
@@ -448,8 +451,8 @@ def main():
     _t_nav     = st.query_params.get("_t", "")
     _nav_items = [
         ("📊", "扫描",   "scanner"),
-        ("🔥", "共振",   "confluence"),
-        ("🌍", "品种库", "universe"),
+        ("⚡", "共振",   "confluence"),
+        ("🔥", "热门",   "hotlist"),
         ("⭐", "自选",   "watchlist"),
         ("⚙️", "设置",   "settings"),
     ]

@@ -1,5 +1,5 @@
 """
-page_watchlist.py — 自选收藏夹 v7
+page_hotlist.py — 热门品种 v7
 架构重点：
 - 分类分组展示，已全看的分类自动折叠
 - 今日巡视进度条（session_state，刷新不丢失）
@@ -39,13 +39,13 @@ def _sina_link(ticker: str):
 
 def _row_anchor_id(ticker: str) -> str:
     safe = re.sub(r"[^0-9A-Za-z_-]", "_", str(ticker).upper())
-    return f"wl_row_{safe}"
+    return f"hl_row_{safe}"
 
 def _remember_focus_row(ticker: str):
-    st.session_state["_wl_focus_anchor"] = _row_anchor_id(ticker)
+    st.session_state["_hl_focus_anchor"] = _row_anchor_id(ticker)
 
 def _restore_focus_row_if_needed():
-    anchor = st.session_state.pop("_wl_focus_anchor", None)
+    anchor = st.session_state.pop("_hl_focus_anchor", None)
     if not anchor:
         return
     anchor = str(anchor).replace('"', "").replace("'", "")
@@ -66,13 +66,13 @@ def _restore_focus_row_if_needed():
     )
 
 def _get_viewed() -> set:
-    return storage.load_viewed_today()
+    return storage.load_hl_viewed_today()
 
 def _mark_viewed(ticker: str):
-    storage.mark_viewed(ticker)
+    storage.mark_hl_viewed(ticker)
 
 def _unmark_viewed(ticker: str):
-    storage.unmark_viewed(ticker)
+    storage.unmark_hl_viewed(ticker)
 
 def _latest_note(item: dict):
     notes = item.get("notes", [])
@@ -168,12 +168,12 @@ def _fetch_ticker_name(ticker: str) -> str:
 
 # ══════════════════════════════════════════════════════════════════════
 def render():
-    st.markdown("## ⭐ 自选收藏夹")
+    st.markdown("## 🔥 热门品种")
 
     # ── 品种名内联编辑按钮样式：去掉边框背景，像文本一样可点击 ──
     st.markdown("""
     <style>
-    [data-testid="stButton"] button[kind="secondary"][id*="wl_name_click_"] {
+    [data-testid="stButton"] button[kind="secondary"][id*="hl_name_click_"] {
         background: transparent !important;
         border: none !important;
         padding: 0 !important;
@@ -185,7 +185,7 @@ def render():
         cursor: text !important;
         text-decoration: underline dotted #9ca3af !important;
     }
-    [data-testid="stButton"] button[kind="secondary"][id*="wl_name_click_"]:hover {
+    [data-testid="stButton"] button[kind="secondary"][id*="hl_name_click_"]:hover {
         background: #f0f9ff !important;
         color: #1d4ed8 !important;
         text-decoration: underline solid #1d4ed8 !important;
@@ -194,11 +194,11 @@ def render():
     """, unsafe_allow_html=True)
 
     _tab_idx = 0
-    if st.session_state.pop("_wl_go_cats", False):
+    if st.session_state.pop("_hl_go_cats", False):
         _tab_idx = 1
 
     tab_main, tab_cats, tab_archive, tab_backup = st.tabs(
-        ["⭐ 当前收藏", "🏷️ 分类管理", "🗂️ 已删除存档", "💾 备份与恢复"]
+        ["🔥 当前热门", "🏷️ 分类管理", "🗂️ 已删除存档", "💾 备份与恢复"]
     )
 
     with tab_main:
@@ -213,19 +213,19 @@ def render():
 
 # ══════════════════════════════════════════════════════════════════════
 def _render_main():
-    items      = storage.load_watchlist()
-    cats       = storage.load_wl_categories()
+    items      = storage.load_hotlist()
+    cats       = storage.load_hl_categories()
     result_map = _cached_result_map()
 
-    with st.expander("➕ 添加新品种", expanded=len(items) == 0):
+    with st.expander("➕ 添加新热门", expanded=len(items) == 0):
         _render_add_form()
 
-    items = storage.load_watchlist()
+    items = storage.load_hotlist()
     if not items:
         st.markdown("""<div style="text-align:center;padding:60px 20px;color:#9ca3af;">
-            <div style="font-size:48px">⭐</div>
-            <div style="font-size:16px;font-weight:600;margin:12px 0 6px;color:#374151">收藏夹为空</div>
-            <div style="font-size:13px">点击上方「添加新品种」开始收藏</div>
+            <div style="font-size:48px">🔥</div>
+            <div style="font-size:16px;font-weight:600;margin:12px 0 6px;color:#374151">热门品种列表为空</div>
+            <div style="font-size:13px">点击上方「添加新热门」开始添加</div>
         </div>""", unsafe_allow_html=True)
         return
 
@@ -251,7 +251,7 @@ def _render_main():
     tc1, tc2, tc3, tc4 = st.columns([4, 2, 2, 2])
     with tc1:
         search = st.text_input("🔍", placeholder="搜索 Ticker / 名称…",
-                               key="wl_search", label_visibility="collapsed")
+                               key="hl_search", label_visibility="collapsed")
     with tc2:
         sel_cat = "__ALL__"
         if cats:
@@ -266,25 +266,25 @@ def _render_main():
             _wc(storage.build_cat_tree(cats))
             sel_cat = st.selectbox("分类", _cf_ids,
                                    format_func=lambda x, m=_cf_names: m.get(x, x),
-                                   key="wl_cat_filter_id",
+                                   key="hl_cat_filter_id",
                                    label_visibility="collapsed")
     with tc3:
-        if st.button("⚙️ 管理分类", key="wl_go_cats_btn", use_container_width=True):
-            st.session_state["_wl_go_cats"] = True
+        if st.button("⚙️ 管理分类", key="hl_go_cats_btn", use_container_width=True):
+            st.session_state["_hl_go_cats"] = True
     with tc4:
-        if st.button("🗑️ 清空", key="wl_clear_all", use_container_width=True):
-            st.session_state["wl_confirm_clear"] = True
+        if st.button("🗑️ 清空", key="hl_clear_all", use_container_width=True):
+            st.session_state["hl_confirm_clear"] = True
 
-    if st.session_state.get("wl_confirm_clear"):
-        st.warning("⚠️ 确定清空所有收藏？（将移入存档，可恢复）")
+    if st.session_state.get("hl_confirm_clear"):
+        st.warning("⚠️ 确定清空所有热门？（将移入存档，可恢复）")
         cc1, cc2 = st.columns(2)
         with cc1:
-            if st.button("确认清空", key="wl_clear_yes", type="primary"):
-                for item in items: storage.remove_from_watchlist(item["ticker"])
-                st.session_state["wl_confirm_clear"] = False
+            if st.button("确认清空", key="hl_clear_yes", type="primary"):
+                for item in items: storage.remove_from_hotlist(item["ticker"])
+                st.session_state["hl_confirm_clear"] = False
         with cc2:
-            if st.button("取消", key="wl_clear_no"):
-                st.session_state["wl_confirm_clear"] = False
+            if st.button("取消", key="hl_clear_no"):
+                st.session_state["hl_confirm_clear"] = False
 
     # ── 过滤 ────────────────────────────────────────────────────
     q        = search.strip().upper()
@@ -365,9 +365,9 @@ def _render_main():
         })
     df  = pd.DataFrame(rows)
     csv = df.to_csv(index=False).encode("utf-8-sig")
-    st.download_button("⬇️ 导出收藏夹 CSV", csv,
-                       file_name="strx_watchlist.csv", mime="text/csv",
-                       key="wl_dl")
+    st.download_button("⬇️ 导出热门品种 CSV", csv,
+                       file_name="strx_hotlist.csv", mime="text/csv",
+                       key="hl_dl")
     _restore_focus_row_if_needed()
 
 
@@ -424,20 +424,20 @@ def _render_item_row(item, result_map, cats, viewed_set):
         )
 
     # ── 编辑状态key ──────────────────────────────────────────────
-    _edit_key   = f"wl_edit_name_{ticker}"   # True = 编辑中
-    _val_key    = f"wl_edit_val_{ticker}"    # 输入框当前值
+    _edit_key   = f"hl_edit_name_{ticker}"   # True = 编辑中
+    _val_key    = f"hl_edit_val_{ticker}"    # 输入框当前值
     is_editing  = st.session_state.get(_edit_key, False)
 
     if is_editing:
         # ── 编辑模式：显示 text_input，on_change 触发保存 ────────
         def _save_name():
             new_val = st.session_state.get(_val_key, "").strip()
-            items_all = storage.load_watchlist()
+            items_all = storage.load_hotlist()
             for it in items_all:
                 if it["ticker"].upper() == ticker.upper():
                     it["name"] = new_val
                     break
-            storage.save_watchlist(items_all)
+            storage.save_hotlist(items_all)
             st.session_state[_edit_key] = False
 
         st.text_input(
@@ -462,7 +462,7 @@ def _render_item_row(item, result_map, cats, viewed_set):
         # 点击品种名按钮 → 进入编辑
         if st.button(
             f"✎ {name or ticker}",
-            key=f"wl_name_click_{ticker}",
+            key=f"hl_name_click_{ticker}",
             help="点击编辑品种全称",
             use_container_width=False,
         ):
@@ -476,7 +476,7 @@ def _render_item_row(item, result_map, cats, viewed_set):
 
     with bc1:
         if st.button("✅" if viewed else "👁️",
-                     key=f"wl_v_{ticker}",
+                     key=f"hl_v_{ticker}",
                      help="取消已看" if viewed else "标记已看"):
             _remember_focus_row(ticker)
             if viewed: _unmark_viewed(ticker)
@@ -498,26 +498,26 @@ def _render_item_row(item, result_map, cats, viewed_set):
             )
         with bc4:
             if st.button("🔓" if pinned else "📌",
-                         key=f"wl_pin_{ticker}", help="置顶/取消"):
+                         key=f"hl_pin_{ticker}", help="置顶/取消"):
                 _remember_focus_row(ticker)
-                storage.toggle_pin_watchlist(ticker)
+                storage.toggle_pin_hotlist(ticker)
         with bc5:
-            if st.button("🗑", key=f"wl_del_{ticker}", help="删除（移入存档）"):
+            if st.button("🗑", key=f"hl_del_{ticker}", help="删除（移入存档）"):
                 _remember_focus_row(ticker)
-                storage.remove_from_watchlist(ticker)
+                storage.remove_from_hotlist(ticker)
                 st.toast(f"已移入存档：{ticker}", icon="🗂️")
         with bc6:
             _render_inline_controls(item, ticker, cats)
     else:
         with bc3:
             if st.button("🔓" if pinned else "📌",
-                         key=f"wl_pin_{ticker}", help="置顶/取消"):
+                         key=f"hl_pin_{ticker}", help="置顶/取消"):
                 _remember_focus_row(ticker)
-                storage.toggle_pin_watchlist(ticker)
+                storage.toggle_pin_hotlist(ticker)
         with bc4:
-            if st.button("🗑", key=f"wl_del_{ticker}", help="删除（移入存档）"):
+            if st.button("🗑", key=f"hl_del_{ticker}", help="删除（移入存档）"):
                 _remember_focus_row(ticker)
-                storage.remove_from_watchlist(ticker)
+                storage.remove_from_hotlist(ticker)
                 st.toast(f"已移入存档：{ticker}", icon="🗂️")
         with bc5:
             _render_inline_controls(item, ticker, cats)
@@ -545,39 +545,39 @@ def _render_inline_controls(item, ticker, cats):
     cc = st.columns([1, 1, 1, 5])
 
     with cc[0]:
-        if st.button("🏷️", key=f"wl_cat_btn_{ticker}", help="设置分类"):
+        if st.button("🏷️", key=f"hl_cat_btn_{ticker}", help="设置分类"):
             _remember_focus_row(ticker)
-            k = f"wl_cat_open_{ticker}"
+            k = f"hl_cat_open_{ticker}"
             st.session_state[k] = not st.session_state.get(k, False)
             if st.session_state[k]:
-                st.session_state[f"wl_cat_init_{ticker}"] = True
+                st.session_state[f"hl_cat_init_{ticker}"] = True
 
     with cc[1]:
-        if st.button("✏️", key=f"wl_note_btn_{ticker}", help="添加备注"):
+        if st.button("✏️", key=f"hl_note_btn_{ticker}", help="添加备注"):
             _remember_focus_row(ticker)
-            k = f"wl_note_open_{ticker}"
+            k = f"hl_note_open_{ticker}"
             st.session_state[k] = not st.session_state.get(k, False)
 
     with cc[2]:
         notes = _all_notes(item)
         if notes:
-            hist_open = st.session_state.get(f"wl_hist_open_{ticker}", True)
+            hist_open = st.session_state.get(f"hl_hist_open_{ticker}", True)
             btn_label = "📋▲" if hist_open else f"📋({len(notes)})"
-            if st.button(btn_label, key=f"wl_hist_btn_{ticker}",
+            if st.button(btn_label, key=f"hl_hist_btn_{ticker}",
                          help="收起备注" if hist_open else f"展开备注({len(notes)})"):
                 _remember_focus_row(ticker)
-                st.session_state[f"wl_hist_open_{ticker}"] = not hist_open
+                st.session_state[f"hl_hist_open_{ticker}"] = not hist_open
 
     # ── 设置分类面板 ──────────────────────────────────────────────
-    if st.session_state.get(f"wl_cat_open_{ticker}"):
+    if st.session_state.get(f"hl_cat_open_{ticker}"):
         if not cats:
             st.warning("尚无分类，请先在「🏷️ 分类管理」标签创建。")
         else:
             # 每次调用返回全新列表，不同品种之间完全隔离
             _as_ids, _as_names = _build_cat_options(cats)
 
-            _sel_key  = f"wl_cat_sel_{ticker}"
-            _init_key = f"wl_cat_init_{ticker}"
+            _sel_key  = f"hl_cat_sel_{ticker}"
+            _init_key = f"hl_cat_init_{ticker}"
             if st.session_state.pop(_init_key, False):
                 cur      = item.get("category_id")
                 _default = "__UNCAT__"
@@ -602,43 +602,43 @@ def _render_inline_controls(item, ticker, cats):
             )
             sc1, sc2 = st.columns(2)
             with sc1:
-                if st.button("💾 保存分类", key=f"wl_cat_save_{ticker}", type="primary"):
+                if st.button("💾 保存分类", key=f"hl_cat_save_{ticker}", type="primary"):
                     _remember_focus_row(ticker)
-                    storage.set_watchlist_item_category(
+                    storage.set_hotlist_item_category(
                         ticker, None if chosen == "__UNCAT__" else chosen)
-                    st.session_state.pop(f"wl_cat_open_{ticker}", None)
+                    st.session_state.pop(f"hl_cat_open_{ticker}", None)
                     st.session_state.pop(_sel_key, None)
                     st.toast(f"已设置：{_as_names.get(chosen, '')}", icon="🏷️")
             with sc2:
-                if st.button("取消", key=f"wl_cat_cancel_{ticker}"):
+                if st.button("取消", key=f"hl_cat_cancel_{ticker}"):
                     _remember_focus_row(ticker)
-                    st.session_state.pop(f"wl_cat_open_{ticker}", None)
+                    st.session_state.pop(f"hl_cat_open_{ticker}", None)
                     st.session_state.pop(_sel_key, None)
 
     # ── 添加备注面板 ──────────────────────────────────────────────
     with st.container():
-        if st.session_state.get(f"wl_note_open_{ticker}"):
+        if st.session_state.get(f"hl_note_open_{ticker}"):
             with st.container(border=True):
-                new_text = st.text_input("备注内容 *", key=f"wl_note_txt_{ticker}",
+                new_text = st.text_input("备注内容 *", key=f"hl_note_txt_{ticker}",
                                          placeholder="输入本次备注…")
-                new_img  = st.text_input("图片链接（选填）", key=f"wl_note_img_{ticker}",
+                new_img  = st.text_input("图片链接（选填）", key=f"hl_note_img_{ticker}",
                                          placeholder="https://...").strip()
                 sn1, sn2 = st.columns(2)
                 with sn1:
-                    if st.button("💾 保存备注", key=f"wl_note_save_{ticker}", type="primary"):
+                    if st.button("💾 保存备注", key=f"hl_note_save_{ticker}", type="primary"):
                         _remember_focus_row(ticker)
                         if not new_text.strip():
                             st.warning("备注不能为空")
                         else:
-                            storage.add_watchlist_note(ticker, new_text.strip(), new_img)
-                            st.session_state.pop(f"wl_note_open_{ticker}", None)
+                            storage.add_hotlist_note(ticker, new_text.strip(), new_img)
+                            st.session_state.pop(f"hl_note_open_{ticker}", None)
                             st.toast(f"备注已保存：{ticker}", icon="📝")
                 with sn2:
-                    if st.button("取消", key=f"wl_note_cancel_{ticker}"):
+                    if st.button("取消", key=f"hl_note_cancel_{ticker}"):
                         _remember_focus_row(ticker)
-                        st.session_state.pop(f"wl_note_open_{ticker}", None)
+                        st.session_state.pop(f"hl_note_open_{ticker}", None)
 
-    if st.session_state.get(f"wl_hist_open_{ticker}", True):
+    if st.session_state.get(f"hl_hist_open_{ticker}", True):
         notes = _all_notes(item)
         for n in reversed(notes):
             img_url_n = n.get("img_url", "")
@@ -658,39 +658,39 @@ def _render_inline_controls(item, ticker, cats):
 
 # ══════════════════════════════════════════════════════════════════════
 def _render_add_form():
-    _prev_key    = "_wl_add_prev_ticker"
-    _fetched_key = "_wl_add_fetched_name"
+    _prev_key    = "_hl_add_prev_ticker"
+    _fetched_key = "_hl_add_fetched_name"
 
     c1, c2 = st.columns([2, 2])
     with c1:
         new_ticker = st.text_input(
             "Ticker 代码 *", placeholder="例: AAPL  600519.SS",
-            key="wl_new_ticker",
+            key="hl_new_ticker",
         ).strip().upper()
 
-    # ── 查询逻辑：在 c2 渲染之前执行，写入 wl_new_name 才有效 ────
+    # ── 查询逻辑：在 c2 渲染之前执行，写入 hl_new_name 才有效 ────
     if new_ticker:
         prev = st.session_state.get(_prev_key, "")
         if new_ticker != prev:
             # ticker 变化 → 先清空名称栏，再查询填入
             st.session_state[_prev_key]    = new_ticker
             st.session_state[_fetched_key] = ""
-            st.session_state["wl_new_name"] = ""   # 先清空，避免残留旧品种名
+            st.session_state["hl_new_name"] = ""   # 先清空，避免残留旧品种名
             fetched = _fetch_ticker_name(new_ticker)
             st.session_state[_fetched_key] = fetched
             if fetched:
-                st.session_state["wl_new_name"] = fetched  # 直接填入，不判断是否为空
+                st.session_state["hl_new_name"] = fetched  # 直接填入，不判断是否为空
     else:
         st.session_state.pop(_prev_key,    None)
         st.session_state.pop(_fetched_key, None)
-        if st.session_state.get("wl_new_name") == st.session_state.get(_fetched_key, "__NONE__"):
-            st.session_state.pop("wl_new_name", None)
+        if st.session_state.get("hl_new_name") == st.session_state.get(_fetched_key, "__NONE__"):
+            st.session_state.pop("hl_new_name", None)
 
-    # c2 在此渲染，读到的 wl_new_name 已是上面写入的值
+    # c2 在此渲染，读到的 hl_new_name 已是上面写入的值
     with c2:
         new_name = st.text_input(
             "品种全称（可选）", placeholder="例: 苹果公司",
-            key="wl_new_name",
+            key="hl_new_name",
         )
 
     # ── 状态提示 ──────────────────────────────────────────────────
@@ -718,44 +718,44 @@ def _render_add_form():
 
     note_text = st.text_input(
         "📝 备注 *（必填）", placeholder="例: 关注 0.618 支撑",
-        key="wl_new_note_text",
+        key="hl_new_note_text",
     )
     img_url = st.text_input(
         "🖼️ 图片链接（选填）", placeholder="https://...",
-        key="wl_new_img_url",
+        key="hl_new_img_url",
     ).strip()
 
-    if st.button("➕ 添加到收藏夹", key="wl_add_btn", type="primary"):
+    if st.button("➕ 添加到热门品种", key="hl_add_btn", type="primary"):
         if not new_ticker:
             st.warning("请输入 Ticker 代码")
         elif not note_text.strip():
             st.warning("备注为必填项")
         else:
-            ok = storage.add_to_watchlist(new_ticker, new_name,
-                                          note_text.strip(), img_url)
+            ok = storage.add_to_hotlist(new_ticker, new_name,
+                                        note_text.strip(), img_url)
             if ok:
                 st.success(f"✅ 已添加 {new_ticker}")
-                for k in ["wl_new_ticker", "wl_new_name",
-                          "wl_new_note_text", "wl_new_img_url",
+                for k in ["hl_new_ticker", "hl_new_name",
+                          "hl_new_note_text", "hl_new_img_url",
                           _prev_key, _fetched_key]:
                     st.session_state.pop(k, None)
                 _cached_result_map.clear()
             else:
-                st.warning(f"⚠️ {new_ticker} 已在收藏夹中")
+                st.warning(f"⚠️ {new_ticker} 已在热门品种中")
 
     st.markdown("---")
     st.markdown("**批量导入**（每行一个 Ticker，可附简称）")
     bulk_text = st.text_area("批量输入",
                              placeholder="AAPL 苹果\nTSLA 特斯拉\n600519.SS 茅台",
-                             height=80, key="wl_bulk", label_visibility="collapsed")
-    if st.button("批量添加", key="wl_bulk_btn"):
+                             height=80, key="hl_bulk", label_visibility="collapsed")
+    if st.button("批量添加", key="hl_bulk_btn"):
         added, skipped = [], []
         for line in bulk_text.strip().splitlines():
             parts = line.strip().split(None, 1)
             if not parts: continue
             tk = parts[0].upper()
             nm = parts[1] if len(parts) > 1 else ""
-            if storage.add_to_watchlist(tk, nm, note="批量导入"):
+            if storage.add_to_hotlist(tk, nm, note="批量导入"):
                 added.append(tk)
             else:
                 skipped.append(tk)
@@ -776,13 +776,13 @@ def _render_categories():
         unsafe_allow_html=True,
     )
 
-    cats = storage.load_wl_categories()
+    cats = storage.load_hl_categories()
 
     with st.expander("➕ 新增分类", expanded=False):
         nc1, nc2 = st.columns([3, 2])
         with nc1:
             new_cat_name = st.text_input("分类名称 *",
-                                         placeholder="例: 1.大结构突破", key="wl_new_cat_name")
+                                         placeholder="例: 1.大结构突破", key="hl_new_cat_name")
         with nc2:
             _par_ids   = ["__ROOT__"]
             _par_names = {"__ROOT__": "（顶级分类）"}
@@ -796,25 +796,25 @@ def _render_categories():
             _fill_par(storage.build_cat_tree(cats))
             parent_id = st.selectbox("父级分类（可选）", _par_ids,
                                      format_func=lambda x, m=_par_names: m.get(x, x),
-                                     key="wl_new_cat_parent")
+                                     key="hl_new_cat_parent")
 
-        if st.button("➕ 创建分类", key="wl_cat_create", type="primary"):
+        if st.button("➕ 创建分类", key="hl_cat_create", type="primary"):
             if not new_cat_name.strip():
                 st.warning("分类名称不能为空")
             else:
                 _par = None if parent_id == "__ROOT__" else parent_id
-                storage.add_wl_category(new_cat_name.strip(), parent_id=_par)
-                st.session_state.pop("wl_new_cat_name", None)
+                storage.add_hl_category(new_cat_name.strip(), parent_id=_par)
+                st.session_state.pop("hl_new_cat_name", None)
                 st.toast(f"✅ 已创建：{new_cat_name.strip()}", icon="🏷️")
 
-    cats = storage.load_wl_categories()
+    cats = storage.load_hl_categories()
     if not cats:
         st.info("尚无分类，请点击上方「➕ 新增分类」创建。")
         return
 
     st.markdown("#### 📋 分类目录（可展开编辑、重命名、排序、删除）")
     tree      = storage.build_cat_tree(cats)
-    all_items = storage.load_watchlist()
+    all_items = storage.load_hotlist()
 
     def _count_items(cat_id):
         _valid  = {cat_id} | storage._collect_descendants(cats, cat_id)
@@ -832,33 +832,33 @@ def _render_categories():
             ec1, ec2, ec3, ec4 = st.columns([3, 1, 1, 1])
             with ec1:
                 new_name = st.text_input("重命名", value=node["name"],
-                                         key=f"wl_cat_rename_{node['id']}",
+                                         key=f"hl_cat_rename_{node['id']}",
                                          label_visibility="collapsed")
             with ec2:
-                if st.button("💾", key=f"wl_cat_save_name_{node['id']}", help="保存"):
+                if st.button("💾", key=f"hl_cat_save_name_{node['id']}", help="保存"):
                     if new_name.strip() and new_name.strip() != node["name"]:
-                        storage.rename_wl_category(node["id"], new_name.strip())
+                        storage.rename_hl_category(node["id"], new_name.strip())
                         st.toast(f"已重命名：{new_name.strip()}", icon="✏️")
             with ec3:
-                if st.button("⬆️", key=f"wl_cat_up_{node['id']}", help="上移"):
-                    storage.reorder_wl_category(node["id"], "up")
+                if st.button("⬆️", key=f"hl_cat_up_{node['id']}", help="上移"):
+                    storage.reorder_hl_category(node["id"], "up")
             with ec4:
-                if st.button("🗑", key=f"wl_cat_del_{node['id']}", help="删除"):
-                    st.session_state[f"_del_cat_confirm_{node['id']}"] = True
+                if st.button("🗑", key=f"hl_cat_del_{node['id']}", help="删除"):
+                    st.session_state[f"_del_hl_cat_confirm_{node['id']}"] = True
 
-            if st.session_state.get(f"_del_cat_confirm_{node['id']}"):
+            if st.session_state.get(f"_del_hl_cat_confirm_{node['id']}"):
                 st.error(f"确认删除「{node['name']}」？品种将变为未分类。")
                 dd1, dd2 = st.columns(2)
                 with dd1:
                     if st.button("确认删除",
-                                 key=f"wl_cat_del_yes_{node['id']}",
+                                 key=f"hl_cat_del_yes_{node['id']}",
                                  type="primary"):
-                        storage.delete_wl_category(node["id"])
-                        st.session_state.pop(f"_del_cat_confirm_{node['id']}", None)
+                        storage.delete_hl_category(node["id"])
+                        st.session_state.pop(f"_del_hl_cat_confirm_{node['id']}", None)
                         st.toast(f"已删除：{node['name']}", icon="🗑️")
                 with dd2:
-                    if st.button("取消", key=f"wl_cat_del_no_{node['id']}"):
-                        st.session_state.pop(f"_del_cat_confirm_{node['id']}", None)
+                    if st.button("取消", key=f"hl_cat_del_no_{node['id']}"):
+                        st.session_state.pop(f"_del_hl_cat_confirm_{node['id']}", None)
 
             if node.get("children"):
                 for child in sorted(node["children"], key=lambda x: x.get("order",0)):
@@ -869,7 +869,7 @@ def _render_categories():
 
     st.markdown("---")
     st.markdown("#### 📦 批量修改分类")
-    all_items  = storage.load_watchlist()
+    all_items  = storage.load_hotlist()
     _b_names   = {i["ticker"]: f"{i['ticker']} {i.get('name','')}" for i in all_items}
     _bt_ids    = ["__UNCAT__"] + [c["id"] for c in cats]
     _bt_names  = {"__UNCAT__": "（未分类）"}
@@ -878,18 +878,18 @@ def _render_categories():
     selected_tickers = st.multiselect(
         "选择品种", list(_b_names.keys()),
         format_func=lambda x, m=_b_names: m.get(x, x),
-        key="cat_batch_tickers",
+        key="hl_cat_batch_tickers",
     )
     target_cat = st.selectbox("目标分类", _bt_ids,
                               format_func=lambda x, m=_bt_names: m.get(x, x),
-                              key="cat_batch_target_id")
+                              key="hl_cat_batch_target_id")
 
-    if st.button("批量设置分类", key="cat_batch_save", type="primary"):
+    if st.button("批量设置分类", key="hl_cat_batch_save", type="primary"):
         if not selected_tickers:
             st.warning("请先选择品种")
         else:
             for tk in selected_tickers:
-                storage.set_watchlist_item_category(
+                storage.set_hotlist_item_category(
                     tk, None if target_cat == "__UNCAT__" else target_cat)
             st.toast(f"✅ 已为 {len(selected_tickers)} 个品种设置分类", icon="🏷️")
 
@@ -897,7 +897,7 @@ def _render_categories():
 # ══════════════════════════════════════════════════════════════════════
 def _render_archive():
     st.markdown("### 🗂️ 已删除存档")
-    archive = storage.load_watchlist_archive()
+    archive = storage.load_hotlist_archive()
     if not archive:
         st.info("存档为空。")
         return
@@ -915,14 +915,14 @@ def _render_archive():
                 unsafe_allow_html=True,
             )
         with c2:
-            if st.button("♻️ 恢复", key=f"arc_restore_{ticker}"):
-                storage.restore_from_archive(ticker)
+            if st.button("♻️ 恢复", key=f"hl_arc_restore_{ticker}"):
+                storage.restore_hotlist_from_archive(ticker)
                 st.toast(f"已恢复：{ticker}", icon="♻️")
         with c3:
-            if st.button("🗑 永久删除", key=f"arc_perm_{ticker}"):
-                arch = storage.load_watchlist_archive()
+            if st.button("🗑 永久删除", key=f"hl_arc_perm_{ticker}"):
+                arch = storage.load_hotlist_archive()
                 arch = [a for a in arch if a["ticker"].upper() != ticker.upper()]
-                storage.save_watchlist_archive(arch)
+                storage.save_hotlist_archive(arch)
                 st.toast(f"已永久删除：{ticker}", icon="🗑️")
 
 
@@ -930,22 +930,22 @@ def _render_archive():
 def _render_backup():
     st.markdown("### 💾 备份与恢复")
     st.markdown("#### ⬇️ 导出备份")
-    json_str = storage.export_watchlist_json()
+    json_str = storage.export_hotlist_json()
     st.download_button(
         "⬇️ 下载 JSON 备份",
         data=json_str.encode("utf-8"),
-        file_name=f"strx_watchlist_backup_{date.today().isoformat()}.json",
+        file_name=f"strx_hotlist_backup_{date.today().isoformat()}.json",
         mime="application/json",
-        key="wl_export_json",
+        key="hl_export_json",
     )
 
     st.markdown("#### ⬆️ 导入备份")
-    uploaded   = st.file_uploader("上传 JSON 备份文件", type=["json"], key="wl_import_file")
-    merge_mode = st.checkbox("合并模式（保留现有数据）", value=True, key="wl_import_merge")
+    uploaded   = st.file_uploader("上传 JSON 备份文件", type=["json"], key="hl_import_file")
+    merge_mode = st.checkbox("合并模式（保留现有数据）", value=True, key="hl_import_merge")
     if uploaded is not None:
-        if st.button("导入", key="wl_import_btn", type="primary"):
+        if st.button("导入", key="hl_import_btn", type="primary"):
             content = uploaded.read().decode("utf-8")
-            ok, msg = storage.import_watchlist_json(content, merge=merge_mode)
+            ok, msg = storage.import_hotlist_json(content, merge=merge_mode)
             if ok:
                 st.success(f"✅ {msg}")
                 _cached_result_map.clear()
@@ -954,7 +954,7 @@ def _render_backup():
 
     st.markdown("#### 📁 本地自动备份")
     try:
-        backups = storage.list_backups()
+        backups = storage.list_backups("data_hotlist")
         if backups:
             for b in backups[:10]:
                 bc1, bc2 = st.columns([5, 2])
@@ -966,8 +966,8 @@ def _render_backup():
                         unsafe_allow_html=True,
                     )
                 with bc2:
-                    if st.button("还原", key=f"wl_restore_{b['name']}"):
-                        ok2, msg2 = storage.restore_backup(b["name"])
+                    if st.button("还原", key=f"hl_restore_{b['name']}"):
+                        ok2, msg2 = storage.restore_backup(b["name"], is_hotlist=True)
                         if ok2:
                             st.success(f"✅ {msg2}")
                             _cached_result_map.clear()

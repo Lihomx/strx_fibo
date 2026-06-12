@@ -634,21 +634,44 @@ def import_watchlist_json(json_str: str, merge: bool = True):
         return ok, f"替换完成：导入 {len(imported_items)} 个品种"
 
 
-def list_backups() -> list:
+def list_backups(prefix: str = "data_watchlist") -> list:
     _ensure_backup_dir()
     result = []
     try:
         for fname in sorted(os.listdir(_BACKUP_DIR), reverse=True):
-            if not fname.endswith(".json"):
+            if not fname.endswith(".json") or not fname.startswith(prefix):
                 continue
             fpath   = os.path.join(_BACKUP_DIR, fname)
             size_kb = os.path.getsize(fpath) // 1024
             mtime   = time.strftime("%Y-%m-%d %H:%M",
                                     time.localtime(os.path.getmtime(fpath)))
-            result.append((fname, fpath, size_kb, mtime))
+            result.append({
+                "name": fname,
+                "path": fpath,
+                "size_kb": size_kb,
+                "time": mtime
+            })
     except Exception:
         pass
     return result
+
+
+def restore_backup(name: str, is_hotlist: bool = False) -> Tuple[bool, str]:
+    _ensure_backup_dir()
+    fpath = os.path.join(_BACKUP_DIR, name)
+    try:
+        with open(fpath, "r", encoding="utf-8") as f:
+            json_str = f.read()
+        if is_hotlist:
+            return import_hotlist_json(json_str, merge=False)
+        else:
+            return import_watchlist_json(json_str, merge=False)
+    except FileNotFoundError:
+        return False, "备份文件不存在"
+    except Exception as e:
+        return False, f"读取备份失败：{e}"
+
+
 
 
 def restore_from_backup_file(abs_path: str, merge: bool = True):
@@ -907,3 +930,351 @@ def _tv_link_for_mark(ticker: str) -> str:
         return assets.tv_url(ticker)
     except Exception:
         return f"https://cn.tradingview.com/chart/?symbol={ticker}"
+
+
+# ════════════════════════════════════════════════════════════════════
+# 热门品种 (Hot Assets) 管理层
+# ════════════════════════════════════════════════════════════════════
+F_HOTLIST = os.path.join(_BASE, "data_hotlist.json")
+F_HOTLIST_ARCHIVE = os.path.join(_BASE, "data_hotlist_archive.json")
+F_HL_CATS = os.path.join(_BASE, "data_hl_categories.json")
+
+
+def load_hotlist() -> List[Dict]:
+    """返回热门品种列表，每项: {ticker, name, notes:[], added_at}"""
+    items = _load(F_HOTLIST, [])
+    if not isinstance(items, list):
+        items = []
+    items = [i for i in items if isinstance(i, dict) and i.get("ticker")]
+    return items
+
+
+def save_hotlist(items: List[Dict]) -> bool:
+    ok = _save_with_backup(F_HOTLIST, items)
+    if ok:
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                _async_push(cloud_sync.push_hotlist)  # 异步，不阻塞 UI
+        except Exception:
+            pass
+    return ok
+
+
+def load_hotlist_archive() -> List[Dict]:
+    """返回已软删除的品种存档"""
+    items = _load(F_HOTLIST_ARCHIVE, [])
+    if not isinstance(items, list):
+        items = []
+    return [i for i in items if isinstance(i, dict) and i.get("ticker")]
+
+
+def save_hotlist_archive(items: List[Dict]) -> bool:
+    return _save(F_HOTLIST_ARCHIVE, items)
+
+
+def add_to_hotlist(ticker: str, name: str = "", note: str = "",
+                   img_url: str = "") -> bool:
+    """添加品种到热门品种列表。notes 字段为列表，每条含 {text, img_url, ts}。
+    若品种已在存档中，自动恢复。"""
+    ticker = ticker.strip().upper()
+    if not ticker:
+        return False
+
+    items = load_hotlist()
+    existing = [i for i in items if i["ticker"].upper() == ticker]
+    if existing:
+        return False  # 已存在
+
+    # 检查是否在存档中，如在则恢复
+    archive = load_hotlist_archive()
+    restored = next((a for a in archive if a["ticker"].upper() == ticker), None)
+
+    if restored:
+        entry = restored.copy()
+        entry["deleted_at"] = None
+        # 更新名称（如有）
+        if name.strip():
+            entry["name"] = name.strip()
+    else:
+        entry = {
+            "ticker":   ticker,
+            "name":     name.strip(),
+            "notes":    [],
+            "added_at": _now_str(),
+        }
+
+    # 追加首条备注
+    if note.strip():
+        entry.setdefault("notes", []).append({
+            "text":    note.strip(),
+            "img_url": img_url.strip(),
+            "ts":      _now_str(),
+        })
+
+    items.append(entry)
+    ok = save_hotlist(items)
+
+    # 从存档移除（已恢复）
+    if restored and ok:
+        new_archive = [a for a in archive if a["ticker"].upper() != ticker]
+        save_hotlist_archive(new_archive)
+
+    return ok
+
+
+def remove_from_hotlist(ticker: str) -> bool:
+    """软删除：将品种移入存档，保留所有历史备注。"""
+    ticker = ticker.strip().upper()
+    items   = load_hotlist()
+    target  = next((i for i in items if i["ticker"].upper() == ticker), None)
+    if not target:
+        return False
+
+    # 写入存档
+    archive = load_hotlist_archive()
+    new_archive = [a for a in archive if a["ticker"].upper() != ticker]
+    archived_entry = target.copy()
+    archived_entry["deleted_at"] = _now_str()
+    new_archive.append(archived_entry)
+    save_hotlist_archive(new_archive)
+
+    # 从活跃列表移除
+    new_items = [i for i in items if i["ticker"].upper() != ticker]
+    return save_hotlist(new_items)
+
+
+def restore_hotlist_from_archive(ticker: str) -> bool:
+    """从存档恢复品种到热门品种。"""
+    ticker  = ticker.strip().upper()
+    archive = load_hotlist_archive()
+    target  = next((a for a in archive if a["ticker"].upper() == ticker), None)
+    if not target:
+        return False
+
+    items = load_hotlist()
+    if any(i["ticker"].upper() == ticker for i in items):
+        return False  # 已在活跃列表
+
+    entry = target.copy()
+    entry["deleted_at"] = None
+    items.append(entry)
+    ok = save_hotlist(items)
+
+    if ok:
+        new_archive = [a for a in archive if a["ticker"].upper() != ticker]
+        save_hotlist_archive(new_archive)
+
+    return ok
+
+
+def add_hotlist_note(ticker: str, note_text: str,
+                     img_url: str = "") -> bool:
+    """向热门品种追加一条带时间戳的备注。"""
+    ticker = ticker.strip().upper()
+    if not note_text.strip():
+        return False
+    items = load_hotlist()
+    for item in items:
+        if item["ticker"].upper() == ticker:
+            item.setdefault("notes", []).append({
+                "text":    note_text.strip(),
+                "img_url": img_url.strip(),
+                "ts":      _now_str(),
+            })
+            return save_hotlist(items)
+    return False
+
+
+def toggle_pin_hotlist(ticker: str) -> bool:
+    """切换品种置顶状态（pinned=True/False）。返回操作后的 pinned 值。"""
+    ticker = ticker.strip().upper()
+    items  = load_hotlist()
+    for item in items:
+        if item["ticker"].upper() == ticker:
+            item["pinned"] = not item.get("pinned", False)
+            save_hotlist(items)
+            return item["pinned"]
+    return False
+
+
+# ── 热门品种分类管理 ──
+def load_hl_categories() -> List[Dict]:
+    """加载热门品种分类列表（扁平列表，带 parent_id 构成树）"""
+    cats = _load(F_HL_CATS, [])
+    if not isinstance(cats, list):
+        cats = []
+    valid = []
+    for c in cats:
+        if isinstance(c, dict) and c.get("id") and c.get("name"):
+            c.setdefault("parent_id", None)
+            c.setdefault("order", 0)
+            valid.append(c)
+    return valid
+
+
+def save_hl_categories(cats: List[Dict]) -> bool:
+    ok = _save(F_HL_CATS, cats)
+    if ok:
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                _async_push(cloud_sync.push_hl_categories)  # 异步，不阻塞 UI
+        except Exception:
+            pass
+    return ok
+
+
+def add_hl_category(name: str, parent_id=None) -> Optional[str]:
+    import uuid
+    name = name.strip()
+    if not name:
+        return None
+    cats = load_hl_categories()
+    siblings = [c for c in cats if c.get("parent_id") == parent_id]
+    if any(c["name"] == name for c in siblings):
+        return None
+    new_id  = str(uuid.uuid4())[:8]
+    max_ord = max((c.get("order", 0) for c in siblings), default=-1) + 1
+    cats.append({"id": new_id, "name": name, "parent_id": parent_id, "order": max_ord})
+    save_hl_categories(cats)
+    return new_id
+
+
+def rename_hl_category(cat_id: str, new_name: str) -> bool:
+    new_name = new_name.strip()
+    if not new_name:
+        return False
+    cats = load_hl_categories()
+    for c in cats:
+        if c["id"] == cat_id:
+            c["name"] = new_name
+            return save_hl_categories(cats)
+    return False
+
+
+def delete_hl_category(cat_id: str, reassign_to=None) -> bool:
+    cats = load_hl_categories()
+    to_del = _collect_descendants(cats, cat_id) | {cat_id}
+    cats = [c for c in cats if c["id"] not in to_del]
+    save_hl_categories(cats)
+    items = load_hotlist()
+    changed = False
+    for item in items:
+        if item.get("category_id") in to_del:
+            item["category_id"] = reassign_to
+            changed = True
+    if changed:
+        save_hotlist(items)
+    return True
+
+
+def reorder_hl_category(cat_id: str, direction: str) -> bool:
+    cats = load_hl_categories()
+    target = next((c for c in cats if c["id"] == cat_id), None)
+    if not target:
+        return False
+    pid = target.get("parent_id")
+    siblings = sorted([c for c in cats if c.get("parent_id") == pid],
+                      key=lambda x: x.get("order", 0))
+    idx = next((i for i, c in enumerate(siblings) if c["id"] == cat_id), -1)
+    if idx < 0:
+        return False
+    if direction == "up" and idx > 0:
+        siblings[idx]["order"], siblings[idx-1]["order"] = \
+            siblings[idx-1].get("order", 0), siblings[idx].get("order", 0)
+    elif direction == "down" and idx < len(siblings) - 1:
+        siblings[idx]["order"], siblings[idx+1]["order"] = \
+            siblings[idx+1].get("order", 0), siblings[idx].get("order", 0)
+    else:
+        return False
+    return save_hl_categories(cats)
+
+
+def set_hotlist_item_category(ticker: str, category_id) -> bool:
+    ticker = ticker.strip().upper()
+    items  = load_hotlist()
+    for item in items:
+        if item["ticker"].upper() == ticker:
+            item["category_id"] = category_id
+            return save_hotlist(items)
+    return False
+
+
+# ── 热门品种今日已看 ──
+def _hl_viewed_file() -> str:
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_hl_viewed.json")
+
+
+def load_hl_viewed_today() -> set:
+    data = _load(_hl_viewed_file(), {})
+    return set(data.get(_today_str(), []))
+
+
+def save_hl_viewed_today(viewed: set) -> bool:
+    fp = _hl_viewed_file()
+    data = _load(fp, {})
+    today = _today_str()
+    data[today] = sorted(viewed)
+    cutoff = (_dt.date.today() - _dt.timedelta(days=7)).isoformat()
+    data = {k: v for k, v in data.items() if k >= cutoff}
+    return _save(fp, data)
+
+
+def mark_hl_viewed(ticker: str) -> bool:
+    viewed = load_hl_viewed_today()
+    viewed.add(ticker.strip().upper())
+    return save_hl_viewed_today(viewed)
+
+
+def unmark_hl_viewed(ticker: str) -> bool:
+    viewed = load_hl_viewed_today()
+    viewed.discard(ticker.strip().upper())
+    return save_hl_viewed_today(viewed)
+
+
+def export_hotlist_json() -> str:
+    items   = load_hotlist()
+    archive = load_hotlist_archive()
+    payload = {
+        "exported_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "version":     2,
+        "hotlist":     items,
+        "archive":     archive,
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def import_hotlist_json(json_str: str, merge: bool = True):
+    try:
+        payload = json.loads(json_str)
+    except json.JSONDecodeError as e:
+        return False, f"JSON 格式错误：{e}"
+    if isinstance(payload, list):
+        imported_items = payload
+        imported_arch  = []
+    elif isinstance(payload, dict):
+        imported_items = payload.get("hotlist", [])
+        imported_arch  = payload.get("archive", [])
+    else:
+        return False, "不支持的 JSON 格式"
+    if not isinstance(imported_items, list):
+        return False, "hotlist 字段必须是列表"
+    if merge:
+        existing = load_hotlist()
+        existing_tickers = {i["ticker"].upper() for i in existing}
+        added = 0
+        for item in imported_items:
+            if isinstance(item, dict) and item.get("ticker"):
+                if item["ticker"].upper() not in existing_tickers:
+                    existing.append(item)
+                    existing_tickers.add(item["ticker"].upper())
+                    added += 1
+        ok = save_hotlist(existing)
+        return ok, f"合并完成：新增 {added} 个品种，已跳过重复 {len(imported_items)-added} 个"
+    else:
+        ok = save_hotlist(imported_items)
+        if ok and imported_arch:
+            save_hotlist_archive(imported_arch)
+        return ok, f"替换完成：导入 {len(imported_items)} 个品种"
+
