@@ -13,7 +13,7 @@ import json
 import os
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 # ── 文件路径 ─────────────────────────────────────────────────────────
 _BASE     = os.path.dirname(os.path.abspath(__file__))
