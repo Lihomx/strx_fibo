@@ -546,7 +546,7 @@ def compute_fibo(df:       Optional[pd.DataFrame],
 def confluence_score(tf_map: Dict[str, Optional[Dict]]) -> Dict:
     in_tfs   = [tf for tf, f in tf_map.items() if f and f["in_zone"]]
     near_tfs = [tf for tf, f in tf_map.items()
-                if f and not f["in_zone"] and f.get("dist_pct", 999) < 5]
+                if f and not f["in_zone"] and (f.get("dist_pct") if f.get("dist_pct") is not None else 999) < 5]
     score = min(len(in_tfs) * 3 + len(near_tfs), 10)
     if len(in_tfs) == 3:   label = "🔥🔥🔥 三框架共振"
     elif len(in_tfs) == 2: label = "🔥🔥 双框架共振"
@@ -794,7 +794,7 @@ def run_full_scan(
     try:
         for ticker, (name, _) in assets.items():
             t_rows = [r for r in all_rows if r["ticker"] == ticker]
-            tf_res = {r["timeframe"]: {"in_zone": r["in_zone"], "dist_pct": r.get("dist_pct", 999)}
+            tf_res = {r["timeframe"]: {"in_zone": r["in_zone"], "dist_pct": r.get("dist_pct") if r.get("dist_pct") is not None else 999}
                       for r in t_rows}
             conf = confluence_score(tf_res)
             for r in t_rows:

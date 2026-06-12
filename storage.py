@@ -390,7 +390,19 @@ def clear_scanned_groups() -> bool:
 
 
 # ── 告警日志 ─────────────────────────────────────────────────────────
-def log_alert(entry: Dict) -> bool:
+def log_alert(ticker_or_entry, name=None, timeframe=None, channel=None, status=None, message=None) -> bool:
+    if isinstance(ticker_or_entry, dict):
+        entry = ticker_or_entry
+    else:
+        entry = {
+            "time": _now_str(),
+            "ticker": ticker_or_entry,
+            "name": name or "",
+            "timeframe": timeframe or "",
+            "channel": channel or "",
+            "status": status or "",
+            "message": message or ""
+        }
     logs: List[Dict] = _load(F_ALERTS, [])
     logs.append(entry)
     if len(logs) > _MAX_ALERTS:
@@ -403,8 +415,17 @@ def load_alerts(limit: int = 100) -> List[Dict]:
     return list(reversed(logs))[:limit]
 
 
+def load_alert_log(limit: int = 100) -> List[Dict]:
+    return load_alerts(limit)
+
+
 def clear_alerts() -> bool:
     return _save(F_ALERTS, [])
+
+
+def clear_alert_log() -> bool:
+    return clear_alerts()
+
 
 
 # ── 自选收藏夹 ──────────────────────────────────────────────────────

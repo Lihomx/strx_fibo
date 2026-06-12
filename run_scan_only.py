@@ -67,13 +67,13 @@ def main():
 
     # 初始化 Supabase
     from supabase import create_client
-    from core import supabase_client as sc
+    import supabase_client as sc
     sc._client = create_client(url, key)
     logging.info("✅ Supabase 连接成功")
 
     # 执行扫描
-    from core.scanner import run_full_scan
-    from core.supabase_client import load_config
+    from scanner import run_full_scan
+    from supabase_client import load_config
 
     cfg = load_config()
     logging.info(f"配置加载完成: lookback={cfg['lookback']}, source={cfg['data_source']}")
