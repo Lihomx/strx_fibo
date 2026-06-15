@@ -248,7 +248,7 @@ def _render_main():
     )
 
     # ── 工具栏 ──────────────────────────────────────────────────
-    tc1, tc2, tc3, tc4 = st.columns([4, 2, 2, 2])
+    tc1, tc2, tc3, tc4, tc5 = st.columns([4, 2, 2, 2, 1])
     with tc1:
         search = st.text_input("🔍", placeholder="搜索 Ticker / 名称…",
                                key="hl_search", label_visibility="collapsed")
@@ -274,6 +274,10 @@ def _render_main():
     with tc4:
         if st.button("🗑️ 清空", key="hl_clear_all", use_container_width=True):
             st.session_state["hl_confirm_clear"] = True
+    with tc5:
+        if st.button("🔄", key="hl_refresh_btn", help="刷新列表", use_container_width=True):
+            _cached_result_map.clear()
+            st.rerun()
 
     if st.session_state.get("hl_confirm_clear"):
         st.warning("⚠️ 确定清空所有热门？（将移入存档，可恢复）")
@@ -751,7 +755,7 @@ def _render_add_form():
                 st.warning(f"⚠️ {new_ticker} 已在热门品种中")
 
     st.markdown("---")
-    st.markdown("**批�            with ec2:
+    st.markdown("**批�            with ec2:
                 if st.button("💾", key=f"hl_cat_save_name_{node['id']}", help="保存"):
                     if new_name.strip() and new_name.strip() != node["name"]:
                         storage.rename_hl_category(node["id"], new_name.strip())
