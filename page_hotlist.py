@@ -485,7 +485,6 @@ def _render_item_row(item, result_map, cats, viewed_set):
             _remember_focus_row(ticker)
             if viewed: _unmark_viewed(ticker)
             else:      _mark_viewed(ticker)
-            st.rerun()
     with bc2:
         st.link_button(
             "📈",
@@ -506,13 +505,11 @@ def _render_item_row(item, result_map, cats, viewed_set):
                          key=f"hl_pin_{ticker}", help="置顶/取消"):
                 _remember_focus_row(ticker)
                 storage.toggle_pin_hotlist(ticker)
-                st.rerun()
         with bc5:
             if st.button("🗑", key=f"hl_del_{ticker}", help="删除（移入存档）"):
                 _remember_focus_row(ticker)
                 storage.remove_from_hotlist(ticker)
                 st.toast(f"已移入存档：{ticker}", icon="🗂️")
-                st.rerun()
         with bc6:
             _render_inline_controls(item, ticker, cats)
     else:
@@ -521,13 +518,11 @@ def _render_item_row(item, result_map, cats, viewed_set):
                          key=f"hl_pin_{ticker}", help="置顶/取消"):
                 _remember_focus_row(ticker)
                 storage.toggle_pin_hotlist(ticker)
-                st.rerun()
         with bc4:
             if st.button("🗑", key=f"hl_del_{ticker}", help="删除（移入存档）"):
                 _remember_focus_row(ticker)
                 storage.remove_from_hotlist(ticker)
                 st.toast(f"已移入存档：{ticker}", icon="🗂️")
-                st.rerun()
         with bc5:
             _render_inline_controls(item, ticker, cats)
 
@@ -618,7 +613,6 @@ def _render_inline_controls(item, ticker, cats):
                     st.session_state.pop(f"hl_cat_open_{ticker}", None)
                     st.session_state.pop(_sel_key, None)
                     st.toast(f"已设置：{_as_names.get(chosen, '')}", icon="🏷️")
-                    st.rerun()
             with sc2:
                 if st.button("取消", key=f"hl_cat_cancel_{ticker}"):
                     _remember_focus_row(ticker)
@@ -643,7 +637,6 @@ def _render_inline_controls(item, ticker, cats):
                             storage.add_hotlist_note(ticker, new_text.strip(), new_img)
                             st.session_state.pop(f"hl_note_open_{ticker}", None)
                             st.toast(f"备注已保存：{ticker}", icon="📝")
-                            st.rerun()
                 with sn2:
                     if st.button("取消", key=f"hl_note_cancel_{ticker}"):
                         _remember_focus_row(ticker)
@@ -755,36 +748,36 @@ def _render_add_form():
                 st.warning(f"⚠️ {new_ticker} 已在热门品种中")
 
     st.markdown("---")
-    st.markdown("**批�            with ec2:
-                if st.button("💾", key=f"hl_cat_save_name_{node['id']}", help="保存"):
-                    if new_name.strip() and new_name.strip() != node["name"]:
-                        storage.rename_hl_category(node["id"], new_name.strip())
-                        st.toast(f"已重命名：{new_name.strip()}", icon="✏️")
-                        st.rerun()
-            with ec3:
-                if st.button("⬆️", key=f"hl_cat_up_{node['id']}", help="上移"):
-                    storage.reorder_hl_category(node["id"], "up")
-                    st.rerun()
-            with ec4:
-                if st.button("🗑", key=f"hl_cat_del_{node['id']}", help="删除"):
-                    st.session_state[f"_del_hl_cat_confirm_{node['id']}"] = True
-                    st.rerun()
+    st.markdown("**批量导入**（每行一个 Ticker，可附简称）")
+    bulk_text = st.text_area("批量输入",
+                             placeholder="AAPL 苹果\nTSLA 特斯拉\n600519.SS 茅台",
+                             height=80, key="hl_bulk", label_visibility="collapsed")
+    if st.button("批量添加", key="hl_bulk_btn"):
+        added, skipped = [], []
+        for line in bulk_text.strip().splitlines():
+            parts = line.strip().split(None, 1)
+            if not parts: continue
+            tk = parts[0].upper()
+            nm = parts[1] if len(parts) > 1 else ""
+            if storage.add_to_hotlist(tk, nm, note="批量导入"):
+                added.append(tk)
+            else:
+                skipped.append(tk)
+        if added:
+            st.success(f"✅ 新增 {len(added)} 个：{', '.join(added)}")
+        if skipped:
+            st.info(f"跳过：{', '.join(skipped)}")
+        if added:
+            _cached_result_map.clear()
 
-            if st.session_state.get(f"_del_hl_cat_confirm_{node['id']}"):
-                st.error(f"确认删除「{node['name']}」？品种将变为未分类。")
-                dd1, dd2 = st.columns(2)
-                with dd1:
-                    if st.button("确认删除",
-                                 key=f"hl_cat_del_yes_{node['id']}",
-                                 type="primary"):
-                        storage.delete_hl_category(node["id"])
-                        st.session_state.pop(f"_del_hl_cat_confirm_{node['id']}", None)
-                        st.toast(f"已删除：{node['name']}", icon="🗑️")
-                        st.rerun()
-                with dd2:
-                    if st.button("取消", key=f"hl_cat_del_no_{node['id']}"):
-                        st.session_state.pop(f"_del_hl_cat_confirm_{node['id']}", None)
-                        st.rerun()nsafe_allow_html=True,
+
+# ══════════════════════════════════════════════════════════════════════
+def _render_categories():
+    st.markdown("### 🏷️ 分类管理")
+    st.markdown(
+        '<p style="color:#6b7280;font-size:13px;margin-top:-8px">'
+        '创建品种分类目录（支持三级），在品种卡片上点击 🏷️ 可指派分类。</p>',
+        unsafe_allow_html=True,
     )
 
     cats = storage.load_hl_categories()
