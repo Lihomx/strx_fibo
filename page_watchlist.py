@@ -481,6 +481,7 @@ def _render_item_row(item, result_map, cats, viewed_set):
             _remember_focus_row(ticker)
             if viewed: _unmark_viewed(ticker)
             else:      _mark_viewed(ticker)
+            st.rerun()
     with bc2:
         st.link_button(
             "📈",
@@ -501,11 +502,13 @@ def _render_item_row(item, result_map, cats, viewed_set):
                          key=f"wl_pin_{ticker}", help="置顶/取消"):
                 _remember_focus_row(ticker)
                 storage.toggle_pin_watchlist(ticker)
+                st.rerun()
         with bc5:
             if st.button("🗑", key=f"wl_del_{ticker}", help="删除（移入存档）"):
                 _remember_focus_row(ticker)
                 storage.remove_from_watchlist(ticker)
                 st.toast(f"已移入存档：{ticker}", icon="🗂️")
+                st.rerun()
         with bc6:
             _render_inline_controls(item, ticker, cats)
     else:
@@ -514,11 +517,13 @@ def _render_item_row(item, result_map, cats, viewed_set):
                          key=f"wl_pin_{ticker}", help="置顶/取消"):
                 _remember_focus_row(ticker)
                 storage.toggle_pin_watchlist(ticker)
+                st.rerun()
         with bc4:
             if st.button("🗑", key=f"wl_del_{ticker}", help="删除（移入存档）"):
                 _remember_focus_row(ticker)
                 storage.remove_from_watchlist(ticker)
                 st.toast(f"已移入存档：{ticker}", icon="🗂️")
+                st.rerun()
         with bc5:
             _render_inline_controls(item, ticker, cats)
 
@@ -609,6 +614,7 @@ def _render_inline_controls(item, ticker, cats):
                     st.session_state.pop(f"wl_cat_open_{ticker}", None)
                     st.session_state.pop(_sel_key, None)
                     st.toast(f"已设置：{_as_names.get(chosen, '')}", icon="🏷️")
+                    st.rerun()
             with sc2:
                 if st.button("取消", key=f"wl_cat_cancel_{ticker}"):
                     _remember_focus_row(ticker)
@@ -633,6 +639,7 @@ def _render_inline_controls(item, ticker, cats):
                             storage.add_watchlist_note(ticker, new_text.strip(), new_img)
                             st.session_state.pop(f"wl_note_open_{ticker}", None)
                             st.toast(f"备注已保存：{ticker}", icon="📝")
+                            st.rerun()
                 with sn2:
                     if st.button("取消", key=f"wl_note_cancel_{ticker}"):
                         _remember_focus_row(ticker)
