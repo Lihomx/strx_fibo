@@ -198,16 +198,16 @@ def render():
 
     st.markdown("""
     <style>
-    .cf3{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
-    .cf3 th{padding:9px 6px;background:#f9fafb;border-bottom:2px solid #e5e7eb;
-            font-size:12px;color:#374151;font-weight:600;white-space:nowrap}
-    .cf3 td{padding:9px 6px;border-bottom:1px solid #f3f4f6;vertical-align:middle;overflow:hidden}
-    .cf3 tr:hover td{background:#f8fafc}
+    .cf3{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;color:var(--text-color, #111);}
+    .cf3 th{padding:9px 6px;background:var(--secondary-background-color, #f9fafb);border-bottom:2px solid var(--border-color, #e5e7eb);
+            font-size:12px;color:var(--text-color, #374151);font-weight:600;white-space:nowrap}
+    .cf3 td{padding:9px 6px;border-bottom:1px solid var(--border-color, #f3f4f6);vertical-align:middle;overflow:hidden}
+    .cf3 tr:hover td{background:rgba(107,114,128,0.05)}
     .fav-btn{font-size:20px;cursor:pointer;text-decoration:none;line-height:1;
              display:block;text-align:center;padding:2px 0;transition:transform .1s}
     .fav-btn:hover{transform:scale(1.3)}
     .fav-star{color:#f59e0b}
-    .fav-empty{color:#d1d5db}
+    .fav-empty{color:var(--text-color, #6b7280);opacity:0.3;}
     </style>
     """, unsafe_allow_html=True)
 
@@ -220,7 +220,7 @@ def render():
     def _score_bar(score):
         pct   = score * 10
         color = "#dc2626" if pct >= 90 else "#f59e0b" if pct >= 60 else "#10b981"
-        return (f'<div style="background:#f3f4f6;border-radius:3px;height:5px;margin-top:3px">'
+        return (f'<div style="background:var(--border-color, #e5e7eb);opacity:0.8;border-radius:3px;height:5px;margin-top:3px">'
                 f'<div style="background:{color};width:{pct}%;height:5px;border-radius:3px"></div></div>')
 
     url_t = st.query_params.get("_t", "")

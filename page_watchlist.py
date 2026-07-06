@@ -179,16 +179,16 @@ def render():
         padding: 0 !important;
         font-size: 14px !important;
         font-weight: 700 !important;
-        color: #111 !important;
+        color: var(--text-color, #111) !important;
         box-shadow: none !important;
         text-align: left !important;
         cursor: text !important;
         text-decoration: underline dotted #9ca3af !important;
     }
     [data-testid="stButton"] button[kind="secondary"][id*="wl_name_click_"]:hover {
-        background: #f0f9ff !important;
-        color: #1d4ed8 !important;
-        text-decoration: underline solid #1d4ed8 !important;
+        background: var(--secondary-background-color, #f0f9ff) !important;
+        color: var(--primary-color, #1d4ed8) !important;
+        text-decoration: underline solid var(--primary-color, #1d4ed8) !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -384,11 +384,11 @@ def _render_item_row(item, result_map, cats, viewed_set):
     st.markdown(f'<div id="{_row_anchor_id(ticker)}"></div>', unsafe_allow_html=True)
 
     if viewed:
-        row_style = "background:#f0fdf4;border:1px solid #bbf7d0;opacity:0.85;"
+        row_style = "background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.3);opacity:0.85;color:var(--text-color);"
     elif pinned:
-        row_style = "background:#fffbeb;border:1px solid #fde047;"
+        row_style = "background:rgba(234,179,8,0.08);border:1px solid rgba(234,179,8,0.3);color:var(--text-color);"
     else:
-        row_style = "background:#ffffff;border:1px solid #e5e7eb;"
+        row_style = "background:var(--background-color, #fff);border:1px solid var(--border-color, #e5e7eb);color:var(--text-color);"
 
     display_name = _he(name or ticker)
     ticker_badge = (
@@ -404,14 +404,14 @@ def _render_item_row(item, result_map, cats, viewed_set):
         in_zone = r.get("in_zone", False)
         dist   = r.get("dist_pct")
         dist_s = f"{dist:.0f}%" if dist is not None else "—"
-        bg = "#fef9c3" if in_zone else "#f1f5f9"
-        bd = "#fde047" if in_zone else "#e2e8f0"
+        bg = "rgba(234,179,8,0.15)" if in_zone else "rgba(107,114,128,0.1)"
+        bd = "rgba(234,179,8,0.4)" if in_zone else "rgba(107,114,128,0.2)"
         ico = "⚡" if in_zone else "·"
         fibo_html += (
             f'<span style="background:{bg};border:1px solid {bd};border-radius:5px;'
-            f'padding:2px 6px;font-size:10px;white-space:nowrap;margin-right:3px">'
-            f'<b style="color:#374151">{_he(tf)}</b> '
-            f'<span style="color:#6b7280">{ico}{dist_s}</span></span>'
+            f'padding:2px 6px;font-size:10px;white-space:nowrap;margin-right:3px;color:var(--text-color);">'
+            f'<b style="color:var(--text-color);">{_he(tf)}</b> '
+            f'<span style="opacity:0.8;color:var(--text-color);">{ico}{dist_s}</span></span>'
         )
 
     note_html = ""
@@ -651,13 +651,13 @@ def _render_inline_controls(item, ticker, cats):
             img_url_n = n.get("img_url", "")
             img_part  = (
                 f' &nbsp;<a href="{_he(img_url_n)}" target="_blank" '
-                f'style="font-size:11px;color:#3b82f6;text-decoration:none">🖼️</a>'
+                f'style="font-size:11px;color:var(--primary-color, #3b82f6);text-decoration:none">🖼️</a>'
             ) if img_url_n else ""
             st.markdown(
-                f'<div style="border-left:2px solid #e5e7eb;padding:5px 10px;'
-                f'margin:3px 0;font-size:12px;">'
-                f'<span style="color:#9ca3af">{n.get("ts","")}</span>&nbsp;&nbsp;'
-                f'<span style="color:#374151">{_he(str(n["text"]))}</span>'
+                f'<div style="border-left:2px solid var(--border-color, #e5e7eb);padding:5px 10px;'
+                f'margin:3px 0;font-size:12px;color:var(--text-color);">'
+                f'<span style="opacity:0.6;color:var(--text-color);">{n.get("ts","")}</span>&nbsp;&nbsp;'
+                f'<span style="color:var(--text-color);">{_he(str(n["text"]))}</span>'
                 f'{img_part}</div>',
                 unsafe_allow_html=True,
             )

@@ -93,8 +93,8 @@ def render():
 
     # ── 重要说明横幅 ────────────────────────────────────────────
     st.markdown("""
-    <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;
-                padding:12px 16px;margin-bottom:12px;font-size:13px">
+    <div style="background:rgba(249,115,22,0.1);border:1px solid rgba(249,115,22,0.3);border-radius:10px;
+                padding:12px 16px;margin-bottom:12px;font-size:13px;color:var(--text-color);">
     <b>⚠️ 关于全量扫描</b><br>
     A股 5454 支 × 3 框架 = <b>16362 次</b>网络请求，约需 <b>4-9 小时</b>，Streamlit 会超时中断。<br>
     <b>推荐用法</b>：搜索 → 勾选目标品种（建议每批 ≤50 支）→ 批量扫描。<br>
@@ -421,11 +421,11 @@ def _render_market(market_key: str, load_fn, category: str, cfg: dict, label: st
     st.markdown("""
     <style>
     .ut3-hdr{display:grid;grid-template-columns:40px 120px 1fr 90px 70px 90px 70px;
-             gap:4px;padding:6px 8px;background:#f9fafb;border-bottom:2px solid #e5e7eb;
-             border-radius:6px 6px 0 0;font-size:12px;font-weight:600;color:#374151;
+             gap:4px;padding:6px 8px;background:var(--secondary-background-color, #f9fafb);border-bottom:2px solid var(--border-color, #e5e7eb);
+             border-radius:6px 6px 0 0;font-size:12px;font-weight:600;color:var(--text-color, #374151);
              align-items:center;margin-bottom:0}
     .ut3-hdr span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .ut3-body{border:1px solid #e5e7eb;border-top:none;border-radius:0 0 6px 6px;
+    .ut3-body{border:1px solid var(--border-color, #e5e7eb);border-top:none;border-radius:0 0 6px 6px;
               margin-bottom:12px}
     /* 让行内每个 st.columns 的按钮样式更紧凑 */
     .row-item .stButton>button{
@@ -466,13 +466,13 @@ def _render_market(market_key: str, load_fn, category: str, cfg: dict, label: st
             tv_lnk = f"https://cn.tradingview.com/chart/?symbol={ticker}"
 
         # 奇偶行背景
-        row_bg = "background:#f8fafc" if i % 2 == 0 else "background:#fff"
+        row_bg = "background:rgba(107,114,128,0.03)" if i % 2 == 0 else "background:transparent"
         if is_sel:
-            row_bg = "background:#eff6ff"
+            row_bg = "background:rgba(59,130,246,0.08)"
 
         st.markdown(
-            f'<div style="{row_bg};padding:4px 8px;border-bottom:1px solid #f3f4f6;'
-            f'display:flex;align-items:center;min-height:36px">',
+            f'<div style="{row_bg};padding:4px 8px;border-bottom:1px solid var(--border-color, #f3f4f6);'
+            f'display:flex;align-items:center;min-height:36px;color:var(--text-color)">',
             unsafe_allow_html=True
         )
 

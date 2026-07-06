@@ -711,19 +711,19 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
     }
     /* 扫描结果表 */
     .rt3-wrap{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}
-    .rt3{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;min-width:560px}
-    .rt3 th{padding:9px 6px;background:#f9fafb;border-bottom:2px solid #e5e7eb;
-            font-size:12px;color:#374151;font-weight:600;white-space:nowrap}
-    .rt3 td{padding:9px 6px;border-bottom:1px solid #f3f4f6;vertical-align:middle;
+    .rt3{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;min-width:560px;color:var(--text-color, #111);}
+    .rt3 th{padding:9px 6px;background:var(--secondary-background-color, #f9fafb);border-bottom:2px solid var(--border-color, #e5e7eb);
+            font-size:12px;color:var(--text-color, #374151);font-weight:600;white-space:nowrap}
+    .rt3 td{padding:9px 6px;border-bottom:1px solid var(--border-color, #f3f4f6);vertical-align:middle;
             white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .rt3 tr.zone td{background:#fffbeb}
-    .rt3 tr:hover td{background:#f8fafc}
-    .rt3 tr.zone:hover td{background:#fef3c7}
+    .rt3 tr.zone td{background:rgba(234,179,8,0.1)}
+    .rt3 tr:hover td{background:rgba(107,114,128,0.05)}
+    .rt3 tr.zone:hover td{background:rgba(234,179,8,0.18)}
     .fav-btn{font-size:20px;cursor:pointer;text-decoration:none;line-height:1;
              display:block;text-align:center;padding:2px 0;transition:transform .1s}
     .fav-btn:hover{transform:scale(1.3)}
     .fav-star{color:#f59e0b}
-    .fav-empty{color:#d1d5db}
+    .fav-empty{color:var(--text-color, #6b7280);opacity:0.3;}
     </style>
     """, unsafe_allow_html=True)
 

@@ -66,24 +66,26 @@ def _save_with_backup(path: str, data) -> bool:
     """写入文件，同时在 backups/ 目录保留带时间戳的副本（仅限自选收藏相关文件）。"""
     ok = _save(path, data)
     if ok:
-        try:
-            _ensure_backup_dir()
-            ts       = time.strftime("%Y%m%d_%H%M%S")
-            basename = os.path.splitext(os.path.basename(path))[0]
-            bak_path = os.path.join(_BACKUP_DIR, f"{basename}_{ts}.json")
-            _save(bak_path, data)
-            # 只保留最近 30 个备份（按文件名倒序）
-            all_baks = sorted(
-                [f for f in os.listdir(_BACKUP_DIR) if f.startswith(basename)],
-                reverse=True,
-            )
-            for old_bak in all_baks[30:]:
-                try:
-                    os.remove(os.path.join(_BACKUP_DIR, old_bak))
-                except Exception:
-                    pass
-        except Exception:
-            pass   # 备份失败不影响主流程
+        def bg_backup():
+            try:
+                _ensure_backup_dir()
+                ts       = time.strftime("%Y%m%d_%H%M%S")
+                basename = os.path.splitext(os.path.basename(path))[0]
+                bak_path = os.path.join(_BACKUP_DIR, f"{basename}_{ts}.json")
+                _save(bak_path, data)
+                # 只保留最近 30 个备份（按文件名倒序）
+                all_baks = sorted(
+                    [f for f in os.listdir(_BACKUP_DIR) if f.startswith(basename)],
+                    reverse=True,
+                )
+                for old_bak in all_baks[30:]:
+                    try:
+                        os.remove(os.path.join(_BACKUP_DIR, old_bak))
+                    except Exception:
+                        pass
+            except Exception:
+                pass   # 备份失败不影响主流程
+        _async_push(bg_backup)
     return ok
 
 
@@ -230,23 +232,28 @@ def save_scan_snapshot(session_row: Dict, result_rows: List[Dict]) -> bool:
         if not ok:
             return False
 
-        # 清理旧快照，最多保留 _MAX_SCAN_SNAPSHOTS 个
-        snaps = []
-        for fname in os.listdir(F_SCAN_SNAPSHOT_DIR):
-            if not fname.endswith(".json"):
-                continue
-            fpath = os.path.join(F_SCAN_SNAPSHOT_DIR, fname)
+        # 异步清理旧快照，最多保留 _MAX_SCAN_SNAPSHOTS 个
+        def bg_cleanup_snaps():
             try:
-                mtime = os.path.getmtime(fpath)
-            except Exception:
-                mtime = 0
-            snaps.append((mtime, fpath))
-        snaps.sort(reverse=True)
-        for _, old_path in snaps[_MAX_SCAN_SNAPSHOTS:]:
-            try:
-                os.remove(old_path)
+                snaps = []
+                for fname in os.listdir(F_SCAN_SNAPSHOT_DIR):
+                    if not fname.endswith(".json"):
+                        continue
+                    fpath = os.path.join(F_SCAN_SNAPSHOT_DIR, fname)
+                    try:
+                        mtime = os.path.getmtime(fpath)
+                    except Exception:
+                        mtime = 0
+                    snaps.append((mtime, fpath))
+                snaps.sort(reverse=True)
+                for _, old_path in snaps[_MAX_SCAN_SNAPSHOTS:]:
+                    try:
+                        os.remove(old_path)
+                    except Exception:
+                        pass
             except Exception:
                 pass
+        _async_push(bg_cleanup_snaps)
         return True
     except Exception:
         return False

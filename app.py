@@ -27,30 +27,44 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;600;700;800&display=swap');
 
 html,body,[class*="css"]{font-family:'Inter',sans-serif!important;}
-.m-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px;text-align:center;margin-bottom:4px;}
-.m-card.teal{border-color:#6ee7b7;background:#ecfdf5;}
-.m-card.gold{border-color:#fcd34d;background:#fffbeb;}
-.m-card.red {border-color:#fca5a5;background:#fef2f2;}
-.m-card.blue{border-color:#93c5fd;background:#eff6ff;}
+.m-card{
+    background: var(--background-color, #fff);
+    border: 1px solid var(--border-color, #e5e7eb);
+    color: var(--text-color, #111);
+    border-radius: 12px;
+    padding: 16px 18px;
+    text-align: center;
+    margin-bottom: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.m-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+.m-card.teal{border-color:#10b981;background:rgba(16,185,129,0.08);color:var(--text-color, #111);}
+.m-card.gold{border-color:#f59e0b;background:rgba(245,158,11,0.08);color:var(--text-color, #111);}
+.m-card.red {border-color:#ef4444;background:rgba(239,68,68,0.08);color:var(--text-color, #111);}
+.m-card.blue{border-color:#3b82f6;background:rgba(59,130,246,0.08);color:var(--text-color, #111);}
 .m-val{font-size:28px;font-weight:800;line-height:1.1;margin:4px 0;}
-.m-lbl{font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;}
+.m-lbl{font-size:11px;font-weight:700;color:var(--text-color, #6b7280);opacity:0.8;text-transform:uppercase;letter-spacing:.06em;}
 .m-sub{font-size:11px;color:#9ca3af;font-family:'IBM Plex Mono',monospace;}
 .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;}
-.b-green {background:#dcfce7;color:#15803d;border:1px solid #86efac;}
-.b-yellow{background:#fef9c3;color:#a16207;border:1px solid #fde047;}
-.b-gray  {background:#f3f4f6;color:#6b7280;}
-.b-red   {background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;}
-.b-orange{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa;}
-.b-blue  {background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;}
-.n-ok  {background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;border-radius:8px;padding:9px 14px;font-size:13px;margin:6px 0;}
-.n-warn{background:#fffbeb;color:#92400e;border:1px solid #fde68a;border-radius:8px;padding:9px 14px;font-size:13px;margin:6px 0;}
-.n-info{background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe;border-radius:8px;padding:9px 14px;font-size:13px;margin:6px 0;}
+.b-green {background:rgba(34,197,94,0.1);color:#22c55e;border:1px solid rgba(34,197,94,0.3);}
+.b-yellow{background:rgba(234,179,8,0.1);color:#eab308;border:1px solid rgba(234,179,8,0.3);}
+.b-gray  {background:rgba(107,114,128,0.1);color:#6b7280;}
+.b-red   {background:rgba(239,68,68,0.1);color:#ef4444;border:1px solid rgba(239,68,68,0.3);}
+.b-orange{background:rgba(249,115,22,0.1);color:#f97316;border:1px solid rgba(249,115,22,0.3);}
+.b-blue  {background:rgba(59,130,246,0.1);color:#3b82f6;border:1px solid rgba(59,130,246,0.3);}
+.n-ok  {background:rgba(34,197,94,0.08);color:#22c55e;border:1px solid rgba(34,197,94,0.3);border-radius:8px;padding:9px 14px;font-size:13px;margin:6px 0;}
+.n-warn{background:rgba(234,179,8,0.08);color:#ca8a04;border:1px solid rgba(234,179,8,0.3);border-radius:8px;padding:9px 14px;font-size:13px;margin:6px 0;}
+.n-info{background:rgba(59,130,246,0.08);color:#2563eb;border:1px solid rgba(59,130,246,0.3);border-radius:8px;padding:9px 14px;font-size:13px;margin:6px 0;}
 div[data-testid="stSidebar"] .stButton>button{
     border-radius:8px!important;font-weight:600!important;width:100%;
-    margin-bottom:4px;border:1px solid #e5e7eb;background:#fff;
-    text-align:left!important;justify-content:flex-start!important;padding:8px 12px!important;
+    margin-bottom:4px;border:1px solid var(--border-color, #e5e7eb);background:var(--background-color, #fff);
+    color:var(--text-color, #111);text-align:left!important;justify-content:flex-start!important;padding:8px 12px!important;
 }
-div[data-testid="stSidebar"] .stButton>button:hover{background:#f9fafb!important;}
+div[data-testid="stSidebar"] .stButton>button:hover{background:var(--secondary-background-color, #f9fafb)!important;}
 /* ── 移动端适配 ─────────────────────────────────────────────── */
 @media (max-width: 768px) {
     /* 收起侧栏，用汉堡菜单代替 */
@@ -373,8 +387,10 @@ def _check_password() -> bool:
                 pass
             st.rerun()
         else:
+            import time
             st.session_state[_fail_key] = _fail_count + 1
             remaining = 5 - st.session_state[_fail_key]
+            time.sleep(1.0 + _fail_count * 0.5)
             if remaining > 0:
                 st.error(f"❌ 密码错误，还剩 {remaining} 次机会")
             else:
@@ -491,12 +507,12 @@ def main():
     st.markdown(f"""
     <style>
     .mob-nav{{display:none;position:fixed;bottom:0;left:0;right:0;z-index:9999;
-              background:#fff;border-top:1px solid #e5e7eb;padding:4px 0 env(safe-area-inset-bottom);
+              background:var(--background-color, #fff);border-top:1px solid var(--border-color, #e5e7eb);padding:4px 0 env(safe-area-inset-bottom);
               box-shadow:0 -2px 8px rgba(0,0,0,.08)}}
     .mob-nav-item{{flex:1;display:flex;flex-direction:column;align-items:center;
-                  justify-content:center;padding:4px 2px;text-decoration:none;color:#6b7280;
+                  justify-content:center;padding:4px 2px;text-decoration:none;color:var(--text-color, #6b7280);opacity:0.7;
                   font-size:10px;transition:color .15s;min-width:0}}
-    .mob-nav-item.active{{color:#e85d04}}
+    .mob-nav-item.active{{color:#e85d04;opacity:1;}}
     .mob-nav-icon{{font-size:18px;line-height:1.2}}
     .mob-nav-lbl{{font-size:10px;margin-top:1px;white-space:nowrap}}
     @media(max-width:768px){{
