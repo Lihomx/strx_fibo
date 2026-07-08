@@ -16,6 +16,9 @@ import datetime
 import streamlit as st
 import pandas as pd
 import numpy as np
+import storage
+import bg_scan_manager
+from streamlit_autorefresh import st_autorefresh
 
 # ── 依赖安全导入 ────────────────────────────────────────────────────
 try:
@@ -217,6 +220,46 @@ def _check_ticker(ticker: str) -> dict:
 
 
 # ════════════════════════════════════════════════════════════════════
+# 后台扫描 Worker
+# ════════════════════════════════════════════════════════════════════
+def chartink_worker(params, update_progress, cancel_check):
+    tickers = params["tickers"]
+    passed_list = []
+    failed_list = []
+    error_list = []
+    
+    total = len(tickers)
+    for i, tk in enumerate(tickers):
+        if cancel_check():
+            raise bg_scan_manager.CancelException("Scan cancelled by user")
+            
+        update_progress(i, total, f"扫描中 {i}/{total}: {tk}")
+        
+        try:
+            res = _check_ticker(tk)
+            res["ticker"] = tk
+            if res["error"]:
+                error_list.append(res)
+            elif res["passed"]:
+                passed_list.append(res)
+            else:
+                failed_list.append(res)
+        except Exception as e:
+            error_list.append({"ticker": tk, "passed": False, "details": [], "error": str(e)})
+            
+        time.sleep(0.15)   # 避免 yfinance 限流
+        
+    results = {
+        "passed": passed_list,
+        "failed": failed_list,
+        "errors": error_list,
+        "scanned_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "total": total,
+    }
+    storage.save_chartink(results)
+
+
+# ════════════════════════════════════════════════════════════════════
 # Streamlit 页面
 # ════════════════════════════════════════════════════════════════════
 
@@ -259,6 +302,31 @@ ZION ZTS
 
 
 def render():
+    # ── 状态轮询与展示 ──
+    status = bg_scan_manager.get_status()
+    if status["status"] == "running":
+        st_autorefresh(interval=3000, key="chartink_scan_auto_refresh")
+        st.info(f"🔄 后台扫描正在进行中: **{status['job_label']}**")
+        st.progress(status["progress"])
+        st.caption(f"当前正在扫描: {status['current']} ({status['done_count']}/{status['total_count']})")
+        st.caption("💡 扫描会在后台持续运行，您可以安全关闭此页面。结果将自动保存。")
+        if st.button("⏹ 取消后台扫描", key="chartink_cancel_btn"):
+            bg_scan_manager.request_cancel()
+            st.warning("正在请求取消，请稍候...")
+            st.rerun()
+            
+    elif status["status"] in ("done", "error", "cancelled") and status["job_type"] == "chartink_scan":
+        if status["status"] == "done":
+            st.success(f"✅ 后台扫描任务已完成!")
+        elif status["status"] == "error":
+            st.error(f"❌ 后台扫描任务出错! 错误信息: {status.get('error', '')}")
+        elif status["status"] == "cancelled":
+            st.warning("⚠️ 后台扫描任务已被取消。")
+            
+        if st.button("清除状态提示", key="chartink_clear_status_btn"):
+            bg_scan_manager.reset_to_idle()
+            st.rerun()
+
     st.markdown("## 📈 Chartink · 4 Hour Breakout")
     st.markdown(
         '<p style="color:#6b7280;font-size:13px;margin-top:-8px">'
@@ -294,13 +362,19 @@ def render():
             height=100,
             key="chartink_tickers",
         )
+    is_running = bg_scan_manager.is_running()
     with col_right:
         st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-        run_btn  = st.button("🚀 开始扫描", type="primary",  use_container_width=True, key="chartink_run")
-        clear_btn = st.button("🗑️ 清空结果", type="secondary", use_container_width=True, key="chartink_clear")
+        run_btn  = st.button("🚀 开始扫描", type="primary",  use_container_width=True, key="chartink_run", disabled=is_running)
+        clear_btn = st.button("🗑️ 清空结果", type="secondary", use_container_width=True, key="chartink_clear", disabled=is_running)
 
     if clear_btn:
-        st.session_state.pop("chartink_results", None)
+        import os
+        if os.path.exists(storage.F_CHARTINK):
+            try:
+                os.remove(storage.F_CHARTINK)
+            except Exception:
+                pass
         st.rerun()
 
     tickers = [t.strip().upper() for t in ticker_input.replace("\n", " ").split() if t.strip()]
@@ -314,50 +388,25 @@ def render():
             st.warning("请输入至少一个股票代码")
             return
 
-        st.session_state.pop("chartink_results", None)
-
-        progress_bar = st.progress(0, text="准备扫描…")
-        status_box   = st.empty()
-
-        passed_list  = []
-        failed_list  = []
-        error_list   = []
-
-        total = len(tickers)
-        for i, tk in enumerate(tickers):
-            pct  = (i + 1) / total
-            progress_bar.progress(pct, text=f"扫描中 {i+1}/{total}：{tk}")
-            status_box.markdown(
-                f'<div class="n-info">⏳ 正在检测 <b>{tk}</b> …</div>',
-                unsafe_allow_html=True,
-            )
-
-            res = _check_ticker(tk)
-            res["ticker"] = tk
-
-            if res["error"]:
-                error_list.append(res)
-            elif res["passed"]:
-                passed_list.append(res)
-            else:
-                failed_list.append(res)
-
-            time.sleep(0.15)   # 避免 yfinance 限流
-
-        progress_bar.empty()
-        status_box.empty()
-
-        st.session_state["chartink_results"] = {
-            "passed":    passed_list,
-            "failed":    failed_list,
-            "errors":    error_list,
-            "scanned_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "total":     total,
+        params = {
+            "tickers": tickers
         }
-        st.rerun()
+        
+        ok, msg = bg_scan_manager.submit_job(
+            job_type="chartink_scan",
+            label=f"Chartink 扫描 ({len(tickers)}支)",
+            params=params,
+            worker_fn=chartink_worker
+        )
+        if ok:
+            st.success(msg)
+            time.sleep(1)
+            st.rerun()
+        else:
+            st.error(msg)
 
     # ── 结果展示 ────────────────────────────────────────────────────
-    cache = st.session_state.get("chartink_results")
+    cache = storage.load_chartink()
     if not cache:
         st.markdown(
             '<div class="n-info" style="margin-top:16px">'

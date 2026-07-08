@@ -1378,3 +1378,19 @@ def save_triple_bottom(items: List[Dict]) -> bool:
     """保存三重底扫描结果"""
     return _save_with_backup(F_TRIPLE_BOTTOM, items)
 
+
+# ── Chartink 4H 突破扫描数据 ─────────────────────────────────────────
+F_CHARTINK = os.path.join(_BASE, "data_chartink.json")
+
+def load_chartink() -> Dict:
+    """返回上次 Chartink 扫描结果"""
+    res = _load(F_CHARTINK, {})
+    if not isinstance(res, dict):
+        return {}
+    return res
+
+def save_chartink(data: Dict) -> bool:
+    """保存 Chartink 扫描结果"""
+    return _save(F_CHARTINK, data)
+
+

@@ -19,6 +19,8 @@ from datetime import datetime
 import plotly.graph_objects as go
 
 import storage
+import bg_scan_manager
+from streamlit_autorefresh import st_autorefresh
 from scanner import fetch_data
 from triple_bottom_scanner import scan_triple_bottoms, PatternMatch
 
@@ -28,6 +30,8 @@ TRIPLE_BOTTOM_TIMEFRAMES = {
     "60m": ("60m", "720d", "1小时"),
     "4h":  ("4h",  "2y",   "4小时"),
     "1d":  ("1d",  "2y",   "日线"),
+    "1w":  ("1wk", "5y",   "周线"),
+    "1mo": ("1mo", "10y",  "月线"),
 }
 
 def _row_anchor_id(ticker: str, period: str) -> str:
@@ -62,7 +66,86 @@ def _fetch_name(ticker: str) -> str:
     cache[key] = name
     return name
 
+def triple_bottom_worker(params, update_progress, cancel_check):
+    tickers_to_scan = params["tickers_to_scan"]
+    selected_periods = params["selected_periods"]
+    swing_win = params["swing_win"]
+    lookback = params["lookback"]
+    max_sp = params["max_sp"]
+    min_conf = params["min_conf"]
+    
+    total_steps = len(tickers_to_scan) * len(selected_periods)
+    step = 0
+    new_results = []
+    
+    for ticker in tickers_to_scan:
+        if cancel_check():
+            break
+        for period_key in selected_periods:
+            if cancel_check():
+                break
+            step += 1
+            interval, yf_period, period_desc = TRIPLE_BOTTOM_TIMEFRAMES[period_key]
+            update_progress(step, total_steps, f"{ticker} ({period_desc})")
+            try:
+                df = fetch_data(ticker, interval=interval, period=yf_period)
+                if df is not None and not df.empty:
+                    matches = scan_triple_bottoms(
+                        df,
+                        symbol=ticker,
+                        swing_window=int(swing_win),
+                        lookback_bars=int(lookback),
+                        max_spacing=int(max_sp)
+                    )
+                    for m in matches:
+                        if m.confidence >= min_conf:
+                            new_results.append({
+                                "symbol": m.symbol,
+                                "period": period_key,
+                                "pattern": m.pattern,
+                                "confidence": m.confidence,
+                                "idx1": int(m.idx1),
+                                "idx2": int(m.idx2),
+                                "idx3": int(m.idx3),
+                                "low1": float(m.low1),
+                                "low2": float(m.low2),
+                                "low3": float(m.low3),
+                                "mid_high": float(m.mid_high),
+                                "note": m.note,
+                                "scan_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            })
+            except Exception:
+                pass
+                
+    storage.save_triple_bottom(new_results)
+
+
 def render_triple_bottom_page():
+    # ── 状态轮询与展示 ──
+    status = bg_scan_manager.get_status()
+    if status["status"] == "running":
+        st_autorefresh(interval=3000, key="triple_bottom_auto_refresh")
+        st.info(f"🔄 后台扫描正在进行中: **{status['job_label']}**")
+        st.progress(status["progress"])
+        st.caption(f"当前正在扫描: {status['current']} ({status['done_count']}/{status['total_count']})")
+        st.caption("💡 扫描会在后台持续运行，您可以安全关闭此页面。结果将自动保存。")
+        if st.button("⏹ 取消后台扫描", key="tb_cancel_btn"):
+            bg_scan_manager.request_cancel()
+            st.warning("正在请求取消，请稍候...")
+            st.rerun()
+            
+    elif status["status"] in ("done", "error", "cancelled") and status["job_type"] == "triple_bottom":
+        if status["status"] == "done":
+            st.success(f"✅ 后台扫描任务已完成!")
+        elif status["status"] == "error":
+            st.error(f"❌ 后台扫描任务出错! 错误信息: {status.get('error', '')}")
+        elif status["status"] == "cancelled":
+            st.warning("⚠️ 后台扫描任务已被取消。")
+            
+        if st.button("清除状态提示", key="tb_clear_status_btn"):
+            bg_scan_manager.reset_to_idle()
+            st.rerun()
+
     st.markdown("### 📊 三重底多周期扫描")
     st.markdown(
         "<div style='font-size:13px;color:#6b7280;margin-bottom:15px;'>"
@@ -96,7 +179,8 @@ def render_triple_bottom_page():
     if scan_target == "指定代码":
         custom_ticker_input = st.sidebar.text_input("输入代码 (多个用逗号隔开)", "AAPL,BTC-USD,000001.SS")
 
-    run_scan = st.sidebar.button("🚀 开始分析扫描", type="primary", use_container_width=True)
+    is_running = bg_scan_manager.is_running()
+    run_scan = st.sidebar.button("🚀 开始分析扫描", type="primary", use_container_width=True, disabled=is_running)
 
     # ── 2. 扫描数据存取 ──
     results = storage.load_triple_bottom()
@@ -120,60 +204,27 @@ def render_triple_bottom_page():
             st.warning("扫描队列为空，未找到任何代码。")
             return
 
-        progress_text = st.empty()
-        bar = st.progress(0)
+        params = {
+            "tickers_to_scan": tickers_to_scan,
+            "selected_periods": selected_periods,
+            "swing_win": swing_win,
+            "lookback": lookback,
+            "max_sp": max_sp,
+            "min_conf": min_conf,
+        }
         
-        new_results = []
-        total_steps = len(tickers_to_scan) * len(selected_periods)
-        step = 0
-
-        # 执行下载与多周期分析
-        for i, ticker in enumerate(tickers_to_scan):
-            for period_key in selected_periods:
-                step += 1
-                bar.progress(step / total_steps)
-                interval, yf_period, period_desc = TRIPLE_BOTTOM_TIMEFRAMES[period_key]
-                progress_text.markdown(f"正在扫描: **{ticker}** ({period_desc}) ...")
-
-                try:
-                    # 使用系统原生的带有缓存的下载函数
-                    df = fetch_data(ticker, interval=interval, period=yf_period)
-                    if df is not None and not df.empty:
-                        matches = scan_triple_bottoms(
-                            df,
-                            symbol=ticker,
-                            swing_window=int(swing_win),
-                            lookback_bars=int(lookback),
-                            max_spacing=int(max_sp)
-                        )
-                        for m in matches:
-                            if m.confidence >= min_conf:
-                                # 保存包含周期信息的匹配字典
-                                new_results.append({
-                                    "symbol": m.symbol,
-                                    "period": period_key,
-                                    "pattern": m.pattern,
-                                    "confidence": m.confidence,
-                                    "idx1": int(m.idx1),
-                                    "idx2": int(m.idx2),
-                                    "idx3": int(m.idx3),
-                                    "low1": float(m.low1),
-                                    "low2": float(m.low2),
-                                    "low3": float(m.low3),
-                                    "mid_high": float(m.mid_high),
-                                    "note": m.note,
-                                    "scan_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                })
-                except Exception as e:
-                    pass
-
-        progress_text.empty()
-        bar.empty()
-        
-        # 将结果存回本地分片/原子文件
-        storage.save_triple_bottom(new_results)
-        st.toast(f"扫描完毕！共匹配到 {len(new_results)} 个符合形态候选", icon="✅")
-        results = new_results
+        ok, msg = bg_scan_manager.submit_job(
+            job_type="triple_bottom",
+            label=f"三重底扫描 ({scan_target})",
+            params=params,
+            worker_fn=triple_bottom_worker
+        )
+        if ok:
+            st.success(msg)
+            time.sleep(1)
+            st.rerun()
+        else:
+            st.error(msg)
 
     # ── 3. 主界面形态展示与过滤 ──
     if not results:

@@ -15,6 +15,8 @@ from datetime import datetime
 
 import storage
 import scanner as sc
+import bg_scan_manager
+from streamlit_autorefresh import st_autorefresh
 from assets import ASSET_GROUPS, ASSETS, TIMEFRAMES, CATEGORY_LABELS, tv_url
 
 
@@ -363,9 +365,78 @@ def _render_clear_scan_button(btn_key: str, use_container_width: bool = True):
 
 
 # ════════════════════════════════════════════════════════════════════
+# 后台扫描 Worker
+# ════════════════════════════════════════════════════════════════════
+def fibo_scan_worker(params, update_progress, cancel_check):
+    cfg = params["cfg"]
+    assets = params["assets"]
+    note = params["note"]
+    timeframe_names = params["timeframe_names"]
+    
+    import re as _re
+    
+    def cb(pct, text):
+        if cancel_check():
+            raise bg_scan_manager.CancelException("Scan cancelled by user")
+        
+        m = _re.search(r"(\d+)/(\d+)", text)
+        if m:
+            done_count = int(m.group(1))
+            total_count = int(m.group(2))
+        else:
+            done_count = int(pct * 100)
+            total_count = 100
+            
+        update_progress(done_count, total_count, text)
+        
+    try:
+        summary, err = sc.run_full_scan(
+            cfg=cfg,
+            assets=assets,
+            note=note,
+            timeframe_names=timeframe_names,
+            progress_callback=cb,
+        )
+        if err:
+            raise Exception(err)
+        
+        sel_list = params.get("sel_list")
+        if sel_list:
+            storage.save_scanned_groups(sel_list)
+            
+    except bg_scan_manager.CancelException:
+        pass
+
+
+# ════════════════════════════════════════════════════════════════════
 # 主渲染
 # ════════════════════════════════════════════════════════════════════
 def render():
+    # ── 状态轮询与展示 ──
+    status = bg_scan_manager.get_status()
+    if status["status"] == "running":
+        st_autorefresh(interval=3000, key="fibo_scan_auto_refresh")
+        st.info(f"🔄 后台扫描正在进行中: **{status['job_label']}**")
+        st.progress(status["progress"])
+        st.caption(f"当前正在扫描: {status['current']} ({status['done_count']}/{status['total_count']})")
+        st.caption("💡 扫描会在后台持续运行，您可以安全关闭此页面。结果将自动保存。")
+        if st.button("⏹ 取消后台扫描", key="fibo_cancel_btn"):
+            bg_scan_manager.request_cancel()
+            st.warning("正在请求取消，请稍候...")
+            st.rerun()
+            
+    elif status["status"] in ("done", "error", "cancelled") and status["job_type"] == "fibo_scan":
+        if status["status"] == "done":
+            st.success(f"✅ 后台扫描任务已完成!")
+        elif status["status"] == "error":
+            st.error(f"❌ 后台扫描任务出错! 错误信息: {status.get('error', '')}")
+        elif status["status"] == "cancelled":
+            st.warning("⚠️ 后台扫描任务已被取消。")
+            
+        if st.button("清除状态提示", key="fibo_clear_status_btn"):
+            bg_scan_manager.reset_to_idle()
+            st.rerun()
+
     st.markdown("## 📊 Fibonacci 实时扫描")
     st.caption("Scanner UI v2026-05-13-2")
     cfg = storage.load_config()
@@ -1174,7 +1245,7 @@ def _render_custom_scan(cfg):
     with col_btn:
         st.markdown("<br>", unsafe_allow_html=True)
         do_custom = st.button("🔍 立即扫描", type="primary",
-                              width="stretch", key="custom_scan_btn")
+                              width="stretch", key="custom_scan_btn", disabled=bg_scan_manager.is_running())
 
     tf_selected = st.multiselect(
         "扫描周期",
@@ -1289,58 +1360,27 @@ def _render_custom_scan(cfg):
     st.session_state.pop("custom_name_confirmed", None)
 
     custom_assets = {final_ticker: (display_name, "custom")}
-    pb  = st.progress(0, "准备中…")
-    msg = st.empty()
-
-    def cb(pct, text):
-        pb.progress(min(float(pct), 1.0), text)
-        msg.caption(text)
-
-    with st.spinner(""):
-        summary, err = sc.run_full_scan(
-            cfg=cfg,
-            assets=custom_assets,
-            note=f"custom:{final_ticker}",
-            timeframe_names=tf_names,
-            progress_callback=cb,
-        )
-
-    pb.empty(); msg.empty()
-
-    if err:
-        st.error(f"扫描失败：{err}"); return
-
-    st.session_state["_scanner_active_session_id"] = summary.get("session_id", "")
-    inzone  = summary.get("inzone_count", 0)
-    elapsed = summary.get("elapsed_ms", 0) / 1000
-
-    if inzone > 0:
-        st.success(
-            f"✅ **{display_name}** ({final_ticker}) 扫描完成！"
-            f"黄金区命中 **{inzone}** 个框架 | 耗时 {elapsed:.1f}s"
-        )
+    
+    params = {
+        "cfg": cfg,
+        "assets": custom_assets,
+        "note": f"custom:{final_ticker}",
+        "timeframe_names": tf_names
+    }
+    
+    ok, msg = bg_scan_manager.submit_job(
+        job_type="fibo_scan",
+        label=f"自定义品种扫描 ({display_name})",
+        params=params,
+        worker_fn=fibo_scan_worker
+    )
+    if ok:
+        st.success(msg)
+        time.sleep(1)
+        st.rerun()
     else:
-        st.info(
-            f"✅ **{display_name}** ({final_ticker}) 扫描完成，"
-            f"当前未在黄金区间。耗时 {elapsed:.1f}s"
-        )
+        st.error(msg)
 
-    # 一键加入自选
-    watchlist  = storage.load_watchlist()
-    wl_tickers = {w["ticker"] for w in watchlist if isinstance(w, dict)}
-    if final_ticker not in wl_tickers:
-        _, col_add = st.columns([5, 2])
-        with col_add:
-            if st.button("⭐ 加入自选收藏", key="custom_add_watchlist"):
-                storage.add_to_watchlist(
-                    ticker=final_ticker, name=display_name, note="自定义扫描添加"
-                )
-                st.toast(f"已添加到自选：{display_name}", icon="⭐")
-                st.rerun()
-    else:
-        st.caption(f"✅ {display_name} 已在您的自选收藏中")
-
-    st.rerun()
 
 
 def _render_symbol_path_scan(cfg):
@@ -1375,7 +1415,7 @@ def _render_symbol_path_scan(cfg):
         placeholder="Doc/symbol 或 Doc/symbol/MG.txt",
     ).strip()
 
-    do_file_scan = st.button("📂 扫描该路径中的品种", key="scan_from_symbol_path", type="primary")
+    do_file_scan = st.button("📂 扫描该路径中的品种", key="scan_from_symbol_path", type="primary", disabled=bg_scan_manager.is_running())
     if not do_file_scan:
         return
 
@@ -1425,35 +1465,28 @@ def _render_symbol_path_scan(cfg):
             f"识别成功 {parse_stats['resolved_hits']} | 去重覆盖 {parse_stats['duplicate_ticker_overwrites']} | "
             f"未识别 {parse_stats['unresolved_count']} | 最终唯一品种 {parse_stats['unique_tickers']}"
         )
-    pb = st.progress(0, "准备扫描…")
-    msg = st.empty()
-
-    def cb2(pct, text):
-        pb.progress(min(float(pct), 1.0), text)
-        msg.caption(text)
-
-    summary2, err2 = sc.run_full_scan(
-        cfg=cfg,
-        assets=file_assets,
-        note=source_label,
-        timeframe_names=tf_names,
-        progress_callback=cb2,
+    params = {
+        "cfg": cfg,
+        "assets": file_assets,
+        "note": source_label,
+        "timeframe_names": tf_names
+    }
+    
+    ok, msg = bg_scan_manager.submit_job(
+        job_type="fibo_scan",
+        label=f"文件/批量扫描 ({source_label})",
+        params=params,
+        worker_fn=fibo_scan_worker
     )
-    pb.empty()
-    msg.empty()
-
-    if err2:
-        st.error(f"文件扫描失败: {err2}")
-        return
-    st.session_state["_scanner_active_session_id"] = summary2.get("session_id", "")
-    st.success(
-        f"文件扫描完成：{summary2.get('asset_count', len(file_assets))} 个品种，"
-        f"黄金区 {summary2.get('inzone_count', 0)}，"
-        f"周期 {' / '.join(summary2.get('timeframes', tf_names))}"
-    )
+    if ok:
+        st.success(msg)
+        time.sleep(1)
+        st.rerun()
+    else:
+        st.error(msg)
+        
     if unresolved:
         st.caption("未识别条目: " + "、".join(unresolved[:20]))
-    st.rerun()
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -1656,85 +1689,36 @@ def _render_batch_selector(cfg):
             f"🚀 扫描选中 {len(sel_assets)} 品种" if sel_assets else "🚀 扫描（请先选择组）",
             type="primary",
             use_container_width=True,
-            disabled=(len(sel_assets) == 0 or len(tf_names) == 0),   # 未选时置灰，但按钮始终可见
+            disabled=(len(sel_assets) == 0 or len(tf_names) == 0 or bg_scan_manager.is_running()),
         )
 
     if sel_assets and not tf_names:
         st.warning("请至少选择一个扫描周期。")
 
     if do_scan and sel_assets and tf_names:
-        # ── 进度显示区：进度条 + 实时状态文字 ──────────────────
-        pb      = st.progress(0.0, "🚀 启动扫描引擎…")
-        msg     = st.empty()
-        # 实时统计面板（扫描过程中持续刷新）
-        stats_ph = st.empty()
-
-        _done_ref   = [0]     # 用列表实现可变引用（闭包捕获）
-        _inzone_ref = [0]
-
-        def cb(pct, text):
-            # 更新进度条
-            pb.progress(min(float(pct), 1.0), text)
-            # 从 text 里解析已完成数/黄金区数（格式: "✅ N/M  name  |  黄金区: X 个"）
-            import re as _re
-            m1 = _re.search(r"(\d+)/(\d+)", text)
-            m2 = _re.search(r"黄金区[：:]\s*(\d+)", text)
-            if m1:
-                _done_ref[0]   = int(m1.group(1))
-            if m2:
-                _inzone_ref[0] = int(m2.group(2) if m2.lastindex == 2 else m2.group(1))
-            # 小面板：实时展示进度数字
-            done_n   = _done_ref[0]
-            total_n  = len(sel_assets)
-            inzone_n = _inzone_ref[0]
-            remain   = max(total_n - done_n, 0)
-            stats_ph.markdown(
-                f"<div style='background:#f0fdf4;border:1px solid #bbf7d0;"
-                f"border-radius:8px;padding:8px 16px;font-size:13px;'>"
-                f"📊 已扫描 <b style='color:#166534'>{done_n}</b> / {total_n} 个品种 &nbsp;｜&nbsp; "
-                f"剩余 <b>{remain}</b> &nbsp;｜&nbsp; "
-                f"⭐ 黄金区命中 <b style='color:#d97706'>{inzone_n}</b> 个"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-
         group_label = "、".join(g.split(" - ")[-1] for g in sel_list[:3]) + \
                       (f"等{len(sel_list)}组" if len(sel_list) > 3 else "")
-
-        # 注意：不用 st.spinner（会遮盖进度条），直接调用
-        summary, err = sc.run_full_scan(
-            cfg=cfg,
-            assets=sel_assets,
-            note=f"batch:{group_label}",
-            timeframe_names=tf_names,
-            progress_callback=cb,
+        
+        params = {
+            "cfg": cfg,
+            "assets": sel_assets,
+            "note": f"batch:{group_label}",
+            "timeframe_names": tf_names,
+            "sel_list": sel_list
+        }
+        
+        ok, msg = bg_scan_manager.submit_job(
+            job_type="fibo_scan",
+            label=f"分批扫描 ({group_label})",
+            params=params,
+            worker_fn=fibo_scan_worker
         )
-
-        pb.empty(); msg.empty(); stats_ph.empty()
-        if err:
-            st.error(err)
-        else:
-            storage.save_scanned_groups(sel_list)
-            st.session_state["_scanner_active_session_id"] = summary.get("session_id", "")
-            inzone_c = summary['inzone_count']
-            triple_c = summary['triple_conf']
-            elapsed  = summary['elapsed_ms'] / 1000
-            asset_c  = summary['asset_count']
-            # 成功完成：绿色结果卡片
-            st.markdown(
-                f"<div style='background:#f0fdf4;border:2px solid #22c55e;"
-                f"border-radius:10px;padding:12px 20px;margin:8px 0;'>"
-                f"<b style='color:#166534;font-size:15px'>✅ 扫描完成！</b><br>"
-                f"<span style='font-size:13px;color:#374151'>"
-                f"扫描品种 <b>{asset_c}</b> 个 &nbsp;·&nbsp; "
-                f"黄金区命中 <b style='color:#d97706'>{inzone_c}</b> 个 &nbsp;·&nbsp; "
-                f"三框架共振 <b style='color:#dc2626'>{triple_c}</b> 个 &nbsp;·&nbsp; "
-                f"耗时 <b>{elapsed:.1f}s</b>"
-                f"</span></div>",
-                unsafe_allow_html=True,
-            )
-            st.caption(f"本次周期：{' / '.join(summary.get('timeframes', tf_names))}")
+        if ok:
+            st.success(msg)
+            time.sleep(1)
             st.rerun()
+        else:
+            st.error(msg)
 
 
 # ════════════════════════════════════════════════════════════════════

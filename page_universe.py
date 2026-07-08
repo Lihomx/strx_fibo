@@ -12,11 +12,14 @@ page_universe.py — 🌍 全量品种库
   中断后结果会保存，可继续追加扫描更多品种。
 """
 
+import time
 import streamlit as st
 import pandas as pd
 
 import storage
 import scanner as sc
+import bg_scan_manager
+from streamlit_autorefresh import st_autorefresh
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -84,6 +87,31 @@ def _load_us():
 # 主渲染
 # ════════════════════════════════════════════════════════════════════
 def render():
+    # ── 状态轮询与展示 ──
+    status = bg_scan_manager.get_status()
+    if status["status"] == "running":
+        st_autorefresh(interval=3000, key="univ_scan_auto_refresh")
+        st.info(f"🔄 后台扫描正在进行中: **{status['job_label']}**")
+        st.progress(status["progress"])
+        st.caption(f"当前正在扫描: {status['current']} ({status['done_count']}/{status['total_count']})")
+        st.caption("💡 扫描会在后台持续运行，您可以安全关闭此页面。结果将自动保存。")
+        if st.button("⏹ 取消后台扫描", key="univ_cancel_btn"):
+            bg_scan_manager.request_cancel()
+            st.warning("正在请求取消，请稍候...")
+            st.rerun()
+            
+    elif status["status"] in ("done", "error", "cancelled") and status["job_type"] == "fibo_scan":
+        if status["status"] == "done":
+            st.success(f"✅ 后台扫描任务已完成!")
+        elif status["status"] == "error":
+            st.error(f"❌ 后台扫描任务出错! 错误信息: {status.get('error', '')}")
+        elif status["status"] == "cancelled":
+            st.warning("⚠️ 后台扫描任务已被取消。")
+            
+        if st.button("清除状态提示", key="univ_clear_status_btn"):
+            bg_scan_manager.reset_to_idle()
+            st.rerun()
+
     st.markdown("## 🌍 全量品种库")
     st.markdown(
         '<p style="color:#6b7280;font-size:13px;margin-top:-8px">'
@@ -528,7 +556,8 @@ def _render_market(market_key: str, load_fn, category: str, cfg: dict, label: st
         with c_scan:
             if st.button("🔍 扫描", key=f"scan_{market_key}_{page_idx}_{i}",
                          help=f"单独扫描 {name}（约6秒）",
-                         use_container_width=True):
+                         use_container_width=True,
+                         disabled=bg_scan_manager.is_running()):
                 _run_single(ticker, name, category, cfg)
         with c_tv:
             st.markdown(
@@ -571,6 +600,7 @@ def _render_market(market_key: str, load_fn, category: str, cfg: dict, label: st
                 f"🚀 批量扫描 {n_sel} 支",
                 type="primary",
                 key=f"univ_batch_{market_key}",
+                disabled=bg_scan_manager.is_running(),
             ):
                 assets_batch = {t: (name_map.get(t, t), category) for t in selected}
                 _run_batch(assets_batch, cfg)
@@ -579,34 +609,67 @@ def _render_market(market_key: str, load_fn, category: str, cfg: dict, label: st
 
 
 # ════════════════════════════════════════════════════════════════════
+# 后台扫描 Worker
+# ════════════════════════════════════════════════════════════════════
+def fibo_scan_worker(params, update_progress, cancel_check):
+    cfg = params["cfg"]
+    assets = params["assets"]
+    note = params["note"]
+    timeframe_names = params.get("timeframe_names")
+    
+    import re as _re
+    
+    def cb(pct, text):
+        if cancel_check():
+            raise bg_scan_manager.CancelException("Scan cancelled by user")
+        
+        m = _re.search(r"(\d+)/(\d+)", text)
+        if m:
+            done_count = int(m.group(1))
+            total_count = int(m.group(2))
+        else:
+            done_count = int(pct * 100)
+            total_count = 100
+            
+        update_progress(done_count, total_count, text)
+        
+    try:
+        summary, err = sc.run_full_scan(
+            cfg=cfg,
+            assets=assets,
+            note=note,
+            timeframe_names=timeframe_names,
+            progress_callback=cb,
+        )
+        if err:
+            raise Exception(err)
+            
+    except bg_scan_manager.CancelException:
+        pass
+
+
+# ════════════════════════════════════════════════════════════════════
 # 单支扫描
 # ════════════════════════════════════════════════════════════════════
 def _run_single(ticker: str, name: str, category: str, cfg: dict):
-    pb  = st.progress(0, "准备中…")
-    msg = st.empty()
-
-    def cb(pct, text):
-        pb.progress(min(float(pct), 1.0), text)
-        msg.caption(text)
-
-    summary, err = sc.run_full_scan(
-        cfg=cfg,
-        assets={ticker: (name, category)},
-        note=f"universe_single:{ticker}",
-        progress_callback=cb,
+    params = {
+        "cfg": cfg,
+        "assets": {ticker: (name, category)},
+        "note": f"universe_single:{ticker}"
+    }
+    
+    ok, msg = bg_scan_manager.submit_job(
+        job_type="fibo_scan",
+        label=f"单股扫描 ({name})",
+        params=params,
+        worker_fn=fibo_scan_worker
     )
-    pb.empty(); msg.empty()
-
-    if err:
-        st.error(f"扫描失败：{err}")
+    if ok:
+        st.success(msg)
+        time.sleep(1)
+        st.rerun()
     else:
-        inzone  = summary.get("inzone_count", 0)
-        elapsed = summary.get("elapsed_ms", 0) / 1000
-        if inzone > 0:
-            st.success(f"✅ **{name}** ({ticker}) 黄金区命中 **{inzone}** 框架 | {elapsed:.1f}s")
-        else:
-            st.info(f"✅ **{name}** ({ticker}) 扫描完成，当前区间外 | {elapsed:.1f}s")
-    st.rerun()
+        st.error(msg)
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -616,31 +679,22 @@ def _run_batch(assets: dict, cfg: dict):
     if not assets:
         return
 
-    n    = len(assets)
-    pb   = st.progress(0, f"准备扫描 {n} 支品种…")
-    msg  = st.empty()
-
-    def cb(pct, text):
-        pb.progress(min(float(pct), 1.0), text)
-        msg.caption(text)
-
-    summary, err = sc.run_full_scan(
-        cfg=cfg,
-        assets=assets,
-        note=f"universe_batch:{n}支",
-        progress_callback=cb,
+    n = len(assets)
+    params = {
+        "cfg": cfg,
+        "assets": assets,
+        "note": f"universe_batch:{n}支"
+    }
+    
+    ok, msg = bg_scan_manager.submit_job(
+        job_type="fibo_scan",
+        label=f"品种库批量扫描 ({n}支)",
+        params=params,
+        worker_fn=fibo_scan_worker
     )
-    pb.empty(); msg.empty()
-
-    if err:
-        st.error(f"批量扫描失败：{err}")
+    if ok:
+        st.success(msg)
+        time.sleep(1)
+        st.rerun()
     else:
-        st.success(
-            f"✅ 批量扫描完成！"
-            f"品种 **{summary['asset_count']}** | "
-            f"黄金区命中 **{summary['inzone_count']}** | "
-            f"三框架共振 **{summary['triple_conf']}** | "
-            f"耗时 **{summary['elapsed_ms']/1000:.1f}s**"
-        )
-        st.info("💡 本次结果已保存，可继续勾选其他品种追加扫描，结果会自动累积显示。")
-    st.rerun()
+        st.error(msg)
