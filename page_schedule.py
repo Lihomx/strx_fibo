@@ -1,23 +1,23 @@
-"""pages/page_schedule.py — 定时任务配置"""
+"""page_schedule.py — 定时任务配置"""
 
 import streamlit as st
-from core.supabase_client import load_config, save_config
-from core.scheduler import get_scheduler_status, restart_scheduler
+import storage
+from scheduler import get_scheduler_status, restart_scheduler
 
 
 def render():
     st.markdown("## ⏰ 定时扫描任务")
-    st.markdown("配置每日自动扫描时间，结果自动存入 Supabase 数据库并触发告警。")
+    st.markdown("配置每日自动扫描时间，结果自动存入本地并触发告警。")
 
     st.markdown("""
     <div class="notice-warn">
     ⚠️ <b>依赖说明：</b>需安装 APScheduler：<code>pip install apscheduler</code><br>
-    定时任务在 Streamlit 后台线程运行。<b>修改时间后需重启应用生效。</b><br>
+    定时任务在 Streamlit 后台线程运行。<b>修改时间后需重启应用或点击下方按钮重启生效。</b><br>
     Streamlit Cloud 部署时：建议改用 Supabase Edge Functions 或外部 Cron 服务（见下方说明）。
     </div>
     """, unsafe_allow_html=True)
 
-    cfg = load_config()
+    cfg = storage.load_config()
 
     # 当前调度状态
     status = get_scheduler_status()
@@ -46,11 +46,12 @@ def render():
     st.caption(f"当前设置：每天 **{hour:02d}:{minute:02d}** 北京时间 (Asia/Shanghai) 自动扫描")
 
     if st.button("💾 保存并重启定时器", type="primary"):
-        ok = save_config({
+        cfg.update({
             "scan_enabled": enabled,
             "scan_hour":    hour,
             "scan_minute":  minute,
         })
+        ok = storage.save_config(cfg)
         if ok:
             if enabled:
                 restart_scheduler(hour, minute)
@@ -58,7 +59,7 @@ def render():
             else:
                 st.success("✅ 已保存，定时扫描已停用")
         else:
-            st.error("❌ 保存失败，请检查 Supabase 连接")
+            st.error("❌ 保存失败，请检查写入权限")
 
     st.divider()
 

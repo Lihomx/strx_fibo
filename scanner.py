@@ -452,12 +452,14 @@ def _sina_a_share(ticker: str, interval: str) -> Optional[pd.DataFrame]:
 # ════════════════════════════════════════════════════════════════════
 # 智能路由
 # ════════════════════════════════════════════════════════════════════
-def fetch_data(ticker: str, interval: str, period: str,
-               cfg: Optional[Dict] = None) -> Optional[pd.DataFrame]:
-    cfg    = cfg or {}
-    tt     = _ticker_type(ticker)
-    td_key = cfg.get("twelvedata_key", "")
+import streamlit as st
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_fetch_data(ticker: str, interval: str, period: str, data_source: str, td_key: str) -> Optional[pd.DataFrame]:
+    return _fetch_data_impl(ticker, interval, period, data_source, td_key)
+
+def _fetch_data_impl(ticker: str, interval: str, period: str, data_source: str, td_key: str) -> Optional[pd.DataFrame]:
+    tt = _ticker_type(ticker)
     if tt in ("a_share", "a_bare"):
         # 优先级: AKShare > yfinance > 网易财经 > 新浪财经
         df = _ak_a_share(ticker, interval)
@@ -485,7 +487,7 @@ def fetch_data(ticker: str, interval: str, period: str,
         return fetch_twelvedata(ticker, interval, period, td_key) if td_key else None
 
     # 外汇/期货/指数/加密/其他
-    if cfg.get("data_source") == "twelvedata" and td_key:
+    if data_source == "twelvedata" and td_key:
         df = fetch_twelvedata(ticker, interval, period, td_key)
         if df is not None:
             return df
@@ -493,6 +495,17 @@ def fetch_data(ticker: str, interval: str, period: str,
     if df is not None:
         return df
     return fetch_twelvedata(ticker, interval, period, td_key) if td_key else None
+
+def fetch_data(ticker: str, interval: str, period: str,
+               cfg: Optional[Dict] = None) -> Optional[pd.DataFrame]:
+    cfg = cfg or {}
+    data_source = cfg.get("data_source", "auto")
+    td_key = cfg.get("twelvedata_key", "")
+    try:
+        return _cached_fetch_data(ticker, interval, period, data_source, td_key)
+    except Exception as e:
+        logger.warning(f"cache_data failure, falling back to direct fetch: {e}")
+        return _fetch_data_impl(ticker, interval, period, data_source, td_key)
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -693,24 +706,25 @@ def run_full_scan(
         # 直接写 allres（不走 save_scan 的会话日志，避免重复写 session）
         try:
             import json, os
-            F = storage.F_ALLRES
-            # 读当前
-            try:
-                with open(F, "r", encoding="utf-8") as f:
-                    existing = json.load(f)
-                if not isinstance(existing, list):
+            F = storage.get_allres_path(scan_date)
+            with storage.IO_LOCK:
+                # 读当前
+                try:
+                    with open(F, "r", encoding="utf-8") as f:
+                        existing = json.load(f)
+                    if not isinstance(existing, list):
+                        existing = []
+                except Exception:
                     existing = []
-            except Exception:
-                existing = []
-            # 合并：同 ticker+timeframe 取最新
-            merge_map = {(r["ticker"], r.get("timeframe","")): r for r in existing}
-            for r in rows:
-                merge_map[(r["ticker"], r.get("timeframe",""))] = r
-            merged = list(merge_map.values())
-            if len(merged) > 5000:
-                merged = merged[-5000:]
-            with open(F, "w", encoding="utf-8") as f:
-                json.dump(merged, f, ensure_ascii=False)
+                # 合并：同 ticker+timeframe 取最新
+                merge_map = {(r["ticker"], r.get("timeframe","")): r for r in existing}
+                for r in rows:
+                    merge_map[(r["ticker"], r.get("timeframe",""))] = r
+                merged = list(merge_map.values())
+                if len(merged) > 5000:
+                    merged = merged[-5000:]
+                with open(F, "w", encoding="utf-8") as f:
+                    json.dump(merged, f, ensure_ascii=False)
         except Exception as e:
             logger.warning(f"_flush_rows: {e}")
 

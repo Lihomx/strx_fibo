@@ -412,7 +412,7 @@ def render():
         with st.expander(f"❌ 未通过品种（{len(failed)} 个）", expanded=False):
             for r in failed:
                 st.markdown(
-                    f'<div style="font-weight:600;font-size:13px;color:#374151;'
+                    f'<div style="font-weight:600;font-size:13px;color:var(--text-color, #374151);'
                     f'margin:10px 0 4px">{r["ticker"]}</div>',
                     unsafe_allow_html=True,
                 )
@@ -435,16 +435,16 @@ def render():
 
 def _stat_card(label: str, value: str, color: str) -> str:
     COLORS = {
-        "blue":  ("#eff6ff", "#1d4ed8"),
-        "green": ("#f0fdf4", "#15803d"),
-        "gray":  ("#f9fafb", "#4b5563"),
-        "red":   ("#fef2f2", "#b91c1c"),
+        "blue":  ("rgba(59, 130, 246, 0.12)", "#3b82f6", "rgba(59, 130, 246, 0.3)"),
+        "green": ("rgba(16, 185, 129, 0.12)", "#10b981", "rgba(16, 185, 129, 0.3)"),
+        "gray":  ("rgba(107, 114, 128, 0.12)", "var(--text-color, #6b7280)", "rgba(107, 114, 128, 0.3)"),
+        "red":   ("rgba(239, 68, 68, 0.12)", "#ef4444", "rgba(239, 68, 68, 0.3)"),
     }
-    bg, fg = COLORS.get(color, ("#f9fafb", "#374151"))
+    bg, fg, border = COLORS.get(color, ("rgba(107, 114, 128, 0.12)", "var(--text-color, #374151)", "transparent"))
     return (
-        f'<div style="background:{bg};border-radius:10px;padding:14px 12px;'
-        f'text-align:center;margin-bottom:4px">'
-        f'<div style="font-size:11px;color:#6b7280">{label}</div>'
+        f'<div style="background:{bg};border:1px solid {border};border-radius:10px;padding:14px 12px;'
+        f'text-align:center;margin-bottom:4px;color:var(--text-color, #111)">'
+        f'<div style="font-size:11px;color:var(--text-color, #6b7280);opacity:0.8">{label}</div>'
         f'<div style="font-size:24px;font-weight:800;color:{fg};margin-top:4px">{value}</div>'
         f'</div>'
     )
@@ -453,33 +453,33 @@ def _stat_card(label: str, value: str, color: str) -> str:
 def _render_details(details: list):
     """渲染7条规则的逐条状态表格"""
     html = (
-        '<table style="width:100%;border-collapse:collapse;font-size:12px">'
+        '<table style="width:100%;border-collapse:collapse;font-size:12px;color:var(--text-color, #111)">'
         '<thead><tr>'
-        '<th style="text-align:left;padding:5px 8px;color:#6b7280;font-weight:600;'
-        'border-bottom:1px solid #e5e7eb">编号</th>'
-        '<th style="text-align:left;padding:5px 8px;color:#6b7280;font-weight:600;'
-        'border-bottom:1px solid #e5e7eb">条件</th>'
-        '<th style="text-align:left;padding:5px 8px;color:#6b7280;font-weight:600;'
-        'border-bottom:1px solid #e5e7eb">当前值</th>'
-        '<th style="text-align:center;padding:5px 8px;color:#6b7280;font-weight:600;'
-        'border-bottom:1px solid #e5e7eb">结果</th>'
+        '<th style="text-align:left;padding:5px 8px;color:var(--text-color, #6b7280);opacity:0.8;font-weight:600;'
+        'border-bottom:1px solid var(--border-color, #e5e7eb)">编号</th>'
+        '<th style="text-align:left;padding:5px 8px;color:var(--text-color, #6b7280);opacity:0.8;font-weight:600;'
+        'border-bottom:1px solid var(--border-color, #e5e7eb)">条件</th>'
+        '<th style="text-align:left;padding:5px 8px;color:var(--text-color, #6b7280);opacity:0.8;font-weight:600;'
+        'border-bottom:1px solid var(--border-color, #e5e7eb)">当前值</th>'
+        '<th style="text-align:center;padding:5px 8px;color:var(--text-color, #6b7280);opacity:0.8;font-weight:600;'
+        'border-bottom:1px solid var(--border-color, #e5e7eb)">结果</th>'
         '</tr></thead><tbody>'
     )
     for rule in details:
         ok     = rule["ok"]
         badge  = (
-            '<span style="background:#dcfce7;color:#15803d;padding:2px 8px;'
+            '<span style="background:rgba(16, 185, 129, 0.2);color:#10b981;padding:2px 8px;'
             'border-radius:20px;font-size:11px;font-weight:700">✓ 通过</span>'
             if ok else
-            '<span style="background:#fee2e2;color:#b91c1c;padding:2px 8px;'
+            '<span style="background:rgba(239, 68, 68, 0.2);color:#ef4444;padding:2px 8px;'
             'border-radius:20px;font-size:11px;font-weight:700">✗ 未过</span>'
         )
-        row_bg = "#f0fdf4" if ok else "#fff7f7"
+        row_bg = "rgba(16, 185, 129, 0.06)" if ok else "rgba(239, 68, 68, 0.06)"
         html += (
             f'<tr style="background:{row_bg}">'
-            f'<td style="padding:6px 8px;font-family:monospace;color:#6b7280">{rule["id"]}</td>'
-            f'<td style="padding:6px 8px;color:#374151">{rule["desc"]}</td>'
-            f'<td style="padding:6px 8px;color:#6b7280;font-family:monospace;font-size:11px">{rule["val"]}</td>'
+            f'<td style="padding:6px 8px;font-family:monospace;color:var(--text-color, #6b7280);opacity:0.8">{rule["id"]}</td>'
+            f'<td style="padding:6px 8px;color:var(--text-color, #374151)">{rule["desc"]}</td>'
+            f'<td style="padding:6px 8px;color:var(--text-color, #6b7280);opacity:0.8;font-family:monospace;font-size:11px">{rule["val"]}</td>'
             f'<td style="padding:6px 8px;text-align:center">{badge}</td>'
             f'</tr>'
         )

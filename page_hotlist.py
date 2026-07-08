@@ -546,7 +546,7 @@ def _build_cat_options(cats):
 
 
 def _render_inline_controls(item, ticker, cats):
-    cc = st.columns([1, 1, 1, 5])
+    cc = st.columns([1, 1, 1, 1, 4])
 
     with cc[0]:
         if st.button("🏷️", key=f"hl_cat_btn_{ticker}", help="设置分类"):
@@ -571,6 +571,66 @@ def _render_inline_controls(item, ticker, cats):
                          help="收起备注" if hist_open else f"展开备注({len(notes)})"):
                 _remember_focus_row(ticker)
                 st.session_state[f"hl_hist_open_{ticker}"] = not hist_open
+
+    with cc[3]:
+        chart_open = st.session_state.get(f"hl_chart_open_{ticker}", False)
+        chart_lbl = "📊▲" if chart_open else "📊"
+        if st.button(chart_lbl, key=f"hl_chart_btn_{ticker}", help="查看 K线趋势图"):
+            _remember_focus_row(ticker)
+            st.session_state[f"hl_chart_open_{ticker}"] = not chart_open
+
+    # ── K线图面板 ──────────────────────────────────────────────────
+    if st.session_state.get(f"hl_chart_open_{ticker}"):
+        with st.container(border=True):
+            st.markdown(f"##### 📊 {item.get('name') or ticker} 趋势图")
+            try:
+                import yfinance as yf
+                import plotly.graph_objects as go
+                import pandas as pd
+                df = yf.download(ticker, period="1y", interval="1d", progress=False, auto_adjust=True)
+                if df is not None and not df.empty:
+                    df_slice = df.tail(100)
+                    if isinstance(df_slice.columns, pd.MultiIndex):
+                        df_slice.columns = [c[0].lower() for c in df_slice.columns]
+                    else:
+                        df_slice.columns = [c.lower() for c in df_slice.columns]
+                    
+                    h_val = float(df_slice["high"].max())
+                    l_val = float(df_slice["low"].min())
+                    diff = h_val - l_val
+                    f50 = h_val - 0.5 * diff
+                    f618 = h_val - 0.618 * diff
+                    
+                    fig = go.Figure(data=[go.Candlestick(
+                        x=df_slice.index,
+                        open=df_slice['open'],
+                        high=df_slice['high'],
+                        low=df_slice['low'],
+                        close=df_slice['close'],
+                        name='K线'
+                    )])
+                    fig.add_hrect(
+                        y0=f618, y1=f50,
+                        fillcolor="rgba(245, 158, 11, 0.15)",
+                        line_width=0,
+                        annotation_text="黄金区 (0.50-0.618)",
+                        annotation_position="top left",
+                        annotation_font_color="#f59e0b"
+                    )
+                    fig.add_hline(y=h_val, line_dash="dash", line_color="#ef4444", annotation_text=f"高点: {h_val:.2f}")
+                    fig.add_hline(y=l_val, line_dash="dash", line_color="#10b981", annotation_text=f"低点: {l_val:.2f}")
+                    
+                    fig.update_layout(
+                        xaxis_rangeslider_visible=False,
+                        height=280,
+                        margin=dict(l=10, r=10, t=20, b=10),
+                        template="plotly_dark"
+                    )
+                    st.plotly_chart(fig, use_container_width=True, key=f"hl_chart_fig_{ticker}")
+                else:
+                    st.warning("未能拉取到该品种的K线数据，请检查网络或代码。")
+            except Exception as e:
+                st.error(f"加载图表时发生异常: {e}")
 
     # ── 设置分类面板 ──────────────────────────────────────────────
     if st.session_state.get(f"hl_cat_open_{ticker}"):

@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# STRX Fibo Scanner files
+strx_fibo-main (2).zip
+_recover_zip/
+daemon.log
+secrets.toml
+
+# Streamlit config
+.streamlit/
+
+# Local data files
+data_*.json
+scan_snapshots/
+backups/

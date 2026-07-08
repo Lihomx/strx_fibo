@@ -387,7 +387,8 @@ def render():
     # ── 工具栏 ──────────────────────────────────────────────────────
     col_kw, col_tf, col_cat, col_zone, col_sort = st.columns([3, 2, 2, 2, 2])
     with col_kw:
-        kw = st.text_input("🔍 搜索", placeholder="名称 / 代码…",
+        default_kw = st.session_state.pop("scanner_search", "")
+        kw = st.text_input("🔍 搜索", value=default_kw, placeholder="名称 / 代码…",
                            label_visibility="collapsed")
     with col_tf:
         tf_sel = st.selectbox("框架", ["全部","Daily","Weekly","Monthly"],

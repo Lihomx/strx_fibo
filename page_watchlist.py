@@ -248,7 +248,7 @@ def _render_main():
     )
 
     # ── 工具栏 ──────────────────────────────────────────────────
-    tc1, tc2, tc3, tc4 = st.columns([4, 2, 2, 2])
+    tc1, tc2, tc2_5, tc3, tc4 = st.columns([3, 2, 2, 2, 1])
     with tc1:
         search = st.text_input("🔍", placeholder="搜索 Ticker / 名称…",
                                key="wl_search", label_visibility="collapsed")
@@ -256,7 +256,7 @@ def _render_main():
         sel_cat = "__ALL__"
         if cats:
             _cf_ids   = ["__ALL__", "__NONE__"]
-            _cf_names = {"__ALL__": "📋 全部", "__NONE__": "❓ 未分类"}
+            _cf_names = {"__ALL__": "📁 全部分类", "__NONE__": "❓ 未分类"}
             def _wc(nodes, _ids=_cf_ids, _names=_cf_names, depth=0):
                 for n in sorted(nodes, key=lambda x: x.get("order", 0)):
                     _ids.append(n["id"])
@@ -268,11 +268,20 @@ def _render_main():
                                    format_func=lambda x, m=_cf_names: m.get(x, x),
                                    key="wl_cat_filter_id",
                                    label_visibility="collapsed")
+    with tc2_5:
+        # 收集所有收藏品已有的标签
+        all_tags = set()
+        for item in items:
+            for t in item.get("tags", []):
+                all_tags.add(t)
+        tag_options = ["📋 全部标签"] + sorted(list(all_tags))
+        sel_tag = st.selectbox("标签过滤", tag_options, key="wl_tag_filter", label_visibility="collapsed")
+
     with tc3:
         if st.button("⚙️ 管理分类", key="wl_go_cats_btn", use_container_width=True):
             st.session_state["_wl_go_cats"] = True
     with tc4:
-        if st.button("🗑️ 清空", key="wl_clear_all", use_container_width=True):
+        if st.button("🗑️", key="wl_clear_all", use_container_width=True, help="清空收藏"):
             st.session_state["wl_confirm_clear"] = True
 
     if st.session_state.get("wl_confirm_clear"):
@@ -282,9 +291,11 @@ def _render_main():
             if st.button("确认清空", key="wl_clear_yes", type="primary"):
                 for item in items: storage.remove_from_watchlist(item["ticker"])
                 st.session_state["wl_confirm_clear"] = False
+                st.rerun()
         with cc2:
             if st.button("取消", key="wl_clear_no"):
                 st.session_state["wl_confirm_clear"] = False
+                st.rerun()
 
     # ── 过滤 ────────────────────────────────────────────────────
     q        = search.strip().upper()
@@ -301,6 +312,9 @@ def _render_main():
         _vnames = {c["name"] for c in cats if c["id"] in _valid}
         filtered = [i for i in filtered
                     if i.get("category_id") in _valid or i.get("category_id") in _vnames]
+
+    if sel_tag != "📋 全部标签":
+        filtered = [i for i in filtered if sel_tag in i.get("tags", [])]
 
     pinned    = [i for i in filtered if i.get("pinned")]
     others    = [i for i in filtered if not i.get("pinned")]
@@ -365,9 +379,24 @@ def _render_main():
         })
     df  = pd.DataFrame(rows)
     csv = df.to_csv(index=False).encode("utf-8-sig")
-    st.download_button("⬇️ 导出收藏夹 CSV", csv,
-                       file_name="strx_watchlist.csv", mime="text/csv",
-                       key="wl_dl")
+    
+    # Excel 导出
+    import io
+    excel_buffer = io.BytesIO()
+    with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='自选收藏')
+    excel_data = excel_buffer.getvalue()
+
+    col_dl1, col_dl2 = st.columns(2)
+    with col_dl1:
+        st.download_button("⬇️ 导出收藏夹 CSV", csv,
+                           file_name="strx_watchlist.csv", mime="text/csv",
+                           key="wl_dl")
+    with col_dl2:
+        st.download_button("⬇️ 导出收藏夹 Excel", excel_data,
+                           file_name="strx_watchlist.xlsx",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           key="wl_dl_xlsx")
     _restore_focus_row_if_needed()
 
 
@@ -450,11 +479,18 @@ def _render_item_row(item, result_map, cats, viewed_set):
         )
     else:
         # ── 展示模式：点击品种名进入编辑 ─────────────────────────
+        tags_html = ""
+        for t in item.get("tags", []):
+            tags_html += (
+                f'<span style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.4);border-radius:4px;'
+                f'padding:2px 6px;font-size:10px;white-space:nowrap;margin-right:4px;color:var(--text-color);font-weight:500;">'
+                f'🏷️ {t}</span>'
+            )
         st.markdown(
             f'<div style="{row_style}border-radius:8px;padding:8px 12px;margin-bottom:4px">'
             f'<div style="font-size:14px;font-weight:700;color:#111">'
             f'{pin_icon}{view_icon}{display_name}{ticker_badge}</div>'
-            + (f'<div style="margin-top:4px">{fibo_html}</div>' if fibo_html else "")
+            + (f'<div style="margin-top:4px">{fibo_html}{tags_html}</div>' if fibo_html or tags_html else "")
             + note_html
             + '</div>',
             unsafe_allow_html=True,
@@ -547,10 +583,10 @@ def _build_cat_options(cats):
 
 
 def _render_inline_controls(item, ticker, cats):
-    cc = st.columns([1, 1, 1, 5])
+    cc = st.columns([1, 1, 1, 1, 1, 3])
 
     with cc[0]:
-        if st.button("🏷️", key=f"wl_cat_btn_{ticker}", help="设置分类"):
+        if st.button("📁", key=f"wl_cat_btn_{ticker}", help="设置分类"):
             _remember_focus_row(ticker)
             k = f"wl_cat_open_{ticker}"
             st.session_state[k] = not st.session_state.get(k, False)
@@ -558,12 +594,18 @@ def _render_inline_controls(item, ticker, cats):
                 st.session_state[f"wl_cat_init_{ticker}"] = True
 
     with cc[1]:
+        if st.button("🏷️", key=f"wl_tags_btn_{ticker}", help="管理标签"):
+            _remember_focus_row(ticker)
+            k = f"wl_tags_open_{ticker}"
+            st.session_state[k] = not st.session_state.get(k, False)
+
+    with cc[2]:
         if st.button("✏️", key=f"wl_note_btn_{ticker}", help="添加备注"):
             _remember_focus_row(ticker)
             k = f"wl_note_open_{ticker}"
             st.session_state[k] = not st.session_state.get(k, False)
 
-    with cc[2]:
+    with cc[3]:
         notes = _all_notes(item)
         if notes:
             hist_open = st.session_state.get(f"wl_hist_open_{ticker}", True)
@@ -572,6 +614,109 @@ def _render_inline_controls(item, ticker, cats):
                          help="收起备注" if hist_open else f"展开备注({len(notes)})"):
                 _remember_focus_row(ticker)
                 st.session_state[f"wl_hist_open_{ticker}"] = not hist_open
+
+    with cc[4]:
+        chart_open = st.session_state.get(f"wl_chart_open_{ticker}", False)
+        chart_lbl = "📊▲" if chart_open else "📊"
+        if st.button(chart_lbl, key=f"wl_chart_btn_{ticker}", help="查看 K线趋势图"):
+            _remember_focus_row(ticker)
+            st.session_state[f"wl_chart_open_{ticker}"] = not chart_open
+
+    # ── 标签管理面板 ──────────────────────────────────────────────
+    if st.session_state.get(f"wl_tags_open_{ticker}"):
+        with st.container(border=True):
+            st.markdown(f"##### 🏷️ 「{item.get('name') or ticker}」的标签")
+            cur_tags = ", ".join(item.get("tags", []))
+            new_tags_input = st.text_input(
+                "标签（多个用英文逗号 , 隔开）",
+                value=cur_tags,
+                key=f"wl_tags_input_{ticker}",
+                placeholder="例如: 待入场, 已持仓, 观察中"
+            )
+            quick_tags = ["待入场", "已持仓", "观察中", "止损观察", "突破买入"]
+            st.caption("常用标签点击快速选择：")
+            cols = st.columns(len(quick_tags))
+            for idx, qt in enumerate(quick_tags):
+                with cols[idx]:
+                    if st.button(qt, key=f"wl_qt_{ticker}_{idx}", use_container_width=True):
+                        existing_tags = [t.strip() for t in st.session_state.get(f"wl_tags_input_{ticker}", "").split(",") if t.strip()]
+                        if qt not in existing_tags:
+                            existing_tags.append(qt)
+                            st.session_state[f"wl_tags_input_{ticker}"] = ", ".join(existing_tags)
+                            st.rerun()
+            
+            t_col1, t_col2 = st.columns(2)
+            with t_col1:
+                if st.button("💾 保存标签", key=f"wl_tags_save_{ticker}", type="primary"):
+                    _remember_focus_row(ticker)
+                    tags_list = [t.strip() for t in st.session_state.get(f"wl_tags_input_{ticker}", "").split(",") if t.strip()]
+                    items_all = storage.load_watchlist()
+                    for it in items_all:
+                        if it["ticker"].upper() == ticker.upper():
+                            it["tags"] = tags_list
+                            break
+                    storage.save_watchlist(items_all)
+                    st.session_state.pop(f"wl_tags_open_{ticker}", None)
+                    st.toast("标签已更新", icon="🏷️")
+                    st.rerun()
+            with t_col2:
+                if st.button("取消", key=f"wl_tags_cancel_{ticker}"):
+                    _remember_focus_row(ticker)
+                    st.session_state.pop(f"wl_tags_open_{ticker}", None)
+                    st.rerun()
+
+    # ── K线图面板 ──────────────────────────────────────────────────
+    if st.session_state.get(f"wl_chart_open_{ticker}"):
+        with st.container(border=True):
+            st.markdown(f"##### 📊 {item.get('name') or ticker} 趋势图")
+            try:
+                import yfinance as yf
+                import plotly.graph_objects as go
+                import pandas as pd
+                df = yf.download(ticker, period="1y", interval="1d", progress=False, auto_adjust=True)
+                if df is not None and not df.empty:
+                    df_slice = df.tail(100)
+                    if isinstance(df_slice.columns, pd.MultiIndex):
+                        df_slice.columns = [c[0].lower() for c in df_slice.columns]
+                    else:
+                        df_slice.columns = [c.lower() for c in df_slice.columns]
+                    
+                    h_val = float(df_slice["high"].max())
+                    l_val = float(df_slice["low"].min())
+                    diff = h_val - l_val
+                    f50 = h_val - 0.5 * diff
+                    f618 = h_val - 0.618 * diff
+                    
+                    fig = go.Figure(data=[go.Candlestick(
+                        x=df_slice.index,
+                        open=df_slice['open'],
+                        high=df_slice['high'],
+                        low=df_slice['low'],
+                        close=df_slice['close'],
+                        name='K线'
+                    )])
+                    fig.add_hrect(
+                        y0=f618, y1=f50,
+                        fillcolor="rgba(245, 158, 11, 0.15)",
+                        line_width=0,
+                        annotation_text="黄金区 (0.50-0.618)",
+                        annotation_position="top left",
+                        annotation_font_color="#f59e0b"
+                    )
+                    fig.add_hline(y=h_val, line_dash="dash", line_color="#ef4444", annotation_text=f"高点: {h_val:.2f}")
+                    fig.add_hline(y=l_val, line_dash="dash", line_color="#10b981", annotation_text=f"低点: {l_val:.2f}")
+                    
+                    fig.update_layout(
+                        xaxis_rangeslider_visible=False,
+                        height=280,
+                        margin=dict(l=10, r=10, t=20, b=10),
+                        template="plotly_dark"
+                    )
+                    st.plotly_chart(fig, use_container_width=True, key=f"wl_chart_fig_{ticker}")
+                else:
+                    st.warning("未能拉取到该品种的K线数据，请检查网络或代码。")
+            except Exception as e:
+                st.error(f"加载图表时发生异常: {e}")
 
     # ── 设置分类面板 ──────────────────────────────────────────────
     if st.session_state.get(f"wl_cat_open_{ticker}"):

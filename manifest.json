@@ -1,0 +1,16 @@
+{
+  "name": "STRX Fibo Scanner Pro",
+  "short_name": "Fibo Scanner",
+  "description": "Professional Fibonacci Scanner Pro",
+  "start_url": "/?utm_source=pwa",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#e85d04",
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/Lihomx/strx_fibo/main/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}

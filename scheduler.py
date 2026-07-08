@@ -36,9 +36,9 @@ def start_scheduler_if_needed() -> bool:
             logging.warning("APScheduler not installed: pip install apscheduler")
             return False
 
-        from supabase_client import load_config
+        import storage
 
-        cfg = load_config()
+        cfg = storage.load_config()
         if not cfg.get("scan_enabled"):
             return False
 
@@ -92,12 +92,12 @@ def _run_scheduled_scan() -> None:
     logging.info(f"[Scheduler] 定时扫描启动: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     try:
         from scanner import run_full_scan
-        from supabase_client import load_config
-        cfg = load_config()
+        import storage
+        cfg = storage.load_config()
         summary, err = run_full_scan(cfg=cfg, note="scheduled")
         if err:
             logging.error(f"[Scheduler] 扫描失败: {err}")
         else:
-            logging.info(f"[Scheduler] 扫描完成: {summary['note']}")
+            logging.info(f"[Scheduler] 扫描完成: {summary['session_id']}")
     except Exception as e:
         logging.exception(f"[Scheduler] 异常: {e}")

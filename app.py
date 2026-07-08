@@ -128,7 +128,7 @@ div[data-testid="stSidebar"] .stButton>button:hover{background:var(--secondary-b
 </style>
 """, unsafe_allow_html=True)
 
-# ── 移动端 viewport meta 注入（Streamlit 默认不设置，必须手动注入）─
+# ── 移动端 viewport meta 与 PWA manifest 注入 ───────────────────────
 import streamlit.components.v1 as _stcv1
 _stcv1.html("""<script>
 if (!document.querySelector('meta[name="viewport"]')) {
@@ -136,6 +136,24 @@ if (!document.querySelector('meta[name="viewport"]')) {
     m.name = 'viewport';
     m.content = 'width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes';
     document.head.appendChild(m);
+}
+if (!document.querySelector('link[rel="manifest"]')) {
+    var l = document.createElement('link');
+    l.rel = 'manifest';
+    l.href = '/manifest.json';
+    document.head.appendChild(l);
+}
+if (!document.querySelector('meta[name="apple-mobile-web-app-capable"]')) {
+    var cap = document.createElement('meta');
+    cap.name = 'apple-mobile-web-app-capable';
+    cap.content = 'yes';
+    document.head.appendChild(cap);
+}
+if (!document.querySelector('meta[name="theme-color"]')) {
+    var tc = document.createElement('meta');
+    tc.name = 'theme-color';
+    tc.content = '#e85d04';
+    document.head.appendChild(tc);
 }
 
 // ── 禁止 Streamlit rerun 后自动滚动到触发按钮位置 ──────────────
@@ -183,43 +201,19 @@ if (!document.querySelector('meta[name="viewport"]')) {
 </script>""", height=0)
 
 # ── 导入页面模块（直接 import，无子文件夹）──────────────────────────
-import importlib
-
 import storage
-importlib.reload(storage)
-
 import page_scanner
-importlib.reload(page_scanner)
-
 import page_confluence
-importlib.reload(page_confluence)
-
 import page_history
-importlib.reload(page_history)
-
 import page_alerts
-importlib.reload(page_alerts)
-
 import page_settings
-importlib.reload(page_settings)
-
 import page_watchlist
-importlib.reload(page_watchlist)
-
 import page_hotlist
-importlib.reload(page_hotlist)
-
 import page_universe
-importlib.reload(page_universe)
-
 import page_cloud
-importlib.reload(page_cloud)
-
 import page_chartink
-importlib.reload(page_chartink)
-
+import page_schedule
 import cloud_sync
-importlib.reload(cloud_sync)
 
 
 # ── 侧边栏 ─────────────────────────────────────────────────────────
@@ -231,16 +225,92 @@ def sidebar():
                         width:38px;height:38px;border-radius:10px;display:flex;align-items:center;
                         justify-content:center;font-weight:900;font-size:17px;">F↗</div>
             <div>
-                <div style="font-weight:800;font-size:15px;color:#111">STRX <span style="color:#e85d04">Fibo</span></div>
+                <div style="font-weight:800;font-size:15px;color:var(--text-color, #111)">STRX <span style="color:#e85d04">Fibo</span></div>
                 <div style="font-size:10px;color:#9ca3af;font-family:monospace">SCANNER PRO v3.0</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
 
+        # ── 全局搜索 ──────────────────────────────────────────────
+        import re as _re_side
+        search_query = st.text_input(
+            "global_search",
+            placeholder="🔍 搜索代码或名称…",
+            label_visibility="collapsed",
+            key="global_search_input"
+        ).strip().upper()
+
+        if search_query:
+            st.markdown("<div style='font-size:12px;font-weight:bold;margin-bottom:4px;'>🔍 搜索结果:</div>", unsafe_allow_html=True)
+            found_any = False
+            
+            # 1. 自选
+            try:
+                wl_items = storage.load_watchlist()
+                wl_matches = [i for i in wl_items if search_query in i["ticker"].upper() or search_query in i.get("name", "").upper()]
+                if wl_matches:
+                    found_any = True
+                    st.markdown("<div style='font-size:11px;color:#9ca3af;'>⭐ 自选</div>", unsafe_allow_html=True)
+                    for item in wl_matches[:3]:
+                        tk = item["ticker"]
+                        nm = item.get("name") or tk
+                        if st.button(f"📌 {nm} ({tk})", key=f"gs_wl_{tk}", use_container_width=True):
+                            st.session_state.page = "watchlist"
+                            st.session_state["_wl_focus_anchor"] = f"wl_row_{_re_side.sub(r'[^0-9A-Za-z_-]', '_', tk.upper())}"
+                            st.rerun()
+            except Exception:
+                pass
+
+            # 2. 热门
+            try:
+                hl_items = storage.load_hotlist()
+                hl_matches = [i for i in hl_items if search_query in i["ticker"].upper() or search_query in i.get("name", "").upper()]
+                if hl_matches:
+                    found_any = True
+                    st.markdown("<div style='font-size:11px;color:#9ca3af;'>🔥 热门</div>", unsafe_allow_html=True)
+                    for item in hl_matches[:3]:
+                        tk = item["ticker"]
+                        nm = item.get("name") or tk
+                        if st.button(f"🔥 {nm} ({tk})", key=f"gs_hl_{tk}", use_container_width=True):
+                            st.session_state.page = "hotlist"
+                            st.session_state["_hl_focus_anchor"] = f"hl_row_{_re_side.sub(r'[^0-9A-Za-z_-]', '_', tk.upper())}"
+                            st.rerun()
+            except Exception:
+                pass
+
+            # 3. 信号
+            try:
+                scan_res = storage.load_latest_results()
+                scan_matches = [r for r in scan_res if search_query in r.get("ticker", "").upper()]
+                if scan_matches:
+                    found_any = True
+                    st.markdown("<div style='font-size:11px;color:#9ca3af;'>📊 信号</div>", unsafe_allow_html=True)
+                    seen_tk = set()
+                    count = 0
+                    for r in scan_matches:
+                        tk = r.get("ticker", "").upper()
+                        if tk in seen_tk: continue
+                        seen_tk.add(tk)
+                        count += 1
+                        if count > 3: break
+                        tf = r.get("timeframe", "")
+                        dist = r.get("dist_pct", 0)
+                        if st.button(f"📊 {tk} ({tf} · {dist:.0f}%)", key=f"gs_scan_{tk}", use_container_width=True):
+                            st.session_state.page = "scanner"
+                            st.session_state["scanner_search"] = tk
+                            st.rerun()
+            except Exception:
+                pass
+
+            if not found_any:
+                st.caption("无匹配记录")
+            st.markdown("<hr style='margin:10px 0;border-color:#e5e7eb'>", unsafe_allow_html=True)
+
         NAV = [
             ("📊", "实时扫描",           "scanner"),
             ("⚡", "共振检测",           "confluence"),
             ("📈", "4H Breakout",        "chartink"),
+            ("⏰", "定时扫描",           "schedule"),
             ("🌍", "全量品种库",         "universe"),
             ("⭐", "自选收藏",           "watchlist"),
             ("🔥", "热门品种",           "hotlist"),
@@ -323,10 +393,16 @@ import hmac    as _hmac
 
 _TOKEN_SALT = "STRX_F1b0_S3cur3_S4lt_2025"
 
-def _make_token(pw: str) -> str:
+import datetime as _datetime
+import time as _time
+
+def _make_token(pw: str, date_str: str = "") -> str:
+    if not date_str:
+        date_str = _time.strftime("%Y-%m-%d")
+    msg = f"{pw}:{date_str}"
     return _hmac.new(
         _TOKEN_SALT.encode(),
-        pw.encode(),
+        msg.encode(),
         _hashlib.sha256
     ).hexdigest()[:32]
 
@@ -338,19 +414,21 @@ def _check_password() -> bool:
     if not required_pw:
         return True
 
-    valid_token = _make_token(required_pw)
+    today_str = _time.strftime("%Y-%m-%d")
+    valid_token = _make_token(required_pw, today_str)
 
     if st.session_state.get("_authenticated"):
         return True
 
     try:
         url_token = st.query_params.get("_t", "")
-        if url_token and _hmac.compare_digest(
-            url_token.encode("utf-8"),
-            valid_token.encode("utf-8")
-        ):
-            st.session_state["_authenticated"] = True
-            return True
+        if url_token:
+            yesterday_str = (_datetime.date.today() - _datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+            yesterday_token = _make_token(required_pw, yesterday_str)
+            if _hmac.compare_digest(url_token.encode("utf-8"), valid_token.encode("utf-8")) or \
+               _hmac.compare_digest(url_token.encode("utf-8"), yesterday_token.encode("utf-8")):
+                st.session_state["_authenticated"] = True
+                return True
     except Exception:
         pass
 
@@ -359,7 +437,7 @@ def _check_password() -> bool:
         <div style="background:linear-gradient(135deg,#e85d04,#f97316);color:#fff;
                     width:56px;height:56px;border-radius:14px;display:flex;align-items:center;
                     justify-content:center;font-weight:900;font-size:24px;margin:0 auto 16px;">F↗</div>
-        <div style="font-size:20px;font-weight:800;color:#111;margin-bottom:4px">STRX Fibo Scanner</div>
+        <div style="font-size:20px;font-weight:800;color:var(--text-color, #111);margin-bottom:4px">STRX Fibo Scanner</div>
         <div style="font-size:13px;color:#6b7280;margin-bottom:28px">请输入访问密码</div>
     </div>
     """, unsafe_allow_html=True)
@@ -458,7 +536,7 @@ def main():
 
     # ── URL 参数跳转 ────────────────────────────────────────────
     _VALID_PAGES = ("watchlist","hotlist","scanner","confluence","alerts","settings",
-                    "history","cloud","universe","chartink")
+                    "history","cloud","universe","chartink","schedule")
     _url_page = st.query_params.get("_page", "")
     if _url_page and _url_page in _VALID_PAGES:
         st.session_state["page"] = _url_page
@@ -473,6 +551,13 @@ def main():
 
     sidebar()
 
+    # ── 启动后台定时任务（仅一次） ──────────────────────────────
+    try:
+        import scheduler
+        scheduler.start_scheduler_if_needed()
+    except Exception:
+        pass
+
     p = st.session_state.get("page", "scanner")
     dispatch = {
         "scanner":    page_scanner.render,
@@ -485,6 +570,7 @@ def main():
         "alerts":     page_alerts.render,
         "cloud":      page_cloud.render,
         "settings":   page_settings.render,
+        "schedule":   page_schedule.render,
     }
     dispatch.get(p, page_scanner.render)()
 

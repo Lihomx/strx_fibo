@@ -81,6 +81,27 @@ class TestStorage(unittest.TestCase):
         self.assertEqual(len(storage.load_watchlist()), 1)
         self.assertEqual(storage.load_watchlist_archive(), [])
 
+    def test_sharded_results(self):
+        # Initial results should be empty
+        self.assertEqual(storage.load_latest_results(), [])
+        
+        session_row = {"session_id": "test_session_1", "scan_date": "2026-07-08"}
+        result_rows = [
+            {"session_id": "test_session_1", "scan_date": "2026-07-08", "ticker": "AAPL", "timeframe": "Daily", "in_zone": True},
+            {"session_id": "test_session_1", "scan_date": "2026-07-08", "ticker": "MSFT", "timeframe": "Weekly", "in_zone": False}
+        ]
+        
+        # Save scan
+        self.assertTrue(storage.save_scan(session_row, result_rows))
+        
+        # Verify latest results loaded
+        latest = storage.load_latest_results()
+        self.assertEqual(len(latest), 2)
+        
+        # Verify session results loaded
+        session_res = storage.load_session_results("test_session_1")
+        self.assertEqual(len(session_res), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

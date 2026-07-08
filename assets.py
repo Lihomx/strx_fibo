@@ -64,7 +64,10 @@ _TV_INTERVAL = {
     "1d":      "D",
     "1wk":     "W",
     "1mo":     "M",
+    "4H":      "240",
+    "4h":      "240",
 }
+
 
 def tv_url(ticker: str, timeframe: str = "") -> str:
     """生成中文版 TradingView 链接，带正确的时间框架参数"""
@@ -912,6 +915,7 @@ for _grp in ASSET_GROUPS.values():
             ASSETS[_tk] = _val
 
 TIMEFRAMES: Dict[str, Tuple[str, str]] = {
+    "4H":      ("4h",  "2y"),
     "Daily":   ("1d",  "2y"),
     "Weekly":  ("1wk", "5y"),
     "Monthly": ("1mo", "10y"),

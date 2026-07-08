@@ -25,6 +25,11 @@ F_ALERTS  = os.path.join(_BASE, "data_alerts.json")
 F_GROUPS  = os.path.join(_BASE, "data_groups.json")
 F_SCAN_SNAPSHOT_DIR = os.path.join(_BASE, "scan_snapshots")
 
+def get_allres_path(date_str: str) -> str:
+    clean_date = "".join(c for c in str(date_str) if c.isalnum() or c in ("-", "_"))
+    return os.path.join(os.path.dirname(F_CFG), f"data_allresults_{clean_date}.json")
+
+
 _MAX_HIST   = 50
 _MAX_ALERTS = 200
 _MAX_ALLRES = 5000   # 所有品种×框架合并缓存上限
@@ -42,24 +47,28 @@ def _ensure_scan_snapshot_dir():
     os.makedirs(F_SCAN_SNAPSHOT_DIR, exist_ok=True)
 
 
+IO_LOCK = threading.Lock()
+
 # ── 通用 IO ──────────────────────────────────────────────────────────
 def _load(path: str, default):
-    try:
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-    except Exception:
-        pass
-    return default
+    with IO_LOCK:
+        try:
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return default
 
 
 def _save(path: str, data) -> bool:
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        return True
-    except Exception:
-        return False
+    with IO_LOCK:
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception:
+            return False
 
 
 def _save_with_backup(path: str, data) -> bool:
@@ -110,6 +119,9 @@ DEFAULT_CFG = {
     "dingtalk_secret":  "",
     "telegram_token":   "",
     "telegram_chat_id": "",
+    "scan_enabled":     False,
+    "scan_hour":        9,
+    "scan_minute":      0,
 }
 
 
@@ -123,6 +135,34 @@ def save_config(cfg: Dict) -> bool:
 
 
 # ── 扫描会话 ─────────────────────────────────────────────────────────
+def _load_all_results() -> List[Dict]:
+    """读取所有分片数据并合并，同 ticker+timeframe 取最新的那个，限制最多加载最近30天/分片"""
+    import glob
+    merged_map = {}
+    
+    base_dir = os.path.dirname(F_CFG)
+    files = glob.glob(os.path.join(base_dir, "data_allresults_*.json"))
+    legacy_file = os.path.join(base_dir, "data_allresults.json")
+    if os.path.exists(legacy_file):
+        files.append(legacy_file)
+        
+    # 按文件修改时间排序
+    files.sort(key=lambda x: os.path.getmtime(x))
+    # 限制最多加载最近 30 个分片，保证极速
+    if len(files) > 30:
+        files = files[-30:]
+        
+    for fpath in files:
+        rows = _load(fpath, [])
+        if isinstance(rows, list):
+            for r in rows:
+                if isinstance(r, dict) and r.get("ticker") and r.get("timeframe"):
+                    merged_map[(r["ticker"], r["timeframe"])] = r
+                    
+    return list(merged_map.values())
+
+
+# ── 扫描会话 ─────────────────────────────────────────────────────────
 def save_scan(session_row: Dict, result_rows: List[Dict]) -> bool:
     # 给每条结果打扫描时间戳
     scan_ts = _now_str()
@@ -133,7 +173,10 @@ def save_scan(session_row: Dict, result_rows: List[Dict]) -> bool:
     _save(F_RES, result_rows)
 
     # 合并到全量缓存（同 ticker+timeframe 只保留最新，新结果无条件覆盖旧结果）
-    allres = _load(F_ALLRES, [])
+    scan_date = session_row.get("scan_date") or time.strftime("%Y-%m-%d")
+    shard_path = get_allres_path(scan_date)
+    
+    allres = _load(shard_path, [])
     if not isinstance(allres, list):
         allres = []
     existing = {(r["ticker"], r["timeframe"]): r
@@ -144,7 +187,7 @@ def save_scan(session_row: Dict, result_rows: List[Dict]) -> bool:
     merged = list(existing.values())
     if len(merged) > _MAX_ALLRES:
         merged = merged[-_MAX_ALLRES:]
-    _save(F_ALLRES, merged)
+    _save(shard_path, merged)
 
     # 保存会话摘要（防御：旧数据可能是dict格式，强制转为list）
     hist = _load(F_HIST, [])
@@ -175,10 +218,8 @@ def load_sessions(limit: int = 10) -> List[Dict]:
 
 
 def load_latest_results(inzone_only: bool = False) -> List[Dict]:
-    # 优先返回全量合并缓存（防御：确保是list of dict）
-    allres = _load(F_ALLRES, [])
-    if not isinstance(allres, list):
-        allres = []
+    # 优先返回分片合并缓存
+    allres = _load_all_results()
     if not allres:
         allres = _load(F_RES, [])
         if not isinstance(allres, list):
@@ -191,14 +232,12 @@ def load_latest_results(inzone_only: bool = False) -> List[Dict]:
 
 
 def load_session_results(session_id: str) -> List[Dict]:
-    """读取全量缓存中属于特定会话的记录"""
+    """读取全量分片缓存中属于特定会话的记录"""
     snap_rows = load_scan_snapshot_rows(session_id)
     if snap_rows:
         return snap_rows
 
-    allres = _load(F_ALLRES, [])
-    if not isinstance(allres, list):
-        allres = []
+    allres = _load_all_results()
     allres = [r for r in allres if isinstance(r, dict)]
     filtered = [r for r in allres if r.get("session_id") == session_id]
     if not filtered:
@@ -353,6 +392,11 @@ def restore_scan_snapshot(session_id: str, replace_allres: bool = True) -> tuple
 
 
 def has_scan_data() -> bool:
+    import glob
+    base_dir = os.path.dirname(F_CFG)
+    shards = glob.glob(os.path.join(base_dir, "data_allresults_*.json"))
+    if shards:
+        return True
     if os.path.exists(F_ALLRES):
         d = _load(F_ALLRES, [])
         if d: return True
@@ -363,8 +407,15 @@ def has_scan_data() -> bool:
 
 
 def clear_all_data() -> bool:
+    import glob
     ok = True
     for f in [F_HIST, F_RES, F_ALLRES, F_ALERTS, F_GROUPS]:
+        if os.path.exists(f):
+            try: os.remove(f)
+            except: ok = False
+    base_dir = os.path.dirname(F_CFG)
+    shards = glob.glob(os.path.join(base_dir, "data_allresults_*.json"))
+    for f in shards:
         if os.path.exists(f):
             try: os.remove(f)
             except: ok = False
@@ -373,8 +424,15 @@ def clear_all_data() -> bool:
 
 def clear_all_scan_data() -> bool:
     """清空扫描结果（保留自选收藏和配置），用于「清空扫描结果」按钮"""
+    import glob
     ok = True
     for f in [F_HIST, F_RES, F_ALLRES, F_GROUPS]:
+        if os.path.exists(f):
+            try: os.remove(f)
+            except: ok = False
+    base_dir = os.path.dirname(F_CFG)
+    shards = glob.glob(os.path.join(base_dir, "data_allresults_*.json"))
+    for f in shards:
         if os.path.exists(f):
             try: os.remove(f)
             except: ok = False
