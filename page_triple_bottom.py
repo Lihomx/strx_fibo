@@ -181,6 +181,8 @@ def render_triple_bottom_page():
 
     is_running = bg_scan_manager.is_running()
     run_scan = st.sidebar.button("🚀 开始分析扫描", type="primary", use_container_width=True, disabled=is_running)
+    if st.session_state.pop("_trigger_mobile_scan", False):
+        run_scan = True
 
     # ── 2. 扫描数据存取 ──
     results = storage.load_triple_bottom()

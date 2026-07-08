@@ -596,12 +596,15 @@ def _render_market(market_key: str, load_fn, category: str, cfg: dict, label: st
                     f" 建议分批，每批 ≤50 支"
                 )
         with col_r:
-            if st.button(
+            batch_btn = st.button(
                 f"🚀 批量扫描 {n_sel} 支",
                 type="primary",
                 key=f"univ_batch_{market_key}",
                 disabled=bg_scan_manager.is_running(),
-            ):
+            )
+            if st.session_state.pop("_trigger_mobile_scan", False):
+                batch_btn = True
+            if batch_btn:
                 assets_batch = {t: (name_map.get(t, t), category) for t in selected}
                 _run_batch(assets_batch, cfg)
     else:

@@ -366,6 +366,8 @@ def render():
     with col_right:
         st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
         run_btn  = st.button("🚀 开始扫描", type="primary",  use_container_width=True, key="chartink_run", disabled=is_running)
+        if st.session_state.pop("_trigger_mobile_scan", False):
+            run_btn = True
         clear_btn = st.button("🗑️ 清空结果", type="secondary", use_container_width=True, key="chartink_clear", disabled=is_running)
 
     if clear_btn:

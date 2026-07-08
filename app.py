@@ -586,6 +586,128 @@ def main():
     }
     dispatch.get(p, page_scanner.render)()
 
+    # ── 移动端悬浮扫描按钮（FAB） ────────────────────────────────
+    _support_scan_pages = {"scanner", "triple_bottom", "chartink", "universe"}
+    if p in _support_scan_pages:
+        import bg_scan_manager
+        is_running = bg_scan_manager.is_running()
+        if is_running:
+            fab_text = "🔄 扫描中..."
+            btn_disabled = True
+        else:
+            if p == "scanner":
+                fab_text = "⚡ 立即扫描"
+            elif p == "triple_bottom":
+                fab_text = "📐 分析扫描"
+            elif p == "chartink":
+                fab_text = "📈 4H扫描"
+            else:
+                fab_text = "🌍 批量扫描"
+            btn_disabled = False
+
+        # 1. 隐藏的 Streamlit 原生按钮，用来接收点击事件并刷新 state
+        st.markdown("""
+        <style>
+        .hidden-mobile-fab {
+            display: none !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+        st.markdown('<div class="hidden-mobile-fab">', unsafe_allow_html=True)
+        if st.button(fab_text, key=f"_mobile_fab_{p}", disabled=btn_disabled):
+            st.session_state["_trigger_mobile_scan"] = True
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # 2. 注入 JS，动态把真实的悬浮按钮移到 body 层级，彻底解除 Streamlit 的 transform 限制
+        btn_style = "background: linear-gradient(135deg, #ff4b4b, #ff758c) !important;"
+        if btn_disabled:
+            btn_style = "background: #cccccc !important; color: #888888 !important; cursor: not-allowed !important; pointer-events: none !important; box-shadow: none !important;"
+
+        import streamlit.components.v1 as components
+        components.html(f"""
+        <script>
+        (function() {{
+            var doc = window.parent.document;
+            if (!doc) doc = window.document;
+            
+            // 移除旧按钮
+            var oldBtn = doc.getElementById('global-mobile-fab');
+            if (oldBtn) oldBtn.remove();
+            
+            // 插入 CSS 样式到 head
+            var styleId = 'global-mobile-fab-style';
+            var oldStyle = doc.getElementById(styleId);
+            if (!oldStyle) {{
+                var style = doc.createElement('style');
+                style.id = styleId;
+                style.innerHTML = `
+                    #global-mobile-fab {{
+                        display: none;
+                        position: fixed;
+                        bottom: 80px;
+                        right: 20px;
+                        z-index: 999999;
+                    }}
+                    @media (max-width: 768px) {{
+                        #global-mobile-fab {{
+                            display: block !important;
+                        }}
+                    }}
+                    .my-fab-inner-btn {{
+                        color: white;
+                        border: none;
+                        border-radius: 25px;
+                        padding: 10px 20px;
+                        font-weight: bold;
+                        font-size: 14px;
+                        box-shadow: 0 4px 15px rgba(255, 75, 75, 0.4);
+                        height: 48px;
+                        min-width: 110px;
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        transition: all 0.2s ease-in-out;
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                    }}
+                    .my-fab-inner-btn:active {{
+                        transform: scale(0.92);
+                        box-shadow: 0 2px 6px rgba(255, 75, 75, 0.4);
+                    }}
+                `;
+                doc.head.appendChild(style);
+            }}
+            
+            // 创建悬浮容器和按钮
+            var fab = doc.createElement('div');
+            fab.id = 'global-mobile-fab';
+            
+            var innerBtn = doc.createElement('button');
+            innerBtn.className = 'my-fab-inner-btn';
+            innerBtn.style.cssText = '{btn_style}';
+            innerBtn.innerHTML = '{fab_text}';
+            
+            innerBtn.onclick = function() {{
+                // 模拟点击 Streamlit 隐藏按钮
+                var buttons = Array.from(doc.querySelectorAll('button'));
+                var stBtn = buttons.find(function(b) {{
+                    return b.textContent.trim() === '{fab_text}';
+                }});
+                if (stBtn) {{
+                    stBtn.click();
+                }} else {{
+                    console.log('Streamlit trigger button not found');
+                }}
+            }};
+            
+            fab.appendChild(innerBtn);
+            doc.body.appendChild(fab);
+        }})();
+        </script>
+        """, height=0, width=0)
+
     # ── 移动端底部导航栏（仅小屏显示）────────────────────────────
     _cur_page  = st.session_state.get("page", "scanner")
     _t_nav     = st.query_params.get("_t", "")

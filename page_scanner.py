@@ -412,6 +412,15 @@ def fibo_scan_worker(params, update_progress, cancel_check):
 # 主渲染
 # ════════════════════════════════════════════════════════════════════
 def render():
+    # ── 移动端触发扫描分流 ──
+    if st.session_state.get("_trigger_mobile_scan"):
+        sel = st.session_state.get("_scan_sel", set())
+        if sel:
+            st.session_state["_trigger_mobile_batch"] = True
+        else:
+            st.session_state["_trigger_mobile_custom"] = True
+        st.session_state.pop("_trigger_mobile_scan", None)
+
     # ── 状态轮询与展示 ──
     status = bg_scan_manager.get_status()
     if status["status"] == "running":
@@ -1246,6 +1255,11 @@ def _render_custom_scan(cfg):
         st.markdown("<br>", unsafe_allow_html=True)
         do_custom = st.button("🔍 立即扫描", type="primary",
                               width="stretch", key="custom_scan_btn", disabled=bg_scan_manager.is_running())
+        if st.session_state.pop("_trigger_mobile_custom", False):
+            if not custom_ticker:
+                st.session_state["custom_ticker_input"] = "AAPL"
+                custom_ticker = "AAPL"
+            do_custom = True
 
     tf_selected = st.multiselect(
         "扫描周期",
@@ -1691,6 +1705,8 @@ def _render_batch_selector(cfg):
             use_container_width=True,
             disabled=(len(sel_assets) == 0 or len(tf_names) == 0 or bg_scan_manager.is_running()),
         )
+        if st.session_state.pop("_trigger_mobile_batch", False):
+            do_scan = True
 
     if sel_assets and not tf_names:
         st.warning("请至少选择一个扫描周期。")
