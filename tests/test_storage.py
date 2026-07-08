@@ -23,6 +23,7 @@ class TestStorage(unittest.TestCase):
             patch("storage.F_GROUPS", os.path.join(self.test_dir, "data_groups.json")),
             patch("storage.F_WATCHLIST", os.path.join(self.test_dir, "data_watchlist.json")),
             patch("storage.F_WATCHLIST_ARCHIVE", os.path.join(self.test_dir, "data_watchlist_archive.json")),
+            patch("storage.F_TRIPLE_BOTTOM", os.path.join(self.test_dir, "data_triple_bottom.json")),
             patch("storage._BACKUP_DIR", os.path.join(self.test_dir, "backups")),
             patch("storage.F_SCAN_SNAPSHOT_DIR", os.path.join(self.test_dir, "scan_snapshots")),
         ]
@@ -101,6 +102,30 @@ class TestStorage(unittest.TestCase):
         # Verify session results loaded
         session_res = storage.load_session_results("test_session_1")
         self.assertEqual(len(session_res), 2)
+
+    def test_triple_bottom_operations(self):
+        # Should be empty initially
+        self.assertEqual(storage.load_triple_bottom(), [])
+
+        test_data = [
+            {
+                "symbol": "AAPL",
+                "period": "Daily",
+                "pattern": "完美三重底 (Perfect Triple Bottom)",
+                "confidence": 0.9,
+                "low1": 150.0,
+                "low2": 150.2,
+                "low3": 149.9,
+                "note": "测试完美三重底",
+            }
+        ]
+
+        # Save and load
+        self.assertTrue(storage.save_triple_bottom(test_data))
+        loaded = storage.load_triple_bottom()
+        self.assertEqual(len(loaded), 1)
+        self.assertEqual(loaded[0]["symbol"], "AAPL")
+        self.assertEqual(loaded[0]["pattern"], "完美三重底 (Perfect Triple Bottom)")
 
 
 if __name__ == "__main__":

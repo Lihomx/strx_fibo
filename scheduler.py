@@ -99,5 +99,54 @@ def _run_scheduled_scan() -> None:
             logging.error(f"[Scheduler] 扫描失败: {err}")
         else:
             logging.info(f"[Scheduler] 扫描完成: {summary['session_id']}")
+        
+        # 同时进行定时三重底扫描（针对自选收藏和热门品种）
+        try:
+            logging.info("[Scheduler] 启动定时三重底扫描...")
+            wl_items = storage.load_watchlist()
+            hl_items = storage.load_hotlist()
+            tickers = list({i["ticker"].upper() for i in wl_items + hl_items if i.get("ticker")})
+            if tickers:
+                from scanner import fetch_data
+                from triple_bottom_scanner import scan_triple_bottoms
+                
+                # 默认扫描 4h 和 1d 周期
+                periods = ["4h", "1d"]
+                timeframe_configs = {
+                    "4h": ("4h", "2y"),
+                    "1d": ("1d", "2y")
+                }
+                
+                tb_results = []
+                for ticker in tickers:
+                    for period_key in periods:
+                        interval, yf_period = timeframe_configs[period_key]
+                        try:
+                            df = fetch_data(ticker, interval=interval, period=yf_period)
+                            if df is not None and not df.empty:
+                                matches = scan_triple_bottoms(df, symbol=ticker, swing_window=3, lookback_bars=120, max_spacing=60)
+                                for m in matches:
+                                    if m.confidence >= 0.6:
+                                        tb_results.append({
+                                            "symbol": m.symbol,
+                                            "period": period_key,
+                                            "pattern": m.pattern,
+                                            "confidence": m.confidence,
+                                            "idx1": int(m.idx1),
+                                            "idx2": int(m.idx2),
+                                            "idx3": int(m.idx3),
+                                            "low1": float(m.low1),
+                                            "low2": float(m.low2),
+                                            "low3": float(m.low3),
+                                            "mid_high": float(m.mid_high),
+                                            "note": m.note,
+                                            "scan_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                        })
+                        except Exception:
+                            pass
+                storage.save_triple_bottom(tb_results)
+                logging.info(f"[Scheduler] 定时三重底扫描完成：发现 {len(tb_results)} 个形态候选")
+        except Exception as ex_tb:
+            logging.exception(f"[Scheduler] 定时三重底扫描异常: {ex_tb}")
     except Exception as e:
         logging.exception(f"[Scheduler] 异常: {e}")

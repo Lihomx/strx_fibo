@@ -213,7 +213,9 @@ import page_universe
 import page_cloud
 import page_chartink
 import page_schedule
+import page_triple_bottom
 import cloud_sync
+
 
 
 # ── 侧边栏 ─────────────────────────────────────────────────────────
@@ -309,6 +311,7 @@ def sidebar():
         NAV = [
             ("📊", "实时扫描",           "scanner"),
             ("⚡", "共振检测",           "confluence"),
+            ("📐", "三重底扫描",         "triple_bottom"),
             ("📈", "4H Breakout",        "chartink"),
             ("⏰", "定时扫描",           "schedule"),
             ("🌍", "全量品种库",         "universe"),
@@ -536,7 +539,7 @@ def main():
 
     # ── URL 参数跳转 ────────────────────────────────────────────
     _VALID_PAGES = ("watchlist","hotlist","scanner","confluence","alerts","settings",
-                    "history","cloud","universe","chartink","schedule")
+                    "history","cloud","universe","chartink","schedule","triple_bottom")
     _url_page = st.query_params.get("_page", "")
     if _url_page and _url_page in _VALID_PAGES:
         st.session_state["page"] = _url_page
@@ -560,17 +563,18 @@ def main():
 
     p = st.session_state.get("page", "scanner")
     dispatch = {
-        "scanner":    page_scanner.render,
-        "confluence": page_confluence.render,
-        "chartink":   page_chartink.render,
-        "universe":   page_universe.render,
-        "watchlist":  page_watchlist.render,
-        "hotlist":    page_hotlist.render,
-        "history":    page_history.render,
-        "alerts":     page_alerts.render,
-        "cloud":      page_cloud.render,
-        "settings":   page_settings.render,
-        "schedule":   page_schedule.render,
+        "scanner":       page_scanner.render,
+        "confluence":    page_confluence.render,
+        "triple_bottom": page_triple_bottom.render_triple_bottom_page,
+        "chartink":      page_chartink.render,
+        "universe":      page_universe.render,
+        "watchlist":     page_watchlist.render,
+        "hotlist":       page_hotlist.render,
+        "history":       page_history.render,
+        "alerts":        page_alerts.render,
+        "cloud":         page_cloud.render,
+        "settings":      page_settings.render,
+        "schedule":      page_schedule.render,
     }
     dispatch.get(p, page_scanner.render)()
 

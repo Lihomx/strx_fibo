@@ -496,6 +496,7 @@ def clear_alert_log() -> bool:
 # ── 自选收藏夹 ──────────────────────────────────────────────────────
 F_WATCHLIST = os.path.join(_BASE, "data_watchlist.json")
 F_WATCHLIST_ARCHIVE = os.path.join(_BASE, "data_watchlist_archive.json")
+F_TRIPLE_BOTTOM = os.path.join(_BASE, "data_triple_bottom.json")
 
 
 def load_watchlist() -> List[Dict]:
@@ -1363,4 +1364,17 @@ def import_hotlist_json(json_str: str, merge: bool = True):
         if ok and imported_arch:
             save_hotlist_archive(imported_arch)
         return ok, f"替换完成：导入 {len(imported_items)} 个品种"
+
+
+# ── 三重底扫描数据 ──────────────────────────────────────────────────
+def load_triple_bottom() -> List[Dict]:
+    """返回三重底扫描结果"""
+    res = _load(F_TRIPLE_BOTTOM, [])
+    if not isinstance(res, list):
+        return []
+    return res
+
+def save_triple_bottom(items: List[Dict]) -> bool:
+    """保存三重底扫描结果"""
+    return _save_with_backup(F_TRIPLE_BOTTOM, items)
 
