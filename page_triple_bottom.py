@@ -73,6 +73,8 @@ def triple_bottom_worker(params, update_progress, cancel_check):
     lookback = params["lookback"]
     max_sp = params["max_sp"]
     min_conf = params["min_conf"]
+    flat_tol = params.get("flat_tol", 0.02)
+    break_tol = params.get("break_tol", 0.01)
     
     total_steps = len(tickers_to_scan) * len(selected_periods)
     step = 0
@@ -95,7 +97,9 @@ def triple_bottom_worker(params, update_progress, cancel_check):
                         symbol=ticker,
                         swing_window=int(swing_win),
                         lookback_bars=int(lookback),
-                        max_spacing=int(max_sp)
+                        max_spacing=int(max_sp),
+                        flat_tol=flat_tol,
+                        break_tol=break_tol,
                     )
                     for m in matches:
                         if m.confidence >= min_conf:
@@ -166,10 +170,22 @@ def render_triple_bottom_page():
         format_func=lambda x: TRIPLE_BOTTOM_TIMEFRAMES[x][2]
     )
 
-    min_conf = st.sidebar.slider("置信度阈值", 0.3, 1.0, 0.6, 0.05, help="置信度越低，形态容差越大")
-    swing_win = st.sidebar.number_input("分形阶数 (Window)", 2, 10, 3, help="左右各看几根K线来确认局部低点")
-    max_sp = st.sidebar.number_input("三点最大跨度 (K线数)", 20, 150, 60)
-    lookback = st.sidebar.number_input("扫描回溯长度 (Bars)", 50, 300, 120)
+    min_conf = st.sidebar.slider("置信度阈值", 0.3, 1.0, 0.5, 0.05,
+        help="置信度越低，筛选越宽松。建议先用 0.4~0.5 试扫")
+    swing_win = st.sidebar.number_input("分形阶数 (Window)", 2, 10, 3,
+        help="左右各看几根K线来确认局部低点，越小越灵敏")
+    max_sp = st.sidebar.number_input("三点最大跨度 (K线数)", 20, 200, 80,
+        help="三个探底低点最大允许间隔，越大形态跨度越长")
+    lookback = st.sidebar.number_input("扫描回溯长度 (Bars)", 50, 500, 150,
+        help="向前看多少根K线内的数据")
+
+    st.sidebar.markdown("**📐 形态宽松度**")
+    flat_tol_pct = st.sidebar.slider("低点容差 (%)", 0.5, 10.0, 2.0, 0.5,
+        help="三个低点之间允许的最大百分比差异。越大越容易匹配，建议 1.5~3%")
+    break_tol_pct = st.sidebar.slider("跌破容差 (%)", 0.2, 5.0, 1.0, 0.2,
+        help="失败突破型：允许价格跌破支撑多少百分比后被视为'失败突破'")
+    flat_tol = flat_tol_pct / 100.0
+    break_tol = break_tol_pct / 100.0
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("### ⚡ 扫描控制")
@@ -213,6 +229,8 @@ def render_triple_bottom_page():
             "lookback": lookback,
             "max_sp": max_sp,
             "min_conf": min_conf,
+            "flat_tol": flat_tol,
+            "break_tol": break_tol,
         }
         
         ok, msg = bg_scan_manager.submit_job(

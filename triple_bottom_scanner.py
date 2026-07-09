@@ -95,7 +95,7 @@ def classify_triple(
     low1: float, low2: float, low3: float,
     mid_high_12: float, mid_high_23: float,
     broke_support_23: bool,       # 第2或第3次是否跌破了前面的支撑但又拉回(失败突破)
-    flat_tol: float = 0.003,      # 判定"基本持平"的容差, 0.3%
+    flat_tol: float = 0.02,       # 判定"基本持平"的容差, 默认2%（真实市场建议1-3%）
 ) -> tuple[str, float, str]:
     """
     根据三个低点及中间高点关系，返回 (形态名, 置信度, 备注)
@@ -164,10 +164,11 @@ def scan_triple_bottoms(
     df: pd.DataFrame,
     symbol: str = "",
     swing_window: int = 3,
-    lookback_bars: int = 120,          # 只在最近 N 根K线内寻找形态
-    max_spacing: int = 60,             # 三个低点之间最大跨度(K线数)，太远则不算同一形态
+    lookback_bars: int = 150,          # 只在最近 N 根K线内寻找形态
+    max_spacing: int = 80,             # 三个低点之间最大跨度(K线数)，太远则不算同一形态
     min_spacing: int = 3,              # 三个低点之间最小跨度，太近视为噪音
-    break_tol: float = 0.002,          # 判定"跌破支撑"的容差(相对百分比)
+    break_tol: float = 0.01,           # 判定"跌破支撑"的容差(相对百分比)，默认1%
+    flat_tol: float = 0.02,            # 判定"基本持平"的容差，默认2%
 ) -> List[PatternMatch]:
     """
     df 需含列: open, high, low, close (index 建议为日期或整数序号，按时间升序排列)
@@ -215,7 +216,8 @@ def scan_triple_bottoms(
                 broke = True
 
         pattern, conf, note = classify_triple(
-            low1, low2, low3, mid_high_12, mid_high_23, broke
+            low1, low2, low3, mid_high_12, mid_high_23, broke,
+            flat_tol=flat_tol
         )
 
         matches.append(PatternMatch(
