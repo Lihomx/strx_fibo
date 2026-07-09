@@ -178,6 +178,10 @@ def scan_triple_bottoms(
         return []
 
     df = df.tail(lookback_bars).reset_index(drop=True)
+
+    # 列名统一转小写，兼容 fetch_data 返回的 Open/High/Low/Close 和小写两种形式
+    df.columns = [str(c).lower() for c in df.columns]
+
     df = find_swing_points(df, window=swing_window)
 
     swing_low_idx = df.index[df["is_swing_low"]].tolist()
