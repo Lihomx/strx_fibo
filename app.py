@@ -258,6 +258,7 @@ def sidebar():
                         nm = item.get("name") or tk
                         if st.button(f"📌 {nm} ({tk})", key=f"gs_wl_{tk}", use_container_width=True):
                             st.session_state.page = "watchlist"
+                            st.query_params["_page"] = "watchlist"
                             st.session_state["_wl_focus_anchor"] = f"wl_row_{_re_side.sub(r'[^0-9A-Za-z_-]', '_', tk.upper())}"
                             st.rerun()
             except Exception:
@@ -275,6 +276,7 @@ def sidebar():
                         nm = item.get("name") or tk
                         if st.button(f"🔥 {nm} ({tk})", key=f"gs_hl_{tk}", use_container_width=True):
                             st.session_state.page = "hotlist"
+                            st.query_params["_page"] = "hotlist"
                             st.session_state["_hl_focus_anchor"] = f"hl_row_{_re_side.sub(r'[^0-9A-Za-z_-]', '_', tk.upper())}"
                             st.rerun()
             except Exception:
@@ -299,6 +301,7 @@ def sidebar():
                         dist = r.get("dist_pct", 0)
                         if st.button(f"📊 {tk} ({tf} · {dist:.0f}%)", key=f"gs_scan_{tk}", use_container_width=True):
                             st.session_state.page = "scanner"
+                            st.query_params["_page"] = "scanner"
                             st.session_state["scanner_search"] = tk
                             st.rerun()
             except Exception:
@@ -326,6 +329,7 @@ def sidebar():
         for icon, label, key in NAV:
             if st.button(f"{icon} {label}", key=f"nav_{key}", width="stretch"):
                 st.session_state.page = key
+                st.query_params["_page"] = key
                 st.session_state.pop("_url_routed", None)
                 st.rerun()
 
@@ -537,20 +541,17 @@ def main():
         st.query_params.pop("_fav", None)
         st.rerun()
 
-    # ── URL 参数跳转 ────────────────────────────────────────────
+    # ── URL 参数跳转与同步 ────────────────────────────────────────────
     _VALID_PAGES = ("watchlist","hotlist","scanner","confluence","alerts","settings",
                     "history","cloud","universe","chartink","schedule","triple_bottom")
     _url_page = st.query_params.get("_page", "")
     if _url_page and _url_page in _VALID_PAGES:
         st.session_state["page"] = _url_page
-        if not st.session_state.get("_url_routed"):
-            st.session_state["_url_routed"] = True
-            try:
-                st.query_params.pop("_page", None)
-            except Exception:
-                pass
-    elif "page" not in st.session_state:
-        st.session_state.page = "watchlist"
+    else:
+        if "page" not in st.session_state:
+            st.session_state.page = "watchlist"
+        st.query_params["_page"] = st.session_state.page
+
 
     sidebar()
 
@@ -585,6 +586,36 @@ def main():
         "schedule":      page_schedule.render,
     }
     dispatch.get(p, page_scanner.render)()
+
+    # ── 动态更新浏览器标签页标题 ──
+    try:
+        import streamlit.components.v1 as _st_comp
+        _st_comp.html(f"""
+        <script>
+        (function() {{
+            var parentDoc = window.parent.document;
+            var pageNames = {{
+                "scanner": "实时扫描",
+                "confluence": "共振检测",
+                "triple_bottom": "三重底扫描",
+                "chartink": "4H Breakout",
+                "schedule": "定时扫描",
+                "universe": "全量品种库",
+                "watchlist": "自选收藏",
+                "hotlist": "热门品种",
+                "history": "历史记录",
+                "alerts": "告警配置",
+                "cloud": "云端同步",
+                "settings": "系统设置"
+            }};
+            var title = pageNames["{p}"] || "扫描";
+            parentDoc.title = title + " - STRX Fibo Scanner";
+        }})();
+        </script>
+        """, height=0, width=0)
+    except Exception:
+        pass
+
 
     # ── 移动端悬浮扫描按钮（FAB） ────────────────────────────────
     _support_scan_pages = {"scanner", "triple_bottom", "chartink", "universe"}
