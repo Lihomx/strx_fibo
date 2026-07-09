@@ -79,6 +79,11 @@ class PatternMatch:
     mid_high: float              # 1-2之间和2-3之间的高点(取较高者)
     confidence: float            # 0~1 简单打分
     note: str = ""
+    status: str = "active"       # active, confirmed, invalidated, expired
+    status_reason: str = ""
+    bars_since_low3: int = 0
+    latest_close: float = 0.0
+
 
 
 # ----------------------------------------------------------------------
@@ -224,6 +229,31 @@ def scan_triple_bottoms(
             flat_tol=flat_tol
         )
 
+        # ── 形态有效性验证 ──
+        support_level_valid = min(low1, low2, low3)
+        neckline = max(mid_high_12, mid_high_23)
+        seg_post_low3 = df.loc[i3:]
+        latest_close = float(df.loc[df.index[-1], "close"])
+        bars_since_low3 = int(len(df) - 1 - i3)
+
+        # 检查是否收盘跌破支撑位
+        has_broken_support = bool((seg_post_low3["close"] < support_level_valid * (1 - break_tol)).any())
+        # 检查是否收盘突破颈线
+        has_broken_neckline = bool((seg_post_low3["close"] > neckline).any())
+
+        if has_broken_support:
+            status = "invalidated"
+            status_reason = f"已失效：收盘跌破支撑 {support_level_valid:.3f}"
+        elif bars_since_low3 > 45:
+            status = "expired"
+            status_reason = f"已过期：形态后已有 {bars_since_low3} 根 K 线"
+        elif has_broken_neckline:
+            status = "confirmed"
+            status_reason = f"已突破：收盘突破颈线 {neckline:.3f}"
+        else:
+            status = "active"
+            status_reason = f"观望中：价格在 {support_level_valid:.3f} - {neckline:.3f} 区间运行"
+
         matches.append(PatternMatch(
             symbol=symbol,
             pattern=pattern,
@@ -232,7 +262,12 @@ def scan_triple_bottoms(
             mid_high=float(max(mid_high_12, mid_high_23)),
             confidence=conf,
             note=note,
+            status=status,
+            status_reason=status_reason,
+            bars_since_low3=bars_since_low3,
+            latest_close=latest_close,
         ))
+
 
     # 最近的排前面
     matches.sort(key=lambda m: m.idx3, reverse=True)

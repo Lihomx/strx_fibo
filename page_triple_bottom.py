@@ -55,6 +55,68 @@ def _tv_link(ticker: str, period: str = "1d") -> str:
     return f"https://cn.tradingview.com/chart/?symbol={sym}&interval={interval}"
 
 
+def _render_tb_restore_session_controls():
+    sessions = storage.load_tb_snapshots()
+    options = []
+    sid_map = {}
+    for s in sessions:
+        sid = str(s.get("session_id", "")).strip()
+        scan_time = s.get("scan_time") or "—"
+        count = s.get("count", 0)
+        label = f"{scan_time} | 数量 {count} | {sid[:15]}…"
+        options.append(label)
+        sid_map[label] = sid
+
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        if st.button("🗑️ 清空扫描结果", key="tb_clear_results_btn", help="清空当前所有扫描结果，清空前会自动备份快照", use_container_width=True):
+            storage.clear_triple_bottom_results()
+            st.success("已成功清空当前扫描结果（已自动备份）")
+            time.sleep(1)
+            st.rerun()
+
+    with col2:
+        if not options:
+            st.selectbox(
+                "恢复批次",
+                ["暂无可恢复批次（无快照）"],
+                key="tb_restore_session_picker_empty",
+                disabled=True,
+                label_visibility="collapsed",
+            )
+            st.button(
+                "♻️ 恢复所选批次",
+                key="tb_restore_selected_scan_btn_disabled",
+                disabled=True,
+                use_container_width=True,
+            )
+        else:
+            sub_col1, sub_col2 = st.columns([2, 1])
+            with sub_col1:
+                selected_label = st.selectbox(
+                    "恢复批次",
+                    options,
+                    key="tb_restore_session_picker",
+                    label_visibility="collapsed",
+                )
+            with sub_col2:
+                sid = sid_map.get(selected_label, "")
+                if st.button(
+                    "♻️ 恢复所选批次",
+                    key="tb_restore_selected_scan_btn",
+                    help="恢复你当前选择的三重底扫描批次快照",
+                    type="secondary",
+                    use_container_width=True,
+                    disabled=not sid,
+                ):
+                    ok, msg, n = storage.restore_tb_snapshot(sid)
+                    if ok:
+                        st.toast(f"已恢复批次 {sid[:12]}…（{n} 条）", icon="♻️")
+                        time.sleep(1)
+                        st.rerun()
+                    st.error(msg)
+
+
 def _row_anchor_id(ticker: str, period: str) -> str:
     safe = re.sub(r"[^0-9A-Za-z_-]", "_", f"{ticker}_{period}".upper())
     return f"tb_row_{safe}"
@@ -137,6 +199,10 @@ def triple_bottom_worker(params, update_progress, cancel_check):
                                 "low3": float(m.low3),
                                 "mid_high": float(m.mid_high),
                                 "note": m.note,
+                                "status": m.status,
+                                "status_reason": m.status_reason,
+                                "bars_since_low3": int(m.bars_since_low3),
+                                "latest_close": float(m.latest_close),
                                 "scan_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             })
             except Exception:
@@ -179,6 +245,11 @@ def render_triple_bottom_page():
         "</div>",
         unsafe_allow_html=True
     )
+
+    # ── 恢复/清空扫描结果控件 ──
+    _render_tb_restore_session_controls()
+    st.markdown("<hr style='margin:15px 0; border-color:#e5e7eb'>", unsafe_allow_html=True)
+
 
     # ── 1. 侧边栏及控制面板 ──
     st.sidebar.markdown("### ⚙️ 三重底扫描配置")
@@ -288,15 +359,35 @@ def render_triple_bottom_page():
         "未分类三次探底 (Unclassified 3-push)"
     ]
 
-    sel_patt = st.selectbox("筛选形态类别", pattern_types)
-    
-    # 过滤周期
-    st_period = st.multiselect(
-        "筛选周期",
-        options=list(TRIPLE_BOTTOM_TIMEFRAMES.keys()),
-        default=list(TRIPLE_BOTTOM_TIMEFRAMES.keys()),
-        format_func=lambda x: TRIPLE_BOTTOM_TIMEFRAMES[x][2]
-    )
+    col_f1, col_f2, col_f3 = st.columns([1.2, 1.2, 1.6])
+    with col_f1:
+        sel_patt = st.selectbox("筛选形态类别", pattern_types)
+    with col_f2:
+        st_period = st.multiselect(
+            "筛选周期",
+            options=list(TRIPLE_BOTTOM_TIMEFRAMES.keys()),
+            default=list(TRIPLE_BOTTOM_TIMEFRAMES.keys()),
+            format_func=lambda x: TRIPLE_BOTTOM_TIMEFRAMES[x][2]
+        )
+    with col_f3:
+        st_status = st.multiselect(
+            "筛选有效状态",
+            options=["观望中 (active)", "已突破 (confirmed)", "已失效 (invalidated)", "已过期 (expired)"],
+            default=["观望中 (active)", "已突破 (confirmed)"],
+            help="失效或过期的形态默认被隐藏，勾选即可恢复显示"
+        )
+
+    # 映射 status
+    selected_statuses = []
+    for s in st_status:
+        if "active" in s:
+            selected_statuses.append("active")
+        elif "confirmed" in s:
+            selected_statuses.append("confirmed")
+        elif "invalidated" in s:
+            selected_statuses.append("invalidated")
+        elif "expired" in s:
+            selected_statuses.append("expired")
 
     # 执行前端筛选
     filtered = []
@@ -304,6 +395,9 @@ def render_triple_bottom_page():
         if sel_patt != "全部" and sel_patt not in r.get("pattern", ""):
             continue
         if r.get("period") not in st_period:
+            continue
+        status_val = r.get("status", "active")
+        if status_val not in selected_statuses:
             continue
         filtered.append(r)
 
@@ -317,11 +411,23 @@ def render_triple_bottom_page():
         patt_desc = r["pattern"]
         conf = r["confidence"]
         note = r["note"]
+        status_val = r.get("status", "active")
+        status_reason = r.get("status_reason", "")
         period_desc = TRIPLE_BOTTOM_TIMEFRAMES[period][2]
         name = _fetch_name(ticker)
 
         anchor = _row_anchor_id(ticker, period)
         st.markdown(f"<div id='{anchor}'></div>", unsafe_allow_html=True)
+
+        # 构造状态徽章
+        if status_val == "active":
+            status_badge = f"<span style='font-size:12px;background-color:#eff6ff;color:#1d4ed8;padding:2px 8px;border-radius:4px;font-weight:600;'>观望中</span>"
+        elif status_val == "confirmed":
+            status_badge = f"<span style='font-size:12px;background-color:#dcfce7;color:#15803d;padding:2px 8px;border-radius:4px;font-weight:600;'>已突破 🚀</span>"
+        elif status_val == "invalidated":
+            status_badge = f"<span style='font-size:12px;background-color:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:4px;font-weight:600;'>已失效 ❌</span>"
+        else: # expired
+            status_badge = f"<span style='font-size:12px;background-color:#f3f4f6;color:#4b5563;padding:2px 8px;border-radius:4px;font-weight:600;'>已过期 ⏰</span>"
 
         with st.container(border=True):
             # 卡片标题栏
@@ -330,7 +436,8 @@ def render_triple_bottom_page():
                 st.markdown(
                     f"#### **{ticker}** · {name} "
                     f"<span style='font-size:12px;background-color:#eff6ff;color:#1d4ed8;padding:2px 8px;border-radius:4px;font-weight:600;'>{period_desc}</span> "
-                    f"<span style='font-size:12px;background-color:#fef3c7;color:#d97706;padding:2px 8px;border-radius:4px;font-weight:600;'>置信度: {conf:.0%}</span>",
+                    f"<span style='font-size:12px;background-color:#fef3c7;color:#d97706;padding:2px 8px;border-radius:4px;font-weight:600;'>置信度: {conf:.0%}</span> "
+                    f"{status_badge}",
                     unsafe_allow_html=True
                 )
             with col_t2:
@@ -397,11 +504,13 @@ def render_triple_bottom_page():
             st.markdown(
                 f"<div style='font-size:13px;line-height:1.6;color:#374151;'>"
                 f"🏷️ <b>识别形态</b>：{patt_desc}<br>"
+                f"🔍 <b>状态跟踪</b>：{status_reason if status_reason else '运行于支撑与颈线之间'}<br>"
                 f"📝 <b>形态判定说明</b>：{note}<br>"
                 f"📐 <b>低值详情</b>：Low1: {r['low1']:.3f} | Low2: {r['low2']:.3f} | Low3: {r['low3']:.3f} (中间高点: {r['mid_high']:.3f})"
                 f"</div>",
                 unsafe_allow_html=True
             )
+
 
 
             # ── 展开 K 线图展示（核心高光） ──

@@ -497,6 +497,8 @@ def clear_alert_log() -> bool:
 F_WATCHLIST = os.path.join(_BASE, "data_watchlist.json")
 F_WATCHLIST_ARCHIVE = os.path.join(_BASE, "data_watchlist_archive.json")
 F_TRIPLE_BOTTOM = os.path.join(_BASE, "data_triple_bottom.json")
+F_TB_SNAPSHOT_DIR = os.path.join(_BASE, "triple_bottom_snapshots")
+
 
 
 def load_watchlist() -> List[Dict]:
@@ -1377,6 +1379,96 @@ def load_triple_bottom() -> List[Dict]:
 def save_triple_bottom(items: List[Dict]) -> bool:
     """保存三重底扫描结果"""
     return _save_with_backup(F_TRIPLE_BOTTOM, items)
+
+def clear_triple_bottom_results() -> bool:
+    """清空当前三重底扫描结果（清空前会自动进行备份快照）"""
+    current_items = load_triple_bottom()
+    if current_items:
+        backup_triple_bottom(current_items)
+    return save_triple_bottom([])
+
+def _ensure_tb_snapshot_dir():
+    os.makedirs(F_TB_SNAPSHOT_DIR, exist_ok=True)
+
+def backup_triple_bottom(items: List[Dict]) -> str:
+    """备份当前三重底扫描批次到快照文件夹，返回备份产生的 session_id"""
+    if not items:
+        return ""
+    try:
+        _ensure_tb_snapshot_dir()
+        sid = f"tb_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        fpath = os.path.join(F_TB_SNAPSHOT_DIR, f"{sid}.json")
+        payload = {
+            "session_id": sid,
+            "scan_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "rows": items,
+            "saved_at": _now_str()
+        }
+        if _save(fpath, payload):
+            # 异步/同步清理旧快照，最多保留 100 个
+            try:
+                snaps = []
+                for fname in os.listdir(F_TB_SNAPSHOT_DIR):
+                    if fname.endswith(".json"):
+                        fp = os.path.join(F_TB_SNAPSHOT_DIR, fname)
+                        mtime = os.path.getmtime(fp)
+                        snaps.append((mtime, fp))
+                snaps.sort(reverse=True)
+                for _, old_path in snaps[100:]:
+                    try:
+                        os.remove(old_path)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            return sid
+    except Exception:
+        pass
+    return ""
+
+def load_tb_snapshots() -> List[Dict]:
+    """获取所有三重底的快照批次列表，按时间倒序排列"""
+    try:
+        _ensure_tb_snapshot_dir()
+        candidates = []
+        for fname in os.listdir(F_TB_SNAPSHOT_DIR):
+            if fname.endswith(".json"):
+                fpath = os.path.join(F_TB_SNAPSHOT_DIR, fname)
+                data = _load(fpath, {})
+                if isinstance(data, dict):
+                    sid = data.get("session_id", os.path.splitext(fname)[0])
+                    scan_time = data.get("scan_time") or data.get("saved_at") or "—"
+                    rows = data.get("rows", [])
+                    candidates.append({
+                        "session_id": sid,
+                        "scan_time": scan_time,
+                        "count": len(rows),
+                        "mtime": os.path.getmtime(fpath)
+                    })
+        candidates.sort(key=lambda x: x["mtime"], reverse=True)
+        return candidates
+    except Exception:
+        return []
+
+def restore_tb_snapshot(session_id: str) -> tuple:
+    """从备份批次恢复三重底扫描结果"""
+    try:
+        _ensure_tb_snapshot_dir()
+        sid = "".join(ch for ch in str(session_id) if ch.isalnum() or ch in ("_", "-"))
+        fpath = os.path.join(F_TB_SNAPSHOT_DIR, f"{sid}.json")
+        if not os.path.exists(fpath):
+            return False, "备份批次不存在", 0
+        data = _load(fpath, {})
+        rows = data.get("rows", []) if isinstance(data, dict) else []
+        if not isinstance(rows, list):
+            return False, "无效的快照文件格式", 0
+        ok = save_triple_bottom(rows)
+        if ok:
+            return True, "恢复成功", len(rows)
+        return False, "保存失败", 0
+    except Exception as e:
+        return False, f"恢复异常: {e}", 0
+
 
 
 # ── Chartink 4H 突破扫描数据 ─────────────────────────────────────────

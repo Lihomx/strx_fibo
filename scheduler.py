@@ -140,6 +140,10 @@ def _run_scheduled_scan() -> None:
                                             "low3": float(m.low3),
                                             "mid_high": float(m.mid_high),
                                             "note": m.note,
+                                            "status": m.status,
+                                            "status_reason": m.status_reason,
+                                            "bars_since_low3": int(m.bars_since_low3),
+                                            "latest_close": float(m.latest_close),
                                             "scan_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                                         })
                         except Exception:
