@@ -34,6 +34,27 @@ TRIPLE_BOTTOM_TIMEFRAMES = {
     "1mo": ("1mo", "10y",  "月线"),
 }
 
+# ── TradingView 周期映射（period key → TV interval 参数） ──
+_TB_TV_INTERVAL = {
+    "30m": "30",
+    "60m": "60",
+    "4h":  "240",
+    "1d":  "D",
+    "1w":  "W",
+    "1mo": "M",
+}
+
+def _tv_link(ticker: str, period: str = "1d") -> str:
+    """生成带周期参数的 TradingView CN 链接"""
+    try:
+        from assets import tv_symbol
+        sym = tv_symbol(ticker)
+    except Exception:
+        sym = ticker
+    interval = _TB_TV_INTERVAL.get(period, "D")
+    return f"https://cn.tradingview.com/chart/?symbol={sym}&interval={interval}"
+
+
 def _row_anchor_id(ticker: str, period: str) -> str:
     safe = re.sub(r"[^0-9A-Za-z_-]", "_", f"{ticker}_{period}".upper())
     return f"tb_row_{safe}"
@@ -304,7 +325,7 @@ def render_triple_bottom_page():
 
         with st.container(border=True):
             # 卡片标题栏
-            col_t1, col_t2 = st.columns([3, 1])
+            col_t1, col_t2 = st.columns([5, 3])
             with col_t1:
                 st.markdown(
                     f"#### **{ticker}** · {name} "
@@ -313,66 +334,75 @@ def render_triple_bottom_page():
                     unsafe_allow_html=True
                 )
             with col_t2:
-                # 标记该行是否展开图表
+                # ── 按钮区：K线图 / TradingView / 收藏 ──
                 chart_key = f"tb_chart_open_{ticker}_{period}"
                 is_open = st.session_state.get(chart_key, False)
-                if st.button("📊 K线图" if not is_open else "❌ 关闭图", key=f"tb_chart_btn_{i}"):
-                    st.session_state[chart_key] = not is_open
-                    st.rerun()
+
+                btn_col1, btn_col2, btn_col3 = st.columns(3)
+                
+                with btn_col1:
+                    if st.button("📊 K线图" if not is_open else "❌ 关闭图", key=f"tb_chart_btn_{i}", use_container_width=True):
+                        st.session_state[chart_key] = not is_open
+                        st.rerun()
+
+                with btn_col2:
+                    st.link_button(
+                        "📈 TV",
+                        _tv_link(ticker, period),
+                        help=f"在 TradingView 中打开 {ticker} 的 {period_desc} 图表",
+                        use_container_width=True
+                    )
+
+                with btn_col3:
+                    wl = storage.load_watchlist()
+                    is_in_wl = any(item["ticker"].upper() == ticker.upper() for item in wl)
+                    
+                    if not is_in_wl:
+                        if st.button("⭐ 收藏", key=f"tb_add_wl_{i}", help="将该品种加入自选收藏夹，并标记 TripleBottom 标签", use_container_width=True):
+                            new_item = {
+                                "ticker": ticker,
+                                "name": name,
+                                "category_id": "unclassified", # 默认未分类
+                                "tags": ["TripleBottom", patt_desc.split(" (")[0]],
+                                "notes": [{"text": f"三重底自动扫描导入：{patt_desc}", "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}],
+                                "added_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            }
+                            wl.append(new_item)
+                            storage.save_watchlist(wl)
+                            st.toast(f"已成功添加 {ticker} 至自选收藏夹", icon="⭐")
+                            st.rerun()
+                    else:
+                        if st.button("✅ 已加", key=f"tb_sync_tag_{i}", help="该股票已在自选收藏夹中，点击为该股票追加 TripleBottom 与形态标签", use_container_width=True):
+                            for item in wl:
+                                if item["ticker"].upper() == ticker.upper():
+                                    tags = item.setdefault("tags", [])
+                                    added_any = False
+                                    if "TripleBottom" not in tags:
+                                        tags.append("TripleBottom")
+                                        added_any = True
+                                    sub_patt = patt_desc.split(" (")[0]
+                                    if sub_patt not in tags:
+                                        tags.append(sub_patt)
+                                        added_any = True
+                                    if added_any:
+                                        item.setdefault("notes", []).append({
+                                            "text": f"三重底自动扫描更新标签：{patt_desc}",
+                                            "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                        })
+                            storage.save_watchlist(wl)
+                            st.toast(f"已成功为 {ticker} 追加三重底识别标签", icon="🏷️")
+                            st.rerun()
 
             # 卡片详细内容
-            col_c1, col_c2 = st.columns([3, 1])
-            with col_c1:
-                st.markdown(
-                    f"<div style='font-size:13px;line-height:1.6;color:#374151;'>"
-                    f"🏷️ <b>识别形态</b>：{patt_desc}<br>"
-                    f"📝 <b>形态判定说明</b>：{note}<br>"
-                    f"📐 <b>低值详情</b>：Low1: {r['low1']:.3f} | Low2: {r['low2']:.3f} | Low3: {r['low3']:.3f} (中间高点: {r['mid_high']:.3f})"
-                    f"</div>",
-                    unsafe_allow_html=True
-                )
-            
-            with col_c2:
-                # 同步到 Watchlist (自选收藏)
-                wl = storage.load_watchlist()
-                is_in_wl = any(item["ticker"].upper() == ticker.upper() for item in wl)
-                
-                if not is_in_wl:
-                    if st.button("⭐ 加入自选", key=f"tb_add_wl_{i}", help="将该品种加入自选收藏夹，并标记 TripleBottom 标签"):
-                        # 添加到自选并附带默认标签
-                        new_item = {
-                            "ticker": ticker,
-                            "name": name,
-                            "category_id": "unclassified", # 默认未分类
-                            "tags": ["TripleBottom", patt_desc.split(" (")[0]],
-                            "notes": [{"text": f"三重底自动扫描导入：{patt_desc}", "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}],
-                            "added_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        }
-                        wl.append(new_item)
-                        storage.save_watchlist(wl)
-                        st.toast(f"已成功添加 {ticker} 至自选收藏夹", icon="⭐")
-                        st.rerun()
-                else:
-                    if st.button("🏷️ 同步标签", key=f"tb_sync_tag_{i}", help="该股票已在自选收藏夹中，点击为此股票追加 TripleBottom 与形态标签"):
-                        for item in wl:
-                            if item["ticker"].upper() == ticker.upper():
-                                tags = item.setdefault("tags", [])
-                                added_any = False
-                                if "TripleBottom" not in tags:
-                                    tags.append("TripleBottom")
-                                    added_any = True
-                                sub_patt = patt_desc.split(" (")[0]
-                                if sub_patt not in tags:
-                                    tags.append(sub_patt)
-                                    added_any = True
-                                if added_any:
-                                    item.setdefault("notes", []).append({
-                                        "text": f"三重底自动扫描更新标签：{patt_desc}",
-                                        "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                    })
-                        storage.save_watchlist(wl)
-                        st.toast(f"已成功为 {ticker} 追加三重底识别标签", icon="🏷️")
-                        st.rerun()
+            st.markdown(
+                f"<div style='font-size:13px;line-height:1.6;color:#374151;'>"
+                f"🏷️ <b>识别形态</b>：{patt_desc}<br>"
+                f"📝 <b>形态判定说明</b>：{note}<br>"
+                f"📐 <b>低值详情</b>：Low1: {r['low1']:.3f} | Low2: {r['low2']:.3f} | Low3: {r['low3']:.3f} (中间高点: {r['mid_high']:.3f})"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+
 
             # ── 展开 K 线图展示（核心高光） ──
             if st.session_state.get(chart_key):
