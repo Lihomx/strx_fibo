@@ -44,9 +44,10 @@ _LATEST_FILES = {
     "hl_categories":       "hl_categories.json",
     "symbols":             "symbols.json",
     "symbol_groups":       "symbol_groups.json",
+    "triple_bottom":       "data_triple_bottom.json",
 }
 
-_SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "wl_categories", "config", "hotlist", "hotlist_archive", "hl_categories", "symbols", "symbol_groups"]
+_SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "wl_categories", "config", "hotlist", "hotlist_archive", "hl_categories", "symbols", "symbol_groups", "triple_bottom"]
 _APP_BOOT_TS = time.time()
 _CLOUD_FILES   = _LATEST_FILES  # 兼容旧接口
 
@@ -423,6 +424,65 @@ def pull_wl_categories() -> Tuple[bool, str]:
     except Exception as e:
         return False, f"pull_wl_categories 异常：{e}"
 
+
+def push_triple_bottom() -> Tuple[bool, str]:
+    try:
+        import storage as loc
+        items = loc.load_triple_bottom()
+        ok, msg = _upload_latest("triple_bottom", items)
+        if ok:
+            return True, f"三重底已同步 {len(items)} 个结果"
+        return False, f"triple_bottom: {msg}"
+    except Exception as e:
+        return False, f"push_triple_bottom 异常：{e}"
+
+
+def pull_triple_bottom() -> Tuple[bool, str]:
+    try:
+        from storage import F_TRIPLE_BOTTOM, _save
+        cloud_items = _download_latest("triple_bottom")
+        if not isinstance(cloud_items, list):
+            return False, "云端无三重底数据"
+        _save(F_TRIPLE_BOTTOM, cloud_items)
+        return True, f"三重底已恢复 {len(cloud_items)} 个结果"
+    except Exception as e:
+        return False, f"pull_triple_bottom 异常：{e}"
+
+
+def push_tb_snapshot(session_id: str, payload: dict) -> bool:
+    """上传单个三重底快照到云端"""
+    try:
+        path = f"tb_snapshots/{session_id}.json"
+        ok, msg = _upload_path(path, payload)
+        return ok
+    except Exception as e:
+        logger.error(f"push_tb_snapshot {session_id} failed: {e}")
+        return False
+
+
+def pull_tb_snapshots() -> Tuple[bool, str]:
+    """从云端下载所有三重底快照到本地"""
+    try:
+        import storage as loc
+        loc._ensure_tb_snapshot_dir()
+        objs = _list_objects("tb_snapshots/")
+        count = 0
+        for obj in objs:
+            name = obj.get("name", "")
+            if not name.endswith(".json"):
+                continue
+            basename = os.path.basename(name)
+            local_path = os.path.join(loc.F_TB_SNAPSHOT_DIR, basename)
+            if not os.path.exists(local_path):
+                data = _download_path(name)
+                if data:
+                    loc._save(local_path, data)
+                    count += 1
+        return True, f"已从云端同步了 {count} 个历史快照到本地"
+    except Exception as e:
+        return False, f"pull_tb_snapshots 异常：{e}"
+
+
 # ════════════════════════════════════════════════════════════════════
 # 收藏夹专项推送
 # ════════════════════════════════════════════════════════════════════
@@ -658,13 +718,14 @@ def push_all(force: bool = False) -> Tuple[bool, str]:
         ("config",        lambda: loc._load(loc.F_CFG,    {})),
         ("symbols",       lambda: loc.load_symbols()),
         ("symbol_groups", lambda: loc.load_symbol_groups()),
+        ("triple_bottom", lambda: loc.load_triple_bottom()),
     ]:
         try:
             data      = loader()
             ok2, msg2 = _upload_latest(file_key, data)
             if not ok2:
                 errors.append(f"{file_key}: {msg2}")
-            if file_key in ("config", "wl_categories", "hl_categories", "symbols", "symbol_groups"):
+            if file_key in ("config", "wl_categories", "hl_categories", "symbols", "symbol_groups", "triple_bottom"):
                 _upload_snapshot(file_key, data)
         except Exception as e:
             errors.append(f"{file_key}: {e}")
@@ -753,6 +814,12 @@ def pull_all() -> Dict[str, Any]:
 
     ok_sgrp, msg_sgrp = pull_symbol_groups()
     results["symbol_groups"] = (ok_sgrp, msg_sgrp)
+
+    ok_tb, msg_tb = pull_triple_bottom()
+    results["triple_bottom"] = (ok_tb, msg_tb)
+
+    ok_tbsnap, msg_tbsnap = pull_tb_snapshots()
+    results["tb_snapshots"] = (ok_tbsnap, msg_tbsnap)
 
     return results
 

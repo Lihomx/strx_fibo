@@ -1378,7 +1378,15 @@ def load_triple_bottom() -> List[Dict]:
 
 def save_triple_bottom(items: List[Dict]) -> bool:
     """保存三重底扫描结果"""
-    return _save_with_backup(F_TRIPLE_BOTTOM, items)
+    ok = _save_with_backup(F_TRIPLE_BOTTOM, items)
+    if ok:
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                _async_push(cloud_sync.push_triple_bottom)
+        except Exception:
+            pass
+    return ok
 
 def clear_triple_bottom_results() -> bool:
     """清空当前三重底扫描结果（清空前会自动进行备份快照）"""
@@ -1405,6 +1413,12 @@ def backup_triple_bottom(items: List[Dict]) -> str:
             "saved_at": _now_str()
         }
         if _save(fpath, payload):
+            try:
+                import cloud_sync
+                if cloud_sync.is_configured():
+                    _async_push(lambda: cloud_sync.push_tb_snapshot(sid, payload))
+            except Exception:
+                pass
             # 异步/同步清理旧快照，最多保留 100 个
             try:
                 snaps = []

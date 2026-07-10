@@ -56,6 +56,12 @@ def _tv_link(ticker: str, period: str = "1d") -> str:
 
 
 def _render_tb_restore_session_controls():
+    try:
+        import cloud_sync
+        if cloud_sync.is_configured():
+            cloud_sync.pull_tb_snapshots()
+    except Exception:
+        pass
     sessions = storage.load_tb_snapshots()
     options = []
     sid_map = {}
