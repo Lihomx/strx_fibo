@@ -42,9 +42,11 @@ _LATEST_FILES = {
     "hotlist":             "hotlist.json",
     "hotlist_archive":     "hotlist_archive.json",
     "hl_categories":       "hl_categories.json",
+    "symbols":             "symbols.json",
+    "symbol_groups":       "symbol_groups.json",
 }
 
-_SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "wl_categories", "config", "hotlist", "hotlist_archive", "hl_categories"]
+_SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "wl_categories", "config", "hotlist", "hotlist_archive", "hl_categories", "symbols", "symbol_groups"]
 _APP_BOOT_TS = time.time()
 _CLOUD_FILES   = _LATEST_FILES  # 兼容旧接口
 
@@ -327,6 +329,16 @@ def restore_from_snapshot(snapshot_path: str, file_key: str) -> Tuple[bool, str]
                 return False, "格式错误（期望列表）"
             loc._save(loc.F_HL_CATS, data)
             return True, f"已从快照恢复热门分类，共 {len(data)} 个分类"
+        elif file_key == "symbols":
+            if not isinstance(data, list):
+                return False, "格式错误（期望列表）"
+            loc._save(loc.F_SYMBOLS, data)
+            return True, f"已从快照恢复品种库，共 {len(data)} 个品种"
+        elif file_key == "symbol_groups":
+            if not isinstance(data, list):
+                return False, "格式错误（期望列表）"
+            loc._save(loc.F_SYMBOL_GROUPS, data)
+            return True, f"已从快照恢复自定义分组，共 {len(data)} 个分组"
         else:
             return False, f"不支持恢复类型：{file_key}"
     except Exception as e:
@@ -347,6 +359,57 @@ def push_wl_categories() -> Tuple[bool, str]:
         return False, f"wl_categories: {m1}"
     except Exception as e:
         return False, f"push_wl_categories 异常：{e}"
+
+
+def push_symbols() -> Tuple[bool, str]:
+    try:
+        import storage as loc
+        items = loc.load_symbols()
+        ok, msg = _upload_latest("symbols", items)
+        _upload_snapshot("symbols", items)
+        if ok:
+            return True, f"品种库已同步 {len(items)} 个品种"
+        return False, f"symbols: {msg}"
+    except Exception as e:
+        return False, f"push_symbols 异常：{e}"
+
+
+def pull_symbols() -> Tuple[bool, str]:
+    try:
+        from storage import F_SYMBOLS, _save
+        cloud_items = _download_latest("symbols")
+        if not isinstance(cloud_items, list):
+            return False, "云端无品种库数据"
+        _save(F_SYMBOLS, cloud_items)
+        return True, f"品种库已恢复 {len(cloud_items)} 个品种"
+    except Exception as e:
+        return False, f"pull_symbols 异常：{e}"
+
+
+def push_symbol_groups() -> Tuple[bool, str]:
+    try:
+        import storage as loc
+        groups = loc.load_symbol_groups()
+        ok, msg = _upload_latest("symbol_groups", groups)
+        _upload_snapshot("symbol_groups", groups)
+        if ok:
+            return True, f"自定义分组已同步 {len(groups)} 个分组"
+        return False, f"symbol_groups: {msg}"
+    except Exception as e:
+        return False, f"push_symbol_groups 异常：{e}"
+
+
+def pull_symbol_groups() -> Tuple[bool, str]:
+    try:
+        from storage import F_SYMBOL_GROUPS, _save
+        cloud_groups = _download_latest("symbol_groups")
+        if not isinstance(cloud_groups, list):
+            return False, "云端无自定义分组数据"
+        _save(F_SYMBOL_GROUPS, cloud_groups)
+        return True, f"自定义分组已恢复 {len(cloud_groups)} 个"
+    except Exception as e:
+        return False, f"pull_symbol_groups 异常：{e}"
+
 
 def pull_wl_categories() -> Tuple[bool, str]:
     """以云端为权威，直接覆盖本地（v6.1 修复）"""
@@ -593,13 +656,15 @@ def push_all(force: bool = False) -> Tuple[bool, str]:
         ("scan_results",  lambda: loc._load(loc.F_ALLRES, [])),
         ("scan_groups",   lambda: loc.load_scanned_groups()),
         ("config",        lambda: loc._load(loc.F_CFG,    {})),
+        ("symbols",       lambda: loc.load_symbols()),
+        ("symbol_groups", lambda: loc.load_symbol_groups()),
     ]:
         try:
             data      = loader()
             ok2, msg2 = _upload_latest(file_key, data)
             if not ok2:
                 errors.append(f"{file_key}: {msg2}")
-            if file_key in ("config", "wl_categories", "hl_categories"):
+            if file_key in ("config", "wl_categories", "hl_categories", "symbols", "symbol_groups"):
                 _upload_snapshot(file_key, data)
         except Exception as e:
             errors.append(f"{file_key}: {e}")
@@ -682,6 +747,12 @@ def pull_all() -> Dict[str, Any]:
     if not results.get("hotlist", (False,))[0]:
         cat_ok3, cat_msg3 = pull_hl_categories()
         results["hl_categories"] = (cat_ok3, cat_msg3)
+
+    ok_sym, msg_sym = pull_symbols()
+    results["symbols"] = (ok_sym, msg_sym)
+
+    ok_sgrp, msg_sgrp = pull_symbol_groups()
+    results["symbol_groups"] = (ok_sgrp, msg_sgrp)
 
     return results
 

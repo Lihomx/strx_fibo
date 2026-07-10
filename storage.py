@@ -1486,3 +1486,147 @@ def save_chartink(data: Dict) -> bool:
     return _save(F_CHARTINK, data)
 
 
+# ── 自定义品种库与分组 ─────────────────────────────────────────
+F_SYMBOLS = os.path.join(_BASE, "data_symbols.json")
+F_SYMBOL_GROUPS = os.path.join(_BASE, "data_symbol_groups.json")
+
+def load_symbols() -> List[Dict]:
+    """返回自定义品种库列表，每项: {ticker, name, source, added_at}"""
+    items = _load(F_SYMBOLS, [])
+    if not isinstance(items, list):
+        items = []
+    return [i for i in items if isinstance(i, dict) and i.get("ticker")]
+
+def save_symbols(items: List[Dict]) -> bool:
+    ok = _save(F_SYMBOLS, items)
+    if ok:
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                _async_push(cloud_sync.push_symbols)  # 异步同步
+        except Exception:
+            pass
+    return ok
+
+def load_symbol_groups() -> List[Dict]:
+    """返回自定义分组列表，每项: {id, name, tickers: [], created_at}"""
+    items = _load(F_SYMBOL_GROUPS, [])
+    if not isinstance(items, list):
+        items = []
+    return [i for i in items if isinstance(i, dict) and i.get("id") and i.get("name")]
+
+def save_symbol_groups(items: List[Dict]) -> bool:
+    ok = _save(F_SYMBOL_GROUPS, items)
+    if ok:
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                _async_push(cloud_sync.push_symbol_groups)  # 异步同步
+        except Exception:
+            pass
+    return ok
+
+def add_symbol(ticker: str, name: str = "", source: str = "manual") -> bool:
+    ticker = ticker.strip().upper()
+    if not ticker:
+        return False
+    items = load_symbols()
+    if any(i["ticker"] == ticker for i in items):
+        return False
+    items.append({
+        "ticker": ticker,
+        "name": name.strip() or ticker,
+        "source": source,
+        "added_at": _now_str()
+    })
+    return save_symbols(items)
+
+def remove_symbol(ticker: str) -> bool:
+    ticker = ticker.strip().upper()
+    items = load_symbols()
+    new_items = [i for i in items if i["ticker"] != ticker]
+    if len(new_items) == len(items):
+        return False
+    # 从所有分组中也移除该品种
+    groups = load_symbol_groups()
+    group_changed = False
+    for g in groups:
+        if ticker in g.get("tickers", []):
+            g["tickers"] = [t for t in g["tickers"] if t != ticker]
+            group_changed = True
+    if group_changed:
+        save_symbol_groups(groups)
+    return save_symbols(new_items)
+
+def add_symbol_group(name: str) -> Optional[str]:
+    import uuid
+    name = name.strip()
+    if not name:
+        return None
+    groups = load_symbol_groups()
+    if any(g["name"] == name for g in groups):
+        return None
+    new_id = str(uuid.uuid4())[:8]
+    groups.append({
+        "id": new_id,
+        "name": name,
+        "tickers": [],
+        "created_at": _now_str()
+    })
+    save_symbol_groups(groups)
+    return new_id
+
+def rename_symbol_group(group_id: str, new_name: str) -> bool:
+    new_name = new_name.strip()
+    if not new_name:
+        return False
+    groups = load_symbol_groups()
+    for g in groups:
+        if g["id"] == group_id:
+            g["name"] = new_name
+            return save_symbol_groups(groups)
+    return False
+
+def delete_symbol_group(group_id: str) -> bool:
+    groups = load_symbol_groups()
+    new_groups = [g for g in groups if g["id"] != group_id]
+    if len(new_groups) == len(groups):
+        return False
+    return save_symbol_groups(new_groups)
+
+def add_tickers_to_group(group_id: str, tickers: List[str]) -> bool:
+    groups = load_symbol_groups()
+    target = next((g for g in groups if g["id"] == group_id), None)
+    if not target:
+        return False
+    t_set = set(target.get("tickers", []))
+    added = False
+    for t in tickers:
+        t = t.strip().upper()
+        if t and t not in t_set:
+            t_set.add(t)
+            added = True
+    if added:
+        target["tickers"] = list(t_set)
+        return save_symbol_groups(groups)
+    return False
+
+def remove_tickers_from_group(group_id: str, tickers: List[str]) -> bool:
+    groups = load_symbol_groups()
+    target = next((g for g in groups if g["id"] == group_id), None)
+    if not target:
+        return False
+    t_set = set(target.get("tickers", []))
+    removed = False
+    for t in tickers:
+        t = t.strip().upper()
+        if t in t_set:
+            t_set.remove(t)
+            removed = True
+    if removed:
+        target["tickers"] = list(t_set)
+        return save_symbol_groups(groups)
+    return False
+
+
+

@@ -1528,6 +1528,18 @@ def _render_batch_selector(cfg):
     """
     from collections import defaultdict
 
+    import assets
+    ASSET_GROUPS = dict(assets.ASSET_GROUPS)
+    custom_groups = storage.load_symbol_groups()
+    if custom_groups:
+        sym_map = {s["ticker"]: s["name"] for s in storage.load_symbols()}
+        for g in custom_groups:
+            g_key = f"💎 自定义 - {g['name']}"
+            g_assets = {}
+            for tk in g.get("tickers", []):
+                g_assets[tk] = (sym_map.get(tk, tk), "custom")
+            ASSET_GROUPS[g_key] = g_assets
+
     group_names  = list(ASSET_GROUPS.keys())
     total_assets = sum(len(v) for v in ASSET_GROUPS.values())
     n_groups     = len(group_names)

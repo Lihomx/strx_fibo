@@ -281,11 +281,20 @@ def render_triple_bottom_page():
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("### ⚡ 扫描控制")
-    scan_target = st.sidebar.radio("扫描目标", ["自选股 (Watchlist)", "热门品种 (Hotlist)", "指定代码"])
+    scan_target = st.sidebar.radio("扫描目标", ["自选股 (Watchlist)", "热门品种 (Hotlist)", "自定义分组", "指定代码"])
 
     custom_ticker_input = ""
+    selected_group_id = None
     if scan_target == "指定代码":
         custom_ticker_input = st.sidebar.text_input("输入代码 (多个用逗号隔开)", "AAPL,BTC-USD,000001.SS")
+    elif scan_target == "自定义分组":
+        groups = storage.load_symbol_groups()
+        if not groups:
+            st.sidebar.warning("⚠️ 暂无自定义分组，请前往 品种库 页面创建。")
+        else:
+            grp_map = {g["name"]: g["id"] for g in groups}
+            selected_grp_name = st.sidebar.selectbox("选择分组", list(grp_map.keys()))
+            selected_group_id = grp_map[selected_grp_name]
 
     is_running = bg_scan_manager.is_running()
     run_scan = st.sidebar.button("🚀 开始分析扫描", type="primary", use_container_width=True, disabled=is_running)
@@ -307,6 +316,12 @@ def render_triple_bottom_page():
         elif scan_target == "热门品种 (Hotlist)":
             hl = storage.load_hotlist()
             tickers_to_scan = [item["ticker"] for item in hl]
+        elif scan_target == "自定义分组":
+            if selected_group_id:
+                groups = storage.load_symbol_groups()
+                target_grp = next((g for g in groups if g["id"] == selected_group_id), None)
+                if target_grp:
+                    tickers_to_scan = target_grp.get("tickers", [])
         else:
             tickers_to_scan = [t.strip().upper() for t in custom_ticker_input.split(",") if t.strip()]
 

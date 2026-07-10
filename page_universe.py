@@ -576,14 +576,14 @@ def _render_market(market_key: str, load_fn, category: str, cfg: dict, label: st
         unsafe_allow_html=True,
     )
 
-        # ── 批量扫描 ─────────────────────────────────────────────────
+        # ── 批量扫描与导入品种库 ─────────────────────────────────────
     st.markdown("---")
     n_sel = len(selected)
 
     if n_sel > 0:
         est_sec = n_sel * 3 * 2
         est_min = est_sec // 60
-        col_l, col_r = st.columns([7, 3])
+        col_l, col_r, col_sym = st.columns([5, 2.5, 2.5])
         with col_l:
             if n_sel <= 50:
                 st.info(
@@ -601,14 +601,36 @@ def _render_market(market_key: str, load_fn, category: str, cfg: dict, label: st
                 type="primary",
                 key=f"univ_batch_{market_key}",
                 disabled=bg_scan_manager.is_running(),
+                use_container_width=True,
             )
             if st.session_state.pop("_trigger_mobile_scan", False):
                 batch_btn = True
             if batch_btn:
                 assets_batch = {t: (name_map.get(t, t), category) for t in selected}
                 _run_batch(assets_batch, cfg)
+        with col_sym:
+            groups = storage.load_symbol_groups()
+            grp_options = ["— 导入到品种库 (不分组) —"] + [g["name"] for g in groups]
+            sel_grp = st.selectbox("导入到品种库/分组", grp_options, label_visibility="collapsed", key=f"univ_import_grp_{market_key}")
+            if st.button("💎 导入到品种库", key=f"univ_import_btn_{market_key}", use_container_width=True):
+                added_syms = 0
+                for t in selected:
+                    nm = name_map.get(t, t)
+                    if storage.add_symbol(t, nm, source="universe_import"):
+                        added_syms += 1
+                
+                if sel_grp != "— 导入到品种库 (不分组) —":
+                    target_grp = next(g for g in groups if g["name"] == sel_grp)
+                    storage.add_tickers_to_group(target_grp["id"], list(selected))
+                    st.success(f"✅ 成功导入 {len(selected)} 支股票到分组 [{sel_grp}]")
+                else:
+                    st.success(f"✅ 成功导入 {added_syms} 支新股票到品种库")
+                
+                st.session_state[sel_key] = set()
+                time.sleep(1)
+                st.rerun()
     else:
-        st.caption("☑️ 请先勾选品种，再点击批量扫描")
+        st.caption("☑️ 请先勾选品种，再点击批量扫描或导入")
 
 
 # ════════════════════════════════════════════════════════════════════

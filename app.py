@@ -214,6 +214,7 @@ import page_cloud
 import page_chartink
 import page_schedule
 import page_triple_bottom
+import page_symbols
 import cloud_sync
 
 
@@ -318,6 +319,7 @@ def sidebar():
             ("📈", "4H Breakout",        "chartink"),
             ("⏰", "定时扫描",           "schedule"),
             ("🌍", "全量品种库",         "universe"),
+            ("💎", "品种库",             "symbols"),
             ("⭐", "自选收藏",           "watchlist"),
             ("🔥", "热门品种",           "hotlist"),
             ("📂", "历史记录",           "history"),
@@ -543,7 +545,7 @@ def main():
 
     # ── URL 参数跳转与同步 ────────────────────────────────────────────
     _VALID_PAGES = ("watchlist","hotlist","scanner","confluence","alerts","settings",
-                    "history","cloud","universe","chartink","schedule","triple_bottom")
+                    "history","cloud","universe","chartink","schedule","triple_bottom","symbols")
     _url_page = st.query_params.get("_page", "")
     if _url_page and _url_page in _VALID_PAGES:
         st.session_state["page"] = _url_page
@@ -584,6 +586,7 @@ def main():
         "cloud":         page_cloud.render,
         "settings":      page_settings.render,
         "schedule":      page_schedule.render,
+        "symbols":       page_symbols.render,
     }
     dispatch.get(p, page_scanner.render)()
 
@@ -606,7 +609,8 @@ def main():
                 "history": "历史记录",
                 "alerts": "告警配置",
                 "cloud": "云端同步",
-                "settings": "系统设置"
+                "settings": "系统设置",
+                "symbols": "品种库"
             }};
             var title = pageNames["{p}"] || "扫描";
             parentDoc.title = title + " - STRX Fibo Scanner";

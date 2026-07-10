@@ -353,12 +353,23 @@ def render():
 
     st.markdown("---")
 
+    # ── 载入分组品种 ──
+    groups = storage.load_symbol_groups()
+    if groups:
+        grp_names = ["— 选择载入分组 —"] + [g["name"] for g in groups]
+        sel_grp = st.selectbox("📥 从品种库分组载入股票池", grp_names, key="chartink_load_grp_sel")
+        if sel_grp != "— 选择载入分组 —":
+            target_grp = next(g for g in groups if g["name"] == sel_grp)
+            st.session_state["chartink_tickers"] = " ".join(target_grp.get("tickers", []))
+            st.rerun()
+
     # ── 股票池设置 ──────────────────────────────────────────────────
     col_left, col_right = st.columns([3, 1])
     with col_left:
+        if "chartink_tickers" not in st.session_state:
+            st.session_state["chartink_tickers"] = " ".join(_DEFAULT_TICKERS)
         ticker_input = st.text_area(
             "扫描股票池（空格或换行分隔，支持 yfinance 格式如 9988.HK / BTC-USD）",
-            value=" ".join(_DEFAULT_TICKERS),
             height=100,
             key="chartink_tickers",
         )
