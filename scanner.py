@@ -652,7 +652,12 @@ def run_full_scan(
     import threading
 
     cfg    = cfg    or storage.load_config()
-    assets = assets or ASSETS
+    if assets is None:
+        syms = storage.load_symbols()
+        if syms:
+            assets = {s["ticker"]: (s["name"], "custom") for s in syms}
+        else:
+            assets = ASSETS
     tf_names = [t for t in (timeframe_names or list(TIMEFRAMES.keys())) if t in TIMEFRAMES]
     if not tf_names:
         tf_names = list(TIMEFRAMES.keys())

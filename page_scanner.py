@@ -1528,17 +1528,25 @@ def _render_batch_selector(cfg):
     """
     from collections import defaultdict
 
-    import assets
-    ASSET_GROUPS = dict(assets.ASSET_GROUPS)
     custom_groups = storage.load_symbol_groups()
+    ASSET_GROUPS = {}
     if custom_groups:
         sym_map = {s["ticker"]: s["name"] for s in storage.load_symbols()}
         for g in custom_groups:
-            g_key = f"💎 自定义 - {g['name']}"
             g_assets = {}
             for tk in g.get("tickers", []):
                 g_assets[tk] = (sym_map.get(tk, tk), "custom")
-            ASSET_GROUPS[g_key] = g_assets
+            ASSET_GROUPS[g["name"]] = g_assets
+
+    if not ASSET_GROUPS:
+        st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+        st.warning("⚠️ 自定义品种库中没有任何分组！请先前往「💎 品种库」页面创建分组、导入内置品种或添加品种。")
+        col_nav, _ = st.columns([2, 5])
+        with col_nav:
+            if st.button("👉 前往品种库页面", key="go_to_symbols_btn", type="primary", use_container_width=True):
+                st.session_state["page"] = "symbols"
+                st.rerun()
+        return
 
     group_names  = list(ASSET_GROUPS.keys())
     total_assets = sum(len(v) for v in ASSET_GROUPS.values())

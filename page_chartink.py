@@ -367,7 +367,11 @@ def render():
     col_left, col_right = st.columns([3, 1])
     with col_left:
         if "chartink_tickers" not in st.session_state:
-            st.session_state["chartink_tickers"] = " ".join(_DEFAULT_TICKERS)
+            syms = [s["ticker"] for s in storage.load_symbols()]
+            if syms:
+                st.session_state["chartink_tickers"] = " ".join(syms)
+            else:
+                st.session_state["chartink_tickers"] = "AAPL MSFT NVDA AMZN GOOGL TSLA"
         ticker_input = st.text_area(
             "扫描股票池（空格或换行分隔，支持 yfinance 格式如 9988.HK / BTC-USD）",
             height=100,
