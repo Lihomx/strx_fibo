@@ -166,6 +166,48 @@ def render():
         unsafe_allow_html=True
     )
     
+    # ── 导入系统内置品种和分组 ──
+    with st.expander("📦 导入系统内置的 1985 个品种和 64 个分组"):
+        st.markdown(
+            "如果您是第一次使用，或者想对系统默认的 64 个分类分组进行**修改、删除、增加品种**，"
+            "可以点击下方按钮将它们一键导入到您的自定义库中。"
+        )
+        col_import_builtin, _ = st.columns([2, 2])
+        with col_import_builtin:
+            if st.button("📥 一键导入内置 64 组 / 1985 品种", key="import_builtin_btn", type="secondary", use_container_width=True):
+                import assets
+                progress_text = st.empty()
+                progress_text.info("正在导入，请稍候...")
+                
+                builtin_groups = assets.ASSET_GROUPS
+                all_added = 0
+                
+                # 先添加所有 symbol
+                for g_name, g_assets in builtin_groups.items():
+                    for tk, (nm, cat) in g_assets.items():
+                        if storage.add_symbol(tk, nm, source="built_in"):
+                            all_added += 1
+                
+                # 再创建/分配到 group
+                groups_created = 0
+                for g_name, g_assets in builtin_groups.items():
+                    grp_id = None
+                    existing_groups = storage.load_symbol_groups()
+                    target_g = next((g for g in existing_groups if g["name"] == g_name), None)
+                    if target_g:
+                        grp_id = target_g["id"]
+                    else:
+                        grp_id = storage.add_symbol_group(g_name)
+                        groups_created += 1
+                    
+                    if grp_id:
+                        tickers = list(g_assets.keys())
+                        storage.add_tickers_to_group(grp_id, tickers)
+                
+                progress_text.success(f"✅ 成功导入 {all_added} 个新内置品种，并同步了 {len(builtin_groups)} 个分组！")
+                time.sleep(1)
+                st.rerun()
+
     # ── 初始化分类/选择 Session State ──
     if "symbols_selected" not in st.session_state:
         st.session_state["symbols_selected"] = set()
