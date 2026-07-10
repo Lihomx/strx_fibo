@@ -176,33 +176,58 @@ def render():
         with col_import_builtin:
             if st.button("📥 一键导入内置 64 组 / 1985 品种", key="import_builtin_btn", type="secondary", use_container_width=True):
                 import assets
+                import uuid
                 progress_text = st.empty()
                 progress_text.info("正在导入，请稍候...")
                 
                 builtin_groups = assets.ASSET_GROUPS
-                all_added = 0
                 
-                # 先添加所有 symbol
+                # 1. 批量加载已有的 symbols，去重并添加
+                existing_symbols = storage.load_symbols()
+                existing_tickers = {s["ticker"] for s in existing_symbols}
+                
+                all_added = 0
                 for g_name, g_assets in builtin_groups.items():
                     for tk, (nm, cat) in g_assets.items():
-                        if storage.add_symbol(tk, nm, source="built_in"):
+                        tk_upper = tk.strip().upper()
+                        if tk_upper and tk_upper not in existing_tickers:
+                            existing_symbols.append({
+                                "ticker": tk_upper,
+                                "name": nm.strip() or tk_upper,
+                                "source": "built_in",
+                                "added_at": storage._now_str()
+                            })
+                            existing_tickers.add(tk_upper)
                             all_added += 1
                 
-                # 再创建/分配到 group
-                groups_created = 0
+                # 批量保存 symbols (仅写盘 & 同步一次)
+                storage.save_symbols(existing_symbols)
+                
+                # 2. 批量加载并填充分组
+                existing_groups = storage.load_symbol_groups()
+                
                 for g_name, g_assets in builtin_groups.items():
-                    grp_id = None
-                    existing_groups = storage.load_symbol_groups()
+                    # 查找或新建组
                     target_g = next((g for g in existing_groups if g["name"] == g_name), None)
-                    if target_g:
-                        grp_id = target_g["id"]
-                    else:
-                        grp_id = storage.add_symbol_group(g_name)
-                        groups_created += 1
+                    if not target_g:
+                        target_g = {
+                            "id": str(uuid.uuid4())[:8],
+                            "name": g_name,
+                            "tickers": [],
+                            "created_at": storage._now_str()
+                        }
+                        existing_groups.append(target_g)
                     
-                    if grp_id:
-                        tickers = list(g_assets.keys())
-                        storage.add_tickers_to_group(grp_id, tickers)
+                    # 合并 tickers
+                    t_set = set(target_g.get("tickers", []))
+                    for tk in g_assets.keys():
+                        tk_upper = tk.strip().upper()
+                        if tk_upper:
+                            t_set.add(tk_upper)
+                    target_g["tickers"] = list(t_set)
+                
+                # 批量保存 groups (仅写盘 & 同步一次)
+                storage.save_symbol_groups(existing_groups)
                 
                 progress_text.success(f"✅ 成功导入 {all_added} 个新内置品种，并同步了 {len(builtin_groups)} 个分组！")
                 time.sleep(1)
