@@ -677,7 +677,7 @@ def main():
                     #global-mobile-fab {{
                         display: none;
                         position: fixed;
-                        bottom: 80px;
+                        bottom: 72px;
                         right: 20px;
                         z-index: 999999;
                     }}
@@ -736,6 +736,19 @@ def main():
             fab.appendChild(innerBtn);
             doc.body.appendChild(fab);
         }})();
+        </script>
+        """, height=0, width=0)
+    else:
+        # 如果不是扫描页面，确保从 parent document 中移除任何残留的 FAB 按钮
+        import streamlit.components.v1 as components
+        components.html("""
+        <script>
+        (function() {
+            var doc = window.parent.document;
+            if (!doc) doc = window.document;
+            var oldBtn = doc.getElementById('global-mobile-fab');
+            if (oldBtn) oldBtn.remove();
+        })();
         </script>
         """, height=0, width=0)
 

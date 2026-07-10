@@ -170,7 +170,7 @@ def _fetch_ticker_name(ticker: str) -> str:
 def render():
     st.markdown("## ⭐ 自选收藏夹")
 
-    # ── 品种名内联编辑按钮样式：去掉边框背景，像文本一样可点击 ──
+    # ── 品种名内联编辑按钮样式 + 移动端列强制水平排列 ──
     st.markdown("""
     <style>
     [data-testid="stButton"] button[kind="secondary"][id*="wl_name_click_"] {
@@ -189,6 +189,34 @@ def render():
         background: var(--secondary-background-color, #f0f9ff) !important;
         color: var(--primary-color, #1d4ed8) !important;
         text-decoration: underline solid var(--primary-color, #1d4ed8) !important;
+    }
+    /* ═══ 核心修复：阻止 Streamlit 在移动端将 st.columns 堆叠为垂直 ═══ */
+    @media (max-width: 768px) {
+        /* 强制所有 stHorizontalBlock 保持水平排列，不折行 */
+        div[data-testid="stHorizontalBlock"] {
+            flex-wrap: nowrap !important;
+            gap: 4px !important;
+        }
+        /* 每个列最小宽度为 0，允许收缩 */
+        div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+            min-width: 0 !important;
+            flex: 1 1 0 !important;
+            width: auto !important;
+        }
+        /* 操作按钮更紧凑 */
+        div[data-testid="stHorizontalBlock"] .stButton > button {
+            min-height: 32px !important;
+            height: 32px !important;
+            padding: 2px 4px !important;
+            font-size: 13px !important;
+        }
+        /* 外链按钮 st.link_button 同步变小 */
+        div[data-testid="stHorizontalBlock"] a[data-testid="stBaseLinkButton-secondary"] {
+            min-height: 32px !important;
+            height: 32px !important;
+            padding: 2px 4px !important;
+            font-size: 13px !important;
+        }
     }
     </style>
     """, unsafe_allow_html=True)
@@ -506,14 +534,15 @@ def _render_item_row(item, result_map, cats, viewed_set):
             st.session_state[_val_key]  = name
 
     if sina_link:
-        bc1, bc2, bc3, bc4, bc5, bc6 = st.columns([1, 1, 1, 1, 1, 4])
+        bc1, bc2, bc3, bc4, bc5 = st.columns(5)
     else:
-        bc1, bc2, bc3, bc4, bc5 = st.columns([1, 1, 1, 1, 4])
+        bc1, bc2, bc3, bc4 = st.columns(4)
 
     with bc1:
         if st.button("✅" if viewed else "👁️",
                      key=f"wl_v_{ticker}",
-                     help="取消已看" if viewed else "标记已看"):
+                     help="取消已看" if viewed else "标记已看",
+                     use_container_width=True):
             _remember_focus_row(ticker)
             if viewed: _unmark_viewed(ticker)
             else:      _mark_viewed(ticker)
@@ -535,33 +564,36 @@ def _render_item_row(item, result_map, cats, viewed_set):
             )
         with bc4:
             if st.button("🔓" if pinned else "📌",
-                         key=f"wl_pin_{ticker}", help="置顶/取消"):
+                         key=f"wl_pin_{ticker}", help="置顶/取消",
+                         use_container_width=True):
                 _remember_focus_row(ticker)
                 storage.toggle_pin_watchlist(ticker)
                 st.rerun()
         with bc5:
-            if st.button("🗑", key=f"wl_del_{ticker}", help="删除（移入存档）"):
+            if st.button("🗑", key=f"wl_del_{ticker}", help="删除（移入存档）",
+                         use_container_width=True):
                 _remember_focus_row(ticker)
                 storage.remove_from_watchlist(ticker)
                 st.toast(f"已移入存档：{ticker}", icon="🗂️")
                 st.rerun()
-        with bc6:
-            _render_inline_controls(item, ticker, cats)
     else:
         with bc3:
             if st.button("🔓" if pinned else "📌",
-                         key=f"wl_pin_{ticker}", help="置顶/取消"):
+                         key=f"wl_pin_{ticker}", help="置顶/取消",
+                         use_container_width=True):
                 _remember_focus_row(ticker)
                 storage.toggle_pin_watchlist(ticker)
                 st.rerun()
         with bc4:
-            if st.button("🗑", key=f"wl_del_{ticker}", help="删除（移入存档）"):
+            if st.button("🗑", key=f"wl_del_{ticker}", help="删除（移入存档）",
+                         use_container_width=True):
                 _remember_focus_row(ticker)
                 storage.remove_from_watchlist(ticker)
                 st.toast(f"已移入存档：{ticker}", icon="🗂️")
                 st.rerun()
-        with bc5:
-            _render_inline_controls(item, ticker, cats)
+
+    # ── 第二行：操作/详情 ──
+    _render_inline_controls(item, ticker, cats)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -583,27 +615,30 @@ def _build_cat_options(cats):
 
 
 def _render_inline_controls(item, ticker, cats):
-    cc = st.columns([1, 1, 1, 1, 1, 3])
+    cc = st.columns(5)
 
     with cc[0]:
-        if st.button("📁", key=f"wl_cat_btn_{ticker}", help="设置分类"):
+        if st.button("📁", key=f"wl_cat_btn_{ticker}", help="设置分类", use_container_width=True):
             _remember_focus_row(ticker)
             k = f"wl_cat_open_{ticker}"
             st.session_state[k] = not st.session_state.get(k, False)
             if st.session_state[k]:
                 st.session_state[f"wl_cat_init_{ticker}"] = True
+            st.rerun()
 
     with cc[1]:
-        if st.button("🏷️", key=f"wl_tags_btn_{ticker}", help="管理标签"):
+        if st.button("🏷️", key=f"wl_tags_btn_{ticker}", help="管理标签", use_container_width=True):
             _remember_focus_row(ticker)
             k = f"wl_tags_open_{ticker}"
             st.session_state[k] = not st.session_state.get(k, False)
+            st.rerun()
 
     with cc[2]:
-        if st.button("✏️", key=f"wl_note_btn_{ticker}", help="添加备注"):
+        if st.button("✏️", key=f"wl_note_btn_{ticker}", help="添加备注", use_container_width=True):
             _remember_focus_row(ticker)
             k = f"wl_note_open_{ticker}"
             st.session_state[k] = not st.session_state.get(k, False)
+            st.rerun()
 
     with cc[3]:
         notes = _all_notes(item)
@@ -611,16 +646,21 @@ def _render_inline_controls(item, ticker, cats):
             hist_open = st.session_state.get(f"wl_hist_open_{ticker}", True)
             btn_label = "📋▲" if hist_open else f"📋({len(notes)})"
             if st.button(btn_label, key=f"wl_hist_btn_{ticker}",
-                         help="收起备注" if hist_open else f"展开备注({len(notes)})"):
+                         help="收起备注" if hist_open else f"展开备注({len(notes)})",
+                         use_container_width=True):
                 _remember_focus_row(ticker)
                 st.session_state[f"wl_hist_open_{ticker}"] = not hist_open
+                st.rerun()
+        else:
+            st.button("📋", key=f"wl_hist_btn_disabled_{ticker}", disabled=True, use_container_width=True)
 
     with cc[4]:
         chart_open = st.session_state.get(f"wl_chart_open_{ticker}", False)
         chart_lbl = "📊▲" if chart_open else "📊"
-        if st.button(chart_lbl, key=f"wl_chart_btn_{ticker}", help="查看 K线趋势图"):
+        if st.button(chart_lbl, key=f"wl_chart_btn_{ticker}", help="查看 K线趋势图", use_container_width=True):
             _remember_focus_row(ticker)
             st.session_state[f"wl_chart_open_{ticker}"] = not chart_open
+            st.rerun()
 
     # ── 标签管理面板 ──────────────────────────────────────────────
     if st.session_state.get(f"wl_tags_open_{ticker}"):
