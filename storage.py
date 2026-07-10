@@ -1436,8 +1436,9 @@ def backup_triple_bottom(items: List[Dict]) -> str:
             except Exception:
                 pass
             return sid
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.error(f"backup_triple_bottom error: {e}")
     return ""
 
 def load_tb_snapshots() -> List[Dict]:
@@ -1461,7 +1462,9 @@ def load_tb_snapshots() -> List[Dict]:
                     })
         candidates.sort(key=lambda x: x["mtime"], reverse=True)
         return candidates
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.error(f"load_tb_snapshots error: {e}")
         return []
 
 def restore_tb_snapshot(session_id: str) -> tuple:

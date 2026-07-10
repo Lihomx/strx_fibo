@@ -474,7 +474,8 @@ def pull_tb_snapshots() -> Tuple[bool, str]:
             basename = os.path.basename(name)
             local_path = os.path.join(loc.F_TB_SNAPSHOT_DIR, basename)
             if not os.path.exists(local_path):
-                data = _download_path(name)
+                full_cloud_path = name if name.startswith("tb_snapshots/") else f"tb_snapshots/{name}"
+                data = _download_path(full_cloud_path)
                 if data:
                     loc._save(local_path, data)
                     count += 1
