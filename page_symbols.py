@@ -436,75 +436,128 @@ def render():
         if not groups:
             st.info("💡 尚未创建任何自定义分组。请在上方输入名称并点击「创建分组」。")
         else:
+            from collections import defaultdict
+            
+            # 按前缀进行分组归类 (e.g. "🇨🇳 A股 - 银行业" -> "🇨🇳 A股" : "银行业")
+            cat_groups = defaultdict(list)
             for g in groups:
-                g_id = g["id"]
-                g_name = g["name"]
-                g_tickers = g.get("tickers", [])
-                
-                with st.expander(f"📁 {g_name} (共 {len(g_tickers)} 个品种)"):
-                    # 分组设置选项：重命名、删除
-                    col_rename_inp, col_rename_btn, col_del_btn = st.columns([3, 1, 1])
-                    with col_rename_inp:
-                        rename_val = st.text_input("重命名分组", value=g_name, key=f"grp_rename_val_{g_id}").strip()
-                    with col_rename_btn:
-                        st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-                        if st.button("💾 保存", key=f"grp_rename_btn_{g_id}", use_container_width=True):
-                            if rename_val and rename_val != g_name:
-                                if storage.rename_symbol_group(g_id, rename_val):
-                                    st.success("分组名称重命名成功")
-                                    time.sleep(0.5)
-                                    st.rerun()
-                                else:
-                                    st.error("名称已存在")
-                    with col_del_btn:
-                        st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-                        if st.button("🗑️ 删除分组", key=f"grp_del_btn_{g_id}", type="secondary", use_container_width=True):
-                            storage.delete_symbol_group(g_id)
-                            st.success(f"已删除分组 [{g_name}]")
-                            time.sleep(0.5)
-                            st.rerun()
-                            
-                    # 直接导入品种到该分组中
-                    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
-                    st.markdown("**📥 导入品种直接加入当前分组**")
-                    uploaded_grp_file = st.file_uploader(f"选择文件导入到 [{g_name}]", type=["csv", "xls", "xlsx"], key=f"grp_uploader_{g_id}")
-                    if uploaded_grp_file is not None:
-                        parsed_grp = _parse_uploaded_file(uploaded_grp_file)
-                        if parsed_grp:
-                            st.success(f"已识别 {len(parsed_grp)} 个品种")
-                            if st.button(f"🚀 导入并加入 [{g_name}]", key=f"grp_import_confirm_{g_id}", type="primary"):
-                                added_cnt = 0
-                                tickers_to_add = []
-                                for item in parsed_grp:
-                                    # 自动加入品种库
-                                    storage.add_symbol(item["ticker"], item["name"], source="csv_import")
-                                    tickers_to_add.append(item["ticker"])
-                                    added_cnt += 1
-                                storage.add_tickers_to_group(g_id, tickers_to_add)
-                                st.success(f"✅ 成功导入并添加 {added_cnt} 个品种到 [{g_name}]！")
-                                time.sleep(1)
+                parts = g["name"].split(" - ", 1)
+                if len(parts) == 2:
+                    cat = parts[0].strip()
+                else:
+                    cat = "📌 其它/自定义"
+                cat_groups[cat].append(g)
+            
+            st.markdown("**📋 按分类查看/管理分组：**")
+            
+            # 获取当前选中的编辑分组 ID
+            active_id = st.session_state.get("active_edit_group_id")
+            
+            # 渲染各个大分类折叠栏
+            for cat, cat_grp_list in sorted(cat_groups.items(), key=lambda x: (x[0] == "📌 其它/自定义", x[0])):
+                n_grp = len(cat_grp_list)
+                # 默认折叠，标题栏更清晰
+                with st.expander(f"📁 {cat} （共 {n_grp} 个分组）"):
+                    # 使用 3 列布局
+                    _cols = st.columns(3)
+                    for idx, g in enumerate(sorted(cat_grp_list, key=lambda x: x["name"])):
+                        g_id = g["id"]
+                        g_name = g["name"]
+                        short_name = g_name.split(" - ", 1)[-1] if " - " in g_name else g_name
+                        g_tickers = g.get("tickers", [])
+                        
+                        is_active = (active_id == g_id)
+                        btn_label = f"🎯 {short_name} ({len(g_tickers)})"
+                        
+                        with _cols[idx % 3]:
+                            if st.button(
+                                btn_label, 
+                                key=f"sel_grp_btn_{g_id}", 
+                                type="primary" if is_active else "secondary",
+                                use_container_width=True
+                            ):
+                                st.session_state["active_edit_group_id"] = g_id
                                 st.rerun()
-                            
-                    st.markdown("---")
-                    
-                    # 展示组内品种明细与移除功能
-                    if not g_tickers:
-                        st.caption("📂 当前分组为空。请在「品种库明细」中选择品种并分配至该组。")
-                    else:
-                        st.markdown("**组内品种列表**")
-                        # 渲染组内品种表格，带移除按钮
-                        sub_cols = st.columns(4)
-                        for idx, tk in enumerate(g_tickers):
-                            with sub_cols[idx % 4]:
-                                st.markdown(
-                                    f'<div style="background:rgba(255,255,255,0.03);padding:6px;border-radius:6px;'
-                                    f'margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">'
-                                    f'<span style="font-family:monospace;font-size:12px">{tk}</span>'
-                                    f'</div>', 
-                                    unsafe_allow_html=True
-                                )
-                                if st.button("❌ 移除", key=f"grp_rm_{g_id}_{tk}_{idx}", help=f"从该组移除 {tk}"):
-                                    storage.remove_tickers_from_group(g_id, [tk])
-                                    st.success(f"已从组 [{g_name}] 移除 {tk}")
-                                    time.sleep(0.5)
-                                    st.rerun()
+            
+            st.markdown("<hr style='margin:20px 0; border-color:rgba(255,255,255,0.1)'>", unsafe_allow_html=True)
+            
+            # 3. 选定分组的具体编辑面板
+            active_grp = next((g for g in groups if g["id"] == active_id), None) if active_id else None
+            
+            if not active_grp:
+                st.info("💡 请在上方分类折叠栏中展开并点击任一子分组进行编辑与管理。")
+            else:
+                g_id = active_grp["id"]
+                g_name = active_grp["name"]
+                g_tickers = active_grp.get("tickers", [])
+                
+                st.markdown(f'<div class="glass-card" style="border: 1px solid rgba(59,130,246,0.3)">', unsafe_allow_html=True)
+                st.markdown(f"#### ⚙️ 正在配置分组: `{g_name}`")
+                
+                # 重命名与删除
+                col_ren_inp, col_ren_btn, col_del_btn = st.columns([3, 1, 1])
+                with col_ren_inp:
+                    rename_val = st.text_input("修改分组名称", value=g_name, key=f"grp_active_rename_val").strip()
+                with col_ren_btn:
+                    st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+                    if st.button("💾 保存修改", key=f"grp_active_save_btn", type="primary", use_container_width=True):
+                        if rename_val and rename_val != g_name:
+                            if storage.rename_symbol_group(g_id, rename_val):
+                                st.success("重命名成功！")
+                                time.sleep(0.5)
+                                st.rerun()
+                            else:
+                                st.error("重命名失败，名称可能已存在")
+                with col_del_btn:
+                    st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+                    if st.button("🗑️ 删除该组", key=f"grp_active_del_btn", type="secondary", use_container_width=True):
+                        storage.delete_symbol_group(g_id)
+                        st.session_state.pop("active_edit_group_id", None)
+                        st.success(f"已成功删除分组 [{g_name}]")
+                        time.sleep(0.5)
+                        st.rerun()
+                
+                # 直接导入品种
+                st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+                st.markdown("**📥 批量导入品种直接追加至此分组**")
+                uploaded_grp_file = st.file_uploader("选择 CSV / Excel 文件", type=["csv", "xls", "xlsx"], key=f"grp_active_uploader")
+                if uploaded_grp_file is not None:
+                    parsed_grp = _parse_uploaded_file(uploaded_grp_file)
+                    if parsed_grp:
+                        st.success(f"已识别 {len(parsed_grp)} 个品种")
+                        if st.button(f"🚀 确认导入这 {len(parsed_grp)} 个品种", key=f"grp_active_import_confirm", type="primary", use_container_width=True):
+                            added_cnt = 0
+                            tickers_to_add = []
+                            for item in parsed_grp:
+                                storage.add_symbol(item["ticker"], item["name"], source="csv_import")
+                                tickers_to_add.append(item["ticker"])
+                                added_cnt += 1
+                            storage.add_tickers_to_group(g_id, tickers_to_add)
+                            st.success(f"✅ 成功导入并添加 {added_cnt} 个品种！")
+                            time.sleep(1)
+                            st.rerun()
+                
+                st.markdown("---")
+                
+                # 品种明细与移出功能
+                st.markdown(f"**组内品种明细 (共 {len(g_tickers)} 个品种)**")
+                if not g_tickers:
+                    st.caption("📂 当前分组为空。请在「品种库明细」中选择品种并分配至该组。")
+                else:
+                    sub_cols = st.columns(4)
+                    for idx, tk in enumerate(g_tickers):
+                        with sub_cols[idx % 4]:
+                            st.markdown(
+                                f'<div style="background:rgba(255,255,255,0.03);padding:6px;border-radius:6px;'
+                                f'margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">'
+                                f'<span style="font-family:monospace;font-size:12px">{tk}</span>'
+                                f'</div>', 
+                                unsafe_allow_html=True
+                            )
+                            if st.button("❌ 移除", key=f"grp_active_rm_{tk}_{idx}", help=f"从该组移除 {tk}"):
+                                storage.remove_tickers_from_group(g_id, [tk])
+                                st.success(f"已从组 [{g_name}] 移除 {tk}")
+                                time.sleep(0.5)
+                                st.rerun()
+                                
+                st.markdown('</div>', unsafe_allow_html=True)
