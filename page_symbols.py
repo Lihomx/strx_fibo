@@ -515,6 +515,7 @@ def render():
                 g_id = active_grp["id"]
                 g_name = active_grp["name"]
                 g_tickers = active_grp.get("tickers", [])
+                g_tickers_set = set(g_tickers)
                 
                 st.markdown(f'<div class="glass-card" style="border: 1px solid rgba(59,130,246,0.3)">', unsafe_allow_html=True)
                 st.markdown(f"#### ⚙️ 正在配置分组: `{g_name}`")
@@ -542,41 +543,144 @@ def render():
                         time.sleep(0.5)
                         st.rerun()
                 
-                # 直接导入品种
                 st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
-                st.markdown("**📥 批量导入品种直接追加至此分组**")
-                uploaded_grp_file = st.file_uploader("选择 CSV / Excel 文件", type=["csv", "xls", "xlsx"], key=f"grp_active_uploader")
-                if uploaded_grp_file is not None:
-                    parsed_grp = _parse_uploaded_file(uploaded_grp_file)
-                    if parsed_grp:
-                        st.success(f"已识别 {len(parsed_grp)} 个品种")
-                        if st.button(f"🚀 确认导入这 {len(parsed_grp)} 个品种", key=f"grp_active_import_confirm", type="primary", use_container_width=True):
-                            added_cnt = 0
-                            tickers_to_add = []
-                            for item in parsed_grp:
-                                storage.add_symbol(item["ticker"], item["name"], source="csv_import")
-                                tickers_to_add.append(item["ticker"])
-                                added_cnt += 1
-                            storage.add_tickers_to_group(g_id, tickers_to_add)
-                            st.success(f"✅ 成功导入并添加 {added_cnt} 个品种！")
-                            time.sleep(1)
+                st.markdown("---")
+                st.markdown("**➕ 向分组添加品种**")
+
+                # ── 方式一：手动输入代码直接添加 ──
+                with st.expander("✏️ 手动输入代码添加", expanded=True):
+                    col_tk_in, col_nm_in, col_add_btn = st.columns([2, 2, 1])
+                    with col_tk_in:
+                        manual_tk = st.text_input(
+                            "品种代码", placeholder="如: AAPL, 600519.SS, BTC-USD",
+                            key="grp_manual_tk_input"
+                        ).strip().upper()
+                    with col_nm_in:
+                        manual_nm = st.text_input(
+                            "品种名称（可选）", placeholder="如: 苹果, 贵州茅台",
+                            key="grp_manual_nm_input"
+                        ).strip()
+                    with col_add_btn:
+                        st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+                        if st.button("➕ 添加", key="grp_manual_add_btn", type="primary", use_container_width=True):
+                            if not manual_tk:
+                                st.error("请输入品种代码")
+                            elif manual_tk in g_tickers_set:
+                                st.warning(f"{manual_tk} 已在该分组中")
+                            else:
+                                # 同时加入品种库（若不存在）和分组
+                                storage.add_symbol(manual_tk, manual_nm or manual_tk, source="manual")
+                                storage.add_tickers_to_group(g_id, [manual_tk])
+                                st.success(f"✅ 已将 {manual_tk} 添加到分组 [{g_name}]")
+                                time.sleep(0.5)
+                                st.rerun()
+
+                    # 支持逗号/换行批量输入
+                    batch_input = st.text_area(
+                        "批量输入代码（逗号或换行分隔）",
+                        placeholder="例：AAPL, TSLA, NVDA\n或每行一个",
+                        key="grp_batch_tk_input",
+                        height=80
+                    )
+                    if st.button("📥 批量添加以上代码", key="grp_batch_add_btn", use_container_width=True):
+                        raw_list = re.split(r"[,\n]+", batch_input)
+                        to_add = [t.strip().upper() for t in raw_list if t.strip()]
+                        new_ones = [t for t in to_add if t not in g_tickers_set]
+                        if not new_ones:
+                            st.warning("所有输入代码均已在分组中，无新增")
+                        else:
+                            for tk_item in new_ones:
+                                storage.add_symbol(tk_item, tk_item, source="manual")
+                            storage.add_tickers_to_group(g_id, new_ones)
+                            st.success(f"✅ 已添加 {len(new_ones)} 个品种到 [{g_name}]（跳过重复 {len(to_add)-len(new_ones)} 个）")
+                            time.sleep(0.5)
                             st.rerun()
-                
+
+                # ── 方式二：从现有品种库搜索并选择 ──
+                with st.expander("🔎 从品种库中搜索选择"):
+                    lib_kw = st.text_input(
+                        "搜索品种库", placeholder="输入代码或名称关键字...",
+                        key="grp_lib_search_kw"
+                    ).strip().upper()
+                    # 过滤品种库，排除已在分组中的
+                    lib_filtered = [
+                        s for s in symbols
+                        if s["ticker"] not in g_tickers_set
+                        and (not lib_kw or lib_kw in s["ticker"].upper() or lib_kw in s["name"].upper())
+                    ][:200]  # 最多展示200个避免过慢
+                    if not lib_filtered:
+                        st.caption("所有品种库品种已在该分组中，或搜索结果为空。")
+                    else:
+                        options_map = {f"{s['ticker']}  {s['name']}": s["ticker"] for s in lib_filtered}
+                        selected_labels = st.multiselect(
+                            f"选择品种（共 {len(lib_filtered)} 个可选）",
+                            list(options_map.keys()),
+                            key="grp_lib_multisel",
+                            placeholder="从下拉列表选择或输入代码搜索..."
+                        )
+                        if selected_labels:
+                            chosen_tickers = [options_map[lb] for lb in selected_labels]
+                            if st.button(
+                                f"📥 确认将以上 {len(chosen_tickers)} 个品种添加到分组",
+                                key="grp_lib_confirm_add_btn",
+                                type="primary",
+                                use_container_width=True
+                            ):
+                                storage.add_tickers_to_group(g_id, chosen_tickers)
+                                st.success(f"✅ 已将 {len(chosen_tickers)} 个品种添加到 [{g_name}]")
+                                time.sleep(0.5)
+                                st.rerun()
+
+                # ── 方式三：CSV 批量导入 ──
+                with st.expander("📥 上传 CSV / Excel 批量导入"):
+                    uploaded_grp_file = st.file_uploader("选择 CSV / Excel 文件", type=["csv", "xls", "xlsx"], key=f"grp_active_uploader")
+                    if uploaded_grp_file is not None:
+                        parsed_grp = _parse_uploaded_file(uploaded_grp_file)
+                        if parsed_grp:
+                            st.success(f"已识别 {len(parsed_grp)} 个品种")
+                            if st.button(f"🚀 确认导入这 {len(parsed_grp)} 个品种", key=f"grp_active_import_confirm", type="primary", use_container_width=True):
+                                added_cnt = 0
+                                tickers_to_add = []
+                                for item in parsed_grp:
+                                    storage.add_symbol(item["ticker"], item["name"], source="csv_import")
+                                    tickers_to_add.append(item["ticker"])
+                                    added_cnt += 1
+                                storage.add_tickers_to_group(g_id, tickers_to_add)
+                                st.success(f"✅ 成功导入并添加 {added_cnt} 个品种！")
+                                time.sleep(1)
+                                st.rerun()
+
                 st.markdown("---")
                 
                 # 品种明细与移出功能
                 st.markdown(f"**组内品种明细 (共 {len(g_tickers)} 个品种)**")
                 if not g_tickers:
-                    st.caption("📂 当前分组为空。请在「品种库明细」中选择品种并分配至该组。")
+                    st.caption("📂 当前分组为空。请用上方方式添加品种。")
                 else:
+                    # 搜索过滤组内品种
+                    grp_kw = st.text_input("🔍 搜索组内品种", placeholder="输入代码关键字...", key="grp_inner_search").strip().upper()
+                    visible_tickers = [tk for tk in g_tickers if not grp_kw or grp_kw in tk] if grp_kw else g_tickers
+
+                    # 批量移出
+                    col_rmall, _ = st.columns([2, 4])
+                    with col_rmall:
+                        if st.button(f"🗑️ 清空整个分组 ({len(g_tickers)} 个)", key="grp_clear_all_btn", type="secondary", use_container_width=True):
+                            storage.remove_tickers_from_group(g_id, g_tickers)
+                            st.success(f"已清空分组 [{g_name}] 中的所有品种")
+                            time.sleep(0.5)
+                            st.rerun()
+
                     sub_cols = st.columns(4)
-                    for idx, tk in enumerate(g_tickers):
+                    for idx, tk in enumerate(visible_tickers):
+                        sym_info = next((s for s in symbols if s["ticker"] == tk), None)
+                        nm_hint = sym_info["name"] if sym_info else tk
                         with sub_cols[idx % 4]:
                             st.markdown(
                                 f'<div style="background:rgba(255,255,255,0.03);padding:6px;border-radius:6px;'
-                                f'margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">'
-                                f'<span style="font-family:monospace;font-size:12px">{tk}</span>'
-                                f'</div>', 
+                                f'margin-bottom:6px;">'
+                                f'<span style="font-family:monospace;font-size:12px;font-weight:600">{tk}</span><br>'
+                                f'<span style="font-size:10px;color:#9ca3af">{nm_hint}</span>'
+                                f'</div>',
                                 unsafe_allow_html=True
                             )
                             if st.button("❌ 移除", key=f"grp_active_rm_{tk}_{idx}", help=f"从该组移除 {tk}"):
