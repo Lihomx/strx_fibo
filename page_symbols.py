@@ -287,34 +287,89 @@ def render():
                         st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
             
-        # 2. 批量操作工具条
+        # 2. 搜索与筛选区
+        st.markdown("### 🔍 搜索与筛选")
+        col_grp_filter, col_search, col_sort, col_page_size = st.columns([2.5, 2.5, 1.8, 1.2])
+        
+        with col_grp_filter:
+            grp_filter_options = ["📋 全部品种库"] + [g["name"] for g in groups]
+            grp_filter_val = st.selectbox("按分组筛选", grp_filter_options, key="sym_grp_filter_sel")
+            
+        with col_search:
+            kw = st.text_input("🔍 搜索关键字", placeholder="输入代码或名称关键字...", key="sym_search_kw").strip().upper()
+            
+        with col_sort:
+            sort_mode = st.selectbox("排序规则", ["按添加时间倒序", "按代码 A-Z", "按来源"], key="sym_sort_sel")
+            
+        with col_page_size:
+            page_size = st.selectbox("单页显示", [20, 50, 100, 200], key="sym_ps_sel")
+            
+        # 根据分组筛选
+        filtered = symbols
+        current_filter_grp_id = None
+        current_filter_grp_name = None
+        if grp_filter_val != "📋 全部品种库":
+            target_filter_grp = next((g for g in groups if g["name"] == grp_filter_val), None)
+            if target_filter_grp:
+                current_filter_grp_id = target_filter_grp["id"]
+                current_filter_grp_name = target_filter_grp["name"]
+                grp_tickers = set(target_filter_grp.get("tickers", []))
+                filtered = [s for s in filtered if s["ticker"] in grp_tickers]
+                
+        # 根据关键字筛选
+        if kw:
+            filtered = [s for s in filtered if kw in s["ticker"].upper() or kw in s["name"].upper()]
+            
+        # 排序
+        if sort_mode == "按代码 A-Z":
+            filtered = sorted(filtered, key=lambda x: x["ticker"])
+        elif sort_mode == "按来源":
+            filtered = sorted(filtered, key=lambda x: x.get("source", ""))
+        else:
+            filtered = list(reversed(filtered))
+            
+        # 3. 批量操作工具条
         st.markdown("### 🛠️ 批量操作区")
         selected_set = st.session_state["symbols_selected"]
         
-        col_sel_stat, col_sel_act, col_sel_del = st.columns([2, 3, 2])
+        col_sel_stat, col_sel_act, col_sel_del = st.columns([1.5, 3, 2.5])
         with col_sel_stat:
-            st.markdown(f"已选择 **{len(selected_set)}** 个品种")
+            st.markdown(f"已勾选 **{len(selected_set)}** 个品种")
             
         with col_sel_act:
-            if groups:
-                grp_names = {g["name"]: g["id"] for g in groups}
-                target_grp_name = st.selectbox("添加到分组", ["— 选择分组 —"] + list(grp_names.keys()), key="sym_assign_grp_sel")
-                if target_grp_name != "— 选择分组 —":
-                    target_id = grp_names[target_grp_name]
-                    if st.button("📥 确认分配到该组", key="sym_assign_confirm_btn", use_container_width=True):
-                        if not selected_set:
-                            st.warning("请先在下方列表中勾选品种")
-                        else:
-                            storage.add_tickers_to_group(target_id, list(selected_set))
-                            st.success(f"✅ 已成功分配 {len(selected_set)} 个品种到分组 [{target_grp_name}]")
-                            st.session_state["symbols_selected"] = set()
-                            time.sleep(1)
-                            st.rerun()
+            if current_filter_grp_id:
+                # 处于特定分组视图，批量操作是“批量移出当前组”
+                if st.button("❌ 从当前分组批量移出", key="sym_bulk_remove_grp_btn", type="secondary", use_container_width=True):
+                    if not selected_set:
+                        st.warning("请先勾选品种")
+                    else:
+                        storage.remove_tickers_from_group(current_filter_grp_id, list(selected_set))
+                        st.success(f"✅ 已成功从分组 [{current_filter_grp_name}] 中移出 {len(selected_set)} 个品种")
+                        st.session_state["symbols_selected"] = set()
+                        time.sleep(1)
+                        st.rerun()
             else:
-                st.info("💡 请先在「分组管理」中创建分组")
-                
+                # 处于“全部品种库”视图，批量分配到分组
+                if groups:
+                    grp_names = {g["name"]: g["id"] for g in groups}
+                    target_grp_name = st.selectbox("添加到分组", ["— 选择分组 —"] + list(grp_names.keys()), key="sym_assign_grp_sel")
+                    if target_grp_name != "— 选择分组 —":
+                        target_id = grp_names[target_grp_name]
+                        if st.button("📥 确认分配到该组", key="sym_assign_confirm_btn", use_container_width=True):
+                            if not selected_set:
+                                st.warning("请先在下方列表中勾选品种")
+                            else:
+                                storage.add_tickers_to_group(target_id, list(selected_set))
+                                st.success(f"✅ 已成功分配 {len(selected_set)} 个品种到分组 [{target_grp_name}]")
+                                st.session_state["symbols_selected"] = set()
+                                time.sleep(1)
+                                st.rerun()
+                else:
+                    st.info("💡 请先在「分组管理」中创建分组")
+                    
         with col_sel_del:
-            if st.button("🗑️ 批量删除选中品种", key="sym_bulk_del_btn", type="secondary", use_container_width=True):
+            # 始终允许从品种库中彻底删除品种
+            if st.button("🗑️ 从品种库彻底删除选中", key="sym_bulk_del_btn", type="secondary", use_container_width=True):
                 if not selected_set:
                     st.warning("请先勾选品种")
                 else:
@@ -327,28 +382,6 @@ def render():
                     
         st.markdown("---")
         
-        # 3. 搜索与分页展示
-        col_search, col_sort, col_page_size = st.columns([4, 2, 2])
-        with col_search:
-            kw = st.text_input("🔍 搜索品种", placeholder="输入代码或名称关键字...", key="sym_search_kw").strip().upper()
-        with col_sort:
-            sort_mode = st.selectbox("排序规则", ["按添加时间倒序", "按代码 A-Z", "按来源"], key="sym_sort_sel")
-        with col_page_size:
-            page_size = st.selectbox("单页显示", [20, 50, 100, 200], key="sym_ps_sel")
-            
-        # 过滤
-        filtered = symbols
-        if kw:
-            filtered = [s for s in filtered if kw in s["ticker"].upper() or kw in s["name"].upper()]
-            
-        # 排序
-        if sort_mode == "按代码 A-Z":
-            filtered = sorted(filtered, key=lambda x: x["ticker"])
-        elif sort_mode == "按来源":
-            filtered = sorted(filtered, key=lambda x: x.get("source", ""))
-        else:
-            filtered = list(reversed(filtered))
-            
         total_f = len(filtered)
         n_pages = max(1, (total_f + page_size - 1) // page_size)
         
@@ -372,7 +405,7 @@ def render():
                 
         # 4. 品种列表渲染
         if not page_items:
-            st.info("💡 暂无品种记录，请手动添加或上传文件导入。")
+            st.info("💡 暂无匹配的品种记录。")
         else:
             # 列表布局
             st.markdown("""
@@ -422,13 +455,24 @@ def render():
                 with col_time:
                     st.markdown(f'<span class="hide-mobile" style="color:#9ca3af;font-size:11px">{added_at}</span>', unsafe_allow_html=True)
                 with col_act:
-                    if st.button("🗑️", key=f"sym_del_{tk}_{i}", help=f"从库中删除 {nm}"):
-                        storage.remove_symbol(tk)
-                        selected_set.discard(tk)
-                        st.session_state["symbols_selected"] = selected_set
-                        st.success(f"已删除 {nm}")
-                        time.sleep(0.5)
-                        st.rerun()
+                    if current_filter_grp_id:
+                        # 提供 ❌ 移出该分组
+                        if st.button("❌", key=f"sym_rm_grp_{tk}_{i}", help=f"从分组 [{current_filter_grp_name}] 移出 {nm}"):
+                            storage.remove_tickers_from_group(current_filter_grp_id, [tk])
+                            selected_set.discard(tk)
+                            st.session_state["symbols_selected"] = selected_set
+                            st.success(f"已移出分组: {nm}")
+                            time.sleep(0.5)
+                            st.rerun()
+                    else:
+                        # 提供 🗑️ 彻底删除
+                        if st.button("🗑️", key=f"sym_del_{tk}_{i}", help=f"从品种库彻底删除 {nm}"):
+                            storage.remove_symbol(tk)
+                            selected_set.discard(tk)
+                            st.session_state["symbols_selected"] = selected_set
+                            st.success(f"已删除 {nm}")
+                            time.sleep(0.5)
+                            st.rerun()
                         
                 st.markdown('</div>', unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
