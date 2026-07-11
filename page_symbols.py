@@ -22,63 +22,62 @@ def _inject_symbols_css():
     <style>
     /* 玻璃化容器 */
     .glass-card {
-        background: rgba(255, 255, 255, 0.05);
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 12px;
-        padding: 18px;
-        margin-bottom: 16px;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+        transition: all 0.3s ease;
     }
     
-    /* 列表表头 */
-    .symbols-hdr {
-        display: grid;
-        grid-template-columns: 50px 140px 1fr 100px 140px 80px;
-        gap: 8px;
-        padding: 8px 12px;
-        background: rgba(255, 255, 255, 0.08);
-        border-bottom: 2px solid rgba(255, 255, 255, 0.15);
+    .glass-card:hover {
+        border: 1px solid rgba(59, 130, 246, 0.2);
+        box-shadow: 0 8px 32px 0 rgba(59, 130, 246, 0.08);
+    }
+    
+    /* 列表表头容器 */
+    .symbols-hdr-container {
+        background: rgba(255, 255, 255, 0.04) !important;
+        border-bottom: 2px solid rgba(255, 255, 255, 0.1) !important;
         border-radius: 8px 8px 0 0;
-        font-size: 13px;
-        font-weight: 600;
-        align-items: center;
+        padding: 10px 16px;
+        margin-bottom: 6px;
     }
     
     .symbols-body {
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-top: none;
         border-radius: 0 0 8px 8px;
         margin-bottom: 16px;
         overflow: hidden;
     }
     
-    .symbols-row {
-        display: grid;
-        grid-template-columns: 50px 140px 1fr 100px 140px 80px;
-        gap: 8px;
-        padding: 6px 12px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        font-size: 13px;
-        align-items: center;
+    .symbols-row-card {
+        transition: all 0.2s ease;
+        border: 1px solid rgba(255, 255, 255, 0.03);
     }
     
-    .symbols-row:hover {
-        background: rgba(255, 255, 255, 0.03);
+    .symbols-row-card:hover {
+        background: rgba(59, 130, 246, 0.05) !important;
+        border: 1px solid rgba(59, 130, 246, 0.2) !important;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
     
     /* 移动端响应式 */
     @media (max-width: 768px) {
-        .symbols-hdr {
-            grid-template-columns: 40px 110px 1fr 80px;
-            font-size: 11px;
-        }
-        .symbols-hdr .hide-mobile, .symbols-row .hide-mobile {
+        .symbols-hdr-container {
             display: none !important;
         }
-        .symbols-row {
-            grid-template-columns: 40px 110px 1fr 80px;
-            font-size: 11px;
+        .hide-mobile {
+            display: none !important;
+        }
+        .symbols-row-card {
+            padding: 10px !important;
+            margin-bottom: 10px !important;
+            border-radius: 8px !important;
+            border: 1px solid rgba(255, 255, 255, 0.08) !important;
         }
     }
     </style>
@@ -407,19 +406,24 @@ def render():
         if not page_items:
             st.info("💡 暂无匹配的品种记录。")
         else:
-            # 列表布局
-            st.markdown("""
-            <div class="symbols-hdr">
-              <span>选择</span>
-              <span>代码</span>
-              <span>名称</span>
-              <span class="hide-mobile">来源</span>
-              <span class="hide-mobile">添加时间</span>
-              <span>操作</span>
-            </div>
-            <div class="symbols-body">
-            """, unsafe_allow_html=True)
+            # 列表布局 (用 st.columns 渲染表头，完美对齐)
+            st.markdown('<div class="symbols-hdr-container">', unsafe_allow_html=True)
+            col_hdr_chk, col_hdr_tk, col_hdr_nm, col_hdr_src, col_hdr_time, col_hdr_act = st.columns([50, 140, 300, 100, 140, 80], gap="small")
+            with col_hdr_chk:
+                st.markdown("**选择**")
+            with col_hdr_tk:
+                st.markdown("**代码**")
+            with col_hdr_nm:
+                st.markdown("**名称**")
+            with col_hdr_src:
+                st.markdown('<span class="hide-mobile">**来源**</span>', unsafe_allow_html=True)
+            with col_hdr_time:
+                st.markdown('<span class="hide-mobile">**添加时间**</span>', unsafe_allow_html=True)
+            with col_hdr_act:
+                st.markdown("**操作**")
+            st.markdown("</div>", unsafe_allow_html=True)
             
+            st.markdown('<div class="symbols-body">', unsafe_allow_html=True)
             for i, item in enumerate(page_items):
                 tk = item["ticker"]
                 nm = item["name"]
@@ -428,12 +432,11 @@ def render():
                 is_checked = tk in selected_set
                 
                 # 区分奇偶行背景
-                row_bg = "background:rgba(255,255,255,0.02)" if i % 2 == 0 else "background:transparent"
+                row_bg = "background:rgba(255,255,255,0.01)" if i % 2 == 0 else "background:transparent"
                 if is_checked:
-                    row_bg = "background:rgba(59,130,246,0.12)"
+                    row_bg = "background:rgba(59,130,246,0.12); border:1px solid rgba(59,130,246,0.2)"
                     
-                st.markdown(f'<div class="symbols-row" style="{row_bg}">', unsafe_allow_html=True)
-                
+                st.markdown(f'<div class="symbols-row-card" style="{row_bg}; padding: 6px 12px; border-radius: 8px; margin-bottom: 4px;">', unsafe_allow_html=True)
                 col_chk, col_tk, col_nm, col_src, col_time, col_act = st.columns([50, 140, 300, 100, 140, 80], gap="small")
                 
                 with col_chk:
@@ -719,18 +722,13 @@ def render():
                         sym_info = next((s for s in symbols if s["ticker"] == tk), None)
                         nm_hint = sym_info["name"] if sym_info else tk
                         with sub_cols[idx % 4]:
-                            st.markdown(
-                                f'<div style="background:rgba(255,255,255,0.03);padding:6px;border-radius:6px;'
-                                f'margin-bottom:6px;">'
-                                f'<span style="font-family:monospace;font-size:12px;font-weight:600">{tk}</span><br>'
-                                f'<span style="font-size:10px;color:#9ca3af">{nm_hint}</span>'
-                                f'</div>',
-                                unsafe_allow_html=True
-                            )
-                            if st.button("❌ 移除", key=f"grp_active_rm_{tk}_{idx}", help=f"从该组移除 {tk}"):
-                                storage.remove_tickers_from_group(g_id, [tk])
-                                st.success(f"已从组 [{g_name}] 移除 {tk}")
-                                time.sleep(0.5)
-                                st.rerun()
+                            with st.container(border=True):
+                                st.markdown(f"**`{tk}`**")
+                                st.markdown(f"<div style='font-size:11px;color:#9ca3af;margin-bottom:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' title='{nm_hint}'>{nm_hint}</div>", unsafe_allow_html=True)
+                                if st.button("❌ 移除", key=f"grp_active_rm_{tk}_{idx}", type="secondary", use_container_width=True, help=f"从该组移除 {tk}"):
+                                    storage.remove_tickers_from_group(g_id, [tk])
+                                    st.success(f"已从组 [{g_name}] 移除 {tk}")
+                                    time.sleep(0.5)
+                                    st.rerun()
                                 
                 st.markdown('</div>', unsafe_allow_html=True)
