@@ -132,7 +132,9 @@ def load_config() -> Dict:
 
 
 def save_config(cfg: Dict) -> bool:
-    return _save(F_CFG, cfg)
+    current = _load(F_CFG, {})
+    current.update(cfg)
+    return _save(F_CFG, current)
 
 
 # ── 扫描会话 ─────────────────────────────────────────────────────────
