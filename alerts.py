@@ -62,6 +62,36 @@ def build_message(ticker: str, name: str, tf: str,
     )
 
 
+def build_message_ema_pivot(ticker: str, name: str, tf: str,
+                            price: float, ema: float, pivot: float,
+                            label: str, template: str = None) -> str:
+    from assets import tv_url  # 使用 assets 版本，支持 cn 域名 + 时间框架
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    if template:
+        res = template
+        res = res.replace("{label}", str(label))
+        res = res.replace("{name}", str(name))
+        res = res.replace("{ticker}", str(ticker))
+        res = res.replace("{tf}", str(tf))
+        res = res.replace("{price}", f"{price:,.4f}")
+        res = res.replace("{ema}", f"{ema:,.4f}")
+        res = res.replace("{pivot}", f"{pivot:,.4f}")
+        res = res.replace("{url}", tv_url(ticker, tf))
+        res = res.replace("{time}", now)
+        return res
+    return (
+        f"🚀 EMA20 + Daily Pivot 信号  {label}\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"🏷  {name} ({ticker})\n"
+        f"📅 框架: {tf}\n"
+        f"💰 价格: {price:,.4f}\n"
+        f"📈 EMA20: {ema:,.4f}\n"
+        f"🎯 Pivot: {pivot:,.4f}\n"
+        f"🔗 {tv_url(ticker, tf)}\n"
+        f"🕐 {now}"
+    )
+
+
 # ── DingTalk ────────────────────────────────────────────────────────
 
 def send_dingtalk(text: str, cfg: Dict) -> Tuple[bool, str]:
@@ -134,6 +164,33 @@ def dispatch_alerts(ticker: str, name: str, timeframe: str,
 
     tmpl = cfg.get("alert_template", "").strip()
     text = build_message(ticker, name, timeframe, fibo, conf, template=tmpl if tmpl else None)
+    sent = False
+
+    if cfg.get("dingtalk_enabled"):
+        ok, msg = send_dingtalk(text, cfg)
+        storage.log_alert(ticker, name, timeframe, "dingtalk",
+                          "ok" if ok else "fail", msg)
+        sent = sent or ok
+
+    if cfg.get("telegram_enabled"):
+        ok, msg = send_telegram(text, cfg)
+        storage.log_alert(ticker, name, timeframe, "telegram",
+                          "ok" if ok else "fail", msg)
+        sent = sent or ok
+
+    if sent:
+        _mark(ticker, timeframe)
+
+
+def dispatch_alerts_ema_pivot(ticker: str, name: str, timeframe: str,
+                              price: float, ema: float, pivot: float,
+                              label: str, cfg: Dict) -> None:
+    cooldown = int(cfg.get("alert_cooldown", 240))
+    if _is_cooldown(ticker, timeframe, cooldown):
+        return
+
+    tmpl = cfg.get("alert_template_ema_pivot", "").strip()
+    text = build_message_ema_pivot(ticker, name, timeframe, price, ema, pivot, label, template=tmpl if tmpl else None)
     sent = False
 
     if cfg.get("dingtalk_enabled"):

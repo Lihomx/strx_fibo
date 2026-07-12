@@ -846,3 +846,74 @@ def run_full_scan(
         "asset_count":  len(assets),
         "timeframes":   tf_names,
     }, None
+
+
+def scan_ema_pivot(ticker: str, cfg: Dict) -> Optional[Dict]:
+    """
+    计算 EMA20 + Daily Pivot Point 多头条件 (15分钟)
+    返回: {
+        "is_signal": bool,
+        "price": float,
+        "ema": float,
+        "pivot": float,
+        "triggered_now": bool
+    } 或 None (计算失败时)
+    """
+    try:
+        # 1. 获取 15m 级别的数据，最近 5 天以确保有足够的 Bar 计算 EMA20
+        df_15m = fetch_data(ticker, interval="15m", period="5d", cfg=cfg)
+        if df_15m is None or len(df_15m) < 21:
+            logger.debug(f"scan_ema_pivot {ticker}: 15m data not enough or empty")
+            return None
+            
+        # 2. 获取 1d 级别的数据，最近 5 天计算昨日 Daily Pivot
+        df_1d = fetch_data(ticker, interval="1d", period="5d", cfg=cfg)
+        if df_1d is None or len(df_1d) < 2:
+            logger.debug(f"scan_ema_pivot {ticker}: 1d data not enough or empty")
+            return None
+
+        # 3. 计算昨日的 Pivot = (昨日 High + 昨日 Low + 昨日 Close) / 3
+        # 确定最后一天是否是今天。如果是今天，则前一天是 df_1d.index[-2]；否则是 df_1d.index[-1]
+        last_row_date = df_1d.index[-1]
+        if hasattr(last_row_date, "date"):
+            last_row_date = last_row_date.date()
+        
+        now_date = datetime.now().date()
+        if last_row_date >= now_date:
+            prev_day = df_1d.iloc[-2]
+        else:
+            prev_day = df_1d.iloc[-1]
+            
+        prev_high = float(prev_day["High"])
+        prev_low = float(prev_day["Low"])
+        prev_close = float(prev_day["Close"])
+        daily_pivot = (prev_high + prev_low + prev_close) / 3.0
+
+        # 4. 计算 15m K 线的 EMA20
+        # Pine Script: ema20 = ta.ema(close, 20)
+        # Python: df_15m["Close"].ewm(span=20, adjust=False).mean()
+        ema_series = df_15m["Close"].ewm(span=20, adjust=False).mean()
+        
+        # 5. 条件判断
+        # latest close
+        c_0 = float(df_15m["Close"].iloc[-1])
+        ema_0 = float(ema_series.iloc[-1])
+        cond_0 = c_0 > ema_0 and c_0 > daily_pivot
+
+        # previous close (for change check: not condition[1])
+        c_1 = float(df_15m["Close"].iloc[-2])
+        ema_1 = float(ema_series.iloc[-2])
+        cond_1 = c_1 > ema_1 and c_1 > daily_pivot
+
+        triggered_now = cond_0 and not cond_1
+
+        return {
+            "is_signal": cond_0,
+            "price": c_0,
+            "ema": ema_0,
+            "pivot": daily_pivot,
+            "triggered_now": triggered_now
+        }
+    except Exception as e:
+        logger.warning(f"scan_ema_pivot {ticker} error: {e}")
+        return None

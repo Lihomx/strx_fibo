@@ -165,12 +165,12 @@ def _run_scheduled_scan() -> None:
 
 
 def _run_periodic_watchlist_scan() -> None:
-    """每隔指定分钟扫描一次已收藏的品种，发现信号立即通过钉钉/TG推送"""
+    """每隔指定分钟扫描一次已收藏的品种，使用 EMA20 + Daily Pivot Point 策略 (15分钟)"""
     logging.info(f"[Scheduler] 周期自选扫描启动: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     try:
         import storage
         import scanner
-        from alerts import dispatch_alerts
+        from alerts import dispatch_alerts_ema_pivot
         
         cfg = storage.load_config()
         if not cfg.get("scan_enabled"):
@@ -182,58 +182,25 @@ def _run_periodic_watchlist_scan() -> None:
             logging.info("[Scheduler] 自选列表为空，跳过本次周期扫描")
             return
             
-        lookback = int(cfg.get("lookback", 100))
-        zone_lo  = float(cfg.get("fibo_low",  0.5))
-        zone_hi  = float(cfg.get("fibo_high", 0.618))
-        
-        now        = datetime.now()
-        scan_date  = str(now.date())
-        session_id = f"periodic_{now.strftime('%Y%m%d_%H%M%S')}"
-        
         for item in wl_items:
             ticker = item.get("ticker")
             if not ticker:
                 continue
             name = item.get("name", ticker)
-            category = item.get("category", "watchlist")
             
             try:
-                # 扫 3 个 timeframe (Daily, Weekly, Monthly)
-                rows = scanner._fetch_ticker_all_tfs(
-                    ticker=ticker,
-                    name=name,
-                    category=category,
-                    cfg=cfg,
-                    lookback=lookback,
-                    zone_lo=zone_lo,
-                    zone_hi=zone_hi,
-                    session_id=session_id,
-                    scan_date=scan_date
-                )
-                
-                # 计算共鸣得分
-                tf_res = {r["timeframe"]: {"in_zone": r["in_zone"], "dist_pct": r.get("dist_pct") if r.get("dist_pct") is not None else 999}
-                          for r in rows}
-                conf = scanner.confluence_score(tf_res)
-                
-                for r in rows:
-                    if r["in_zone"]:
-                        fibo_mock = {
-                            "current":     r.get("current_price"),
-                            "swing_high":  r.get("swing_high"),
-                            "swing_low":   r.get("swing_low"),
-                            "in_zone":     True,
-                            "dist_pct":    r.get("dist_pct", 0),
-                            "retrace_pct": r.get("retrace_pct", 0),
-                        }
-                        dispatch_alerts(
-                            ticker=ticker,
-                            name=name,
-                            timeframe=r["timeframe"],
-                            fibo=fibo_mock,
-                            conf=conf,
-                            cfg=cfg
-                        )
+                res = scanner.scan_ema_pivot(ticker=ticker, cfg=cfg)
+                if res and res["is_signal"]:
+                    dispatch_alerts_ema_pivot(
+                        ticker=ticker,
+                        name=name,
+                        timeframe="15m",
+                        price=res["price"],
+                        ema=res["ema"],
+                        pivot=res["pivot"],
+                        label="多头突破",
+                        cfg=cfg
+                    )
             except Exception as e:
                 logging.warning(f"[Scheduler] 扫描 {ticker} 出错: {e}")
                 

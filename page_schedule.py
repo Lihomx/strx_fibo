@@ -45,10 +45,10 @@ def render():
             minute = st.number_input("扫描分钟", min_value=0, max_value=59,
                                      value=int(cfg.get("scan_minute", 0)))
                                      
-        st.markdown("**2. 自选组合周期快速扫描**")
+        st.markdown("**2. 自选周期扫描 (EMA20 + Daily Pivot 多头 15m)**")
         interval_min = st.number_input("自选扫描间隔（分钟）", min_value=1, max_value=1440,
                                        value=int(cfg.get("scan_interval_minutes", 17)),
-                                       help="当启用后台定时扫描时，每隔指定分钟扫描一次已收藏品种。")
+                                       help="开启后，每隔指定分钟对收藏夹内品种进行 15分钟 EMA20 + 日内 Pivot 多头条件扫描。")
                                       
         submit = st.form_submit_button("💾 保存并重启定时器", type="primary", use_container_width=True)
 

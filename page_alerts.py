@@ -111,46 +111,89 @@ def render():
     # ── 自定义模版 ───────────────────────────────────────────────────
     st.markdown("---")
     st.markdown("#### 💬 自定义告警消息模版")
-    st.markdown("""
-    <div class="n-info">
-    💡 支持以下占位符：<br>
-    <code>{label}</code> - 信号类型 (例如: 日线黄金区 / 三框架共振)<br>
-    <code>{name}</code> - 品种中文名<br>
-    <code>{ticker}</code> - 品种代码 (如 AAPL)<br>
-    <code>{tf}</code> - 时间框架 (Daily/Weekly/Monthly)<br>
-    <code>{price}</code> - 当前价格<br>
-    <code>{zone_bot}</code> - 黄金区下轨<br>
-    <code>{zone_top}</code> - 黄金区上轨<br>
-    <code>{retrace_pct}</code> - 回撤比例 (%)<br>
-    <code>{url}</code> - TradingView 图表链接<br>
-    <code>{time}</code> - 触发时间
-    </div>""", unsafe_allow_html=True)
-
-    default_tmpl = "📐 STRX Fibo 信号 {label}\n━━━━━━━━━━━━━━━━━━━━\n🏷 {name} ({ticker})\n📅 框架: {tf}\n💰 价格: {price}\n📏 黄金区: {zone_bot} – {zone_top}\n📉 回撤: {retrace_pct}%\n🔗 {url}\n🕐 {time}"
     
-    with st.form("template_form"):
-        tmpl = st.text_area("消息模版",
-                            value=cfg.get("alert_template", default_tmpl),
-                            height=220,
-                            help="自定义推送的消息格式，支持换行和纯文本占位符")
+    tmpl_tab1, tmpl_tab2 = st.tabs(["📐 Fibonacci 扫描模版", "🚀 EMA20 + Daily Pivot 模版"])
+    
+    with tmpl_tab1:
+        st.markdown("""
+        <div class="n-info">
+        💡 <b>Fibonacci 模版支持占位符：</b><br>
+        <code>{label}</code> - 信号类型 (例如: 日线黄金区 / 三框架共振)<br>
+        <code>{name}</code> - 品种中文名<br>
+        <code>{ticker}</code> - 品种代码 (如 AAPL)<br>
+        <code>{tf}</code> - 时间框架 (Daily/Weekly/Monthly)<br>
+        <code>{price}</code> - 当前价格<br>
+        <code>{zone_bot}</code> - 黄金区下轨<br>
+        <code>{zone_top}</code> - 黄金区上轨<br>
+        <code>{retrace_pct}</code> - 回撤比例 (%)<br>
+        <code>{url}</code> - TradingView 图表链接<br>
+        <code>{time}</code> - 触发时间
+        </div>""", unsafe_allow_html=True)
+
+        default_tmpl = "📐 STRX Fibo 信号 {label}\n━━━━━━━━━━━━━━━━━━━━\n🏷 {name} ({ticker})\n📅 框架: {tf}\n💰 价格: {price}\n📏 黄金区: {zone_bot} – {zone_top}\n📉 回撤: {retrace_pct}%\n🔗 {url}\n🕐 {time}"
         
-        col1, col2 = st.columns(2)
-        with col1:
-            save_tmpl = st.form_submit_button("💾 保存模版", width="stretch")
-        with col2:
-            test_tmpl = st.form_submit_button("🧪 测试模版效果", width="stretch")
+        with st.form("template_form_fibo"):
+            tmpl = st.text_area("消息模版",
+                                value=cfg.get("alert_template", default_tmpl),
+                                height=220,
+                                help="自定义推送的消息格式，支持换行和纯文本占位符")
             
-    if save_tmpl:
-        storage.save_config({"alert_template": tmpl})
-        st.success("✅ 告警消息模版已保存")
-        st.rerun()
+            col1, col2 = st.columns(2)
+            with col1:
+                save_tmpl = st.form_submit_button("💾 保存模版", width="stretch")
+            with col2:
+                test_tmpl = st.form_submit_button("🧪 测试模版效果", width="stretch")
+                
+        if save_tmpl:
+            storage.save_config({"alert_template": tmpl})
+            st.success("✅ Fibonacci 告警消息模版已保存")
+            st.rerun()
+            
+        if test_tmpl:
+            mock_fibo = {"current": 100.5, "zone_bot": 95.0, "zone_top": 105.0, "retrace_pct": 50.0}
+            mock_conf = {"label": "日线黄金区"}
+            rendered = alt.build_message("AAPL", "苹果公司", "Daily", mock_fibo, mock_conf, template=tmpl)
+            st.info("📢 模版渲染预览效果：")
+            st.code(rendered, language="text")
+
+    with tmpl_tab2:
+        st.markdown("""
+        <div class="n-info">
+        💡 <b>EMA20 + Daily Pivot 模版支持占位符：</b><br>
+        <code>{label}</code> - 信号类型 (多头突破)<br>
+        <code>{name}</code> - 品种中文名<br>
+        <code>{ticker}</code> - 品种代码 (如 AAPL)<br>
+        <code>{tf}</code> - 时间框架 (15m)<br>
+        <code>{price}</code> - 当前收盘价格<br>
+        <code>{ema}</code> - EMA20 均线值<br>
+        <code>{pivot}</code> - Daily Pivot Point 值<br>
+        <code>{url}</code> - TradingView 图表链接<br>
+        <code>{time}</code> - 触发时间
+        </div>""", unsafe_allow_html=True)
+
+        default_tmpl_ep = "🚀 EMA20 + Daily Pivot 信号 {label}\n━━━━━━━━━━━━━━━━━━━━\n🏷 {name} ({ticker})\n📅 框架: {tf}\n💰 价格: {price}\n📈 EMA20: {ema}\n🎯 Pivot: {pivot}\n🔗 {url}\n🕐 {time}"
         
-    if test_tmpl:
-        mock_fibo = {"current": 100.5, "zone_bot": 95.0, "zone_top": 105.0, "retrace_pct": 50.0}
-        mock_conf = {"label": "日线黄金区"}
-        rendered = alt.build_message("AAPL", "苹果公司", "Daily", mock_fibo, mock_conf, template=tmpl)
-        st.info("📢 模版渲染预览效果：")
-        st.code(rendered, language="text")
+        with st.form("template_form_ema_pivot"):
+            tmpl_ep = st.text_area("消息模版",
+                                   value=cfg.get("alert_template_ema_pivot", default_tmpl_ep),
+                                   height=220,
+                                   help="自定义推送的消息格式，支持换行和纯文本占位符")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                save_tmpl_ep = st.form_submit_button("💾 保存模版", width="stretch")
+            with col2:
+                test_tmpl_ep = st.form_submit_button("🧪 测试模版效果", width="stretch")
+                
+        if save_tmpl_ep:
+            storage.save_config({"alert_template_ema_pivot": tmpl_ep})
+            st.success("✅ EMA + Pivot 告警消息模版已保存")
+            st.rerun()
+            
+        if test_tmpl_ep:
+            rendered = alt.build_message_ema_pivot("AAPL", "苹果公司", "15m", 100.5, 99.2, 98.5, "多头突破", template=tmpl_ep)
+            st.info("📢 模版渲染预览效果：")
+            st.code(rendered, language="text")
 
     # ── 冷却设置（全局）──────────────────────────────────────────────
     st.markdown("---")
