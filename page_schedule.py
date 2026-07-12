@@ -23,9 +23,9 @@ def render():
     status = get_scheduler_status()
     if status["running"]:
         jobs = status.get("jobs", [])
-        next_run = jobs[0]["next_run"] if jobs else "—"
-        st.markdown(f'<div class="notice-ok">✅ 定时器运行中 · 下次执行：{next_run}</div>',
-                    unsafe_allow_html=True)
+        st.markdown('<div class="notice-ok">✅ 后台定时器运行中</div>', unsafe_allow_html=True)
+        for job in jobs:
+            st.markdown(f"- 任务 **{job['id']}**: 下次执行时间 `{job['next_run']}`")
     else:
         st.markdown('<div class="notice-warn">⏸ 定时器未启动（已停用或 APScheduler 未安装）</div>',
                     unsafe_allow_html=True)
@@ -33,31 +33,43 @@ def render():
     st.markdown("---")
 
     # 配置表单
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        enabled = st.toggle("启用每日定时扫描", value=bool(cfg.get("scan_enabled")))
-    with col2:
-        hour = st.number_input("扫描小时（24h制）", min_value=0, max_value=23,
-                               value=int(cfg.get("scan_hour", 9)))
-    with col3:
-        minute = st.number_input("扫描分钟", min_value=0, max_value=59,
-                                 value=int(cfg.get("scan_minute", 0)))
+    with st.form("schedule_config_form"):
+        enabled = st.toggle("启用后台定时扫描 (总开关)", value=bool(cfg.get("scan_enabled")))
+        
+        st.markdown("**1. 每日全量自动扫描**")
+        col1, col2 = st.columns(2)
+        with col1:
+            hour = st.number_input("扫描小时（24h制）", min_value=0, max_value=23,
+                                   value=int(cfg.get("scan_hour", 9)))
+        with col2:
+            minute = st.number_input("扫描分钟", min_value=0, max_value=59,
+                                     value=int(cfg.get("scan_minute", 0)))
+                                     
+        st.markdown("**2. 自选组合周期快速扫描**")
+        interval_min = st.number_input("自选扫描间隔（分钟）", min_value=1, max_value=1440,
+                                       value=int(cfg.get("scan_interval_minutes", 17)),
+                                       help="当启用后台定时扫描时，每隔指定分钟扫描一次已收藏品种。")
+                                      
+        submit = st.form_submit_button("💾 保存并重启定时器", type="primary", use_container_width=True)
 
-    st.caption(f"当前设置：每天 **{hour:02d}:{minute:02d}** 北京时间 (Asia/Shanghai) 自动扫描")
-
-    if st.button("💾 保存并重启定时器", type="primary"):
+    if submit:
         cfg.update({
             "scan_enabled": enabled,
             "scan_hour":    hour,
             "scan_minute":  minute,
+            "scan_interval_minutes": interval_min,
         })
         ok = storage.save_config(cfg)
         if ok:
             if enabled:
                 restart_scheduler(hour, minute)
-                st.success(f"✅ 已保存，定时器已重启：每天 {hour:02d}:{minute:02d} CST 自动扫描")
+                st.success(f"✅ 已保存并重启定时器！\n"
+                           f"1. 每日全量扫描：每天 {hour:02d}:{minute:02d} CST\n"
+                           f"2. 自选周期扫描：每 {interval_min} 分钟一次")
+                st.rerun()
             else:
-                st.success("✅ 已保存，定时扫描已停用")
+                st.success("✅ 已保存，后台定时扫描已停用")
+                st.rerun()
         else:
             st.error("❌ 保存失败，请检查写入权限")
 

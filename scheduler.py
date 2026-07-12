@@ -32,6 +32,7 @@ def start_scheduler_if_needed() -> bool:
         try:
             from apscheduler.schedulers.background import BackgroundScheduler
             from apscheduler.triggers.cron import CronTrigger
+            from apscheduler.triggers.interval import IntervalTrigger
         except ImportError:
             logging.warning("APScheduler not installed: pip install apscheduler")
             return False
@@ -44,6 +45,7 @@ def start_scheduler_if_needed() -> bool:
 
         hour   = int(cfg.get("scan_hour",   9))
         minute = int(cfg.get("scan_minute", 0))
+        interval_min = int(cfg.get("scan_interval_minutes", 17))
 
         _scheduler = BackgroundScheduler(
             timezone="Asia/Shanghai",
@@ -55,9 +57,15 @@ def start_scheduler_if_needed() -> bool:
             id="daily_fibo_scan",
             replace_existing=True,
         )
+        _scheduler.add_job(
+            _run_periodic_watchlist_scan,
+            IntervalTrigger(minutes=interval_min, timezone="Asia/Shanghai"),
+            id="periodic_watchlist_scan",
+            replace_existing=True,
+        )
         _scheduler.start()
         _started = True
-        logging.info(f"Scheduler started: daily at {hour:02d}:{minute:02d} CST")
+        logging.info(f"Scheduler started: daily at {hour:02d}:{minute:02d} CST, periodic watchlist scan every {interval_min}m")
         return True
 
 
@@ -154,3 +162,81 @@ def _run_scheduled_scan() -> None:
             logging.exception(f"[Scheduler] 定时三重底扫描异常: {ex_tb}")
     except Exception as e:
         logging.exception(f"[Scheduler] 异常: {e}")
+
+
+def _run_periodic_watchlist_scan() -> None:
+    """每隔指定分钟扫描一次已收藏的品种，发现信号立即通过钉钉/TG推送"""
+    logging.info(f"[Scheduler] 周期自选扫描启动: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    try:
+        import storage
+        import scanner
+        from alerts import dispatch_alerts
+        
+        cfg = storage.load_config()
+        if not cfg.get("scan_enabled"):
+            logging.info("[Scheduler] 扫描开关未开启，跳过本次周期扫描")
+            return
+            
+        wl_items = storage.load_watchlist()
+        if not wl_items:
+            logging.info("[Scheduler] 自选列表为空，跳过本次周期扫描")
+            return
+            
+        lookback = int(cfg.get("lookback", 100))
+        zone_lo  = float(cfg.get("fibo_low",  0.5))
+        zone_hi  = float(cfg.get("fibo_high", 0.618))
+        
+        now        = datetime.now()
+        scan_date  = str(now.date())
+        session_id = f"periodic_{now.strftime('%Y%m%d_%H%M%S')}"
+        
+        for item in wl_items:
+            ticker = item.get("ticker")
+            if not ticker:
+                continue
+            name = item.get("name", ticker)
+            category = item.get("category", "watchlist")
+            
+            try:
+                # 扫 3 个 timeframe (Daily, Weekly, Monthly)
+                rows = scanner._fetch_ticker_all_tfs(
+                    ticker=ticker,
+                    name=name,
+                    category=category,
+                    cfg=cfg,
+                    lookback=lookback,
+                    zone_lo=zone_lo,
+                    zone_hi=zone_hi,
+                    session_id=session_id,
+                    scan_date=scan_date
+                )
+                
+                # 计算共鸣得分
+                tf_res = {r["timeframe"]: {"in_zone": r["in_zone"], "dist_pct": r.get("dist_pct") if r.get("dist_pct") is not None else 999}
+                          for r in rows}
+                conf = scanner.confluence_score(tf_res)
+                
+                for r in rows:
+                    if r["in_zone"]:
+                        fibo_mock = {
+                            "current":     r.get("current_price"),
+                            "swing_high":  r.get("swing_high"),
+                            "swing_low":   r.get("swing_low"),
+                            "in_zone":     True,
+                            "dist_pct":    r.get("dist_pct", 0),
+                            "retrace_pct": r.get("retrace_pct", 0),
+                        }
+                        dispatch_alerts(
+                            ticker=ticker,
+                            name=name,
+                            timeframe=r["timeframe"],
+                            fibo=fibo_mock,
+                            conf=conf,
+                            cfg=cfg
+                        )
+            except Exception as e:
+                logging.warning(f"[Scheduler] 扫描 {ticker} 出错: {e}")
+                
+    except Exception as e:
+        logging.exception(f"[Scheduler] 周期自选扫描异常: {e}")
+

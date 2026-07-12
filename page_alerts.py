@@ -108,6 +108,50 @@ def render():
             else:
                 st.error(f"❌ 发送失败: {msg}")
 
+    # ── 自定义模版 ───────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### 💬 自定义告警消息模版")
+    st.markdown("""
+    <div class="n-info">
+    💡 支持以下占位符：<br>
+    <code>{label}</code> - 信号类型 (例如: 日线黄金区 / 三框架共振)<br>
+    <code>{name}</code> - 品种中文名<br>
+    <code>{ticker}</code> - 品种代码 (如 AAPL)<br>
+    <code>{tf}</code> - 时间框架 (Daily/Weekly/Monthly)<br>
+    <code>{price}</code> - 当前价格<br>
+    <code>{zone_bot}</code> - 黄金区下轨<br>
+    <code>{zone_top}</code> - 黄金区上轨<br>
+    <code>{retrace_pct}</code> - 回撤比例 (%)<br>
+    <code>{url}</code> - TradingView 图表链接<br>
+    <code>{time}</code> - 触发时间
+    </div>""", unsafe_allow_html=True)
+
+    default_tmpl = "📐 STRX Fibo 信号 {label}\n━━━━━━━━━━━━━━━━━━━━\n🏷 {name} ({ticker})\n📅 框架: {tf}\n💰 价格: {price}\n📏 黄金区: {zone_bot} – {zone_top}\n📉 回撤: {retrace_pct}%\n🔗 {url}\n🕐 {time}"
+    
+    with st.form("template_form"):
+        tmpl = st.text_area("消息模版",
+                            value=cfg.get("alert_template", default_tmpl),
+                            height=220,
+                            help="自定义推送的消息格式，支持换行和纯文本占位符")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            save_tmpl = st.form_submit_button("💾 保存模版", width="stretch")
+        with col2:
+            test_tmpl = st.form_submit_button("🧪 测试模版效果", width="stretch")
+            
+    if save_tmpl:
+        storage.save_config({"alert_template": tmpl})
+        st.success("✅ 告警消息模版已保存")
+        st.rerun()
+        
+    if test_tmpl:
+        mock_fibo = {"current": 100.5, "zone_bot": 95.0, "zone_top": 105.0, "retrace_pct": 50.0}
+        mock_conf = {"label": "日线黄金区"}
+        rendered = alt.build_message("AAPL", "苹果公司", "Daily", mock_fibo, mock_conf, template=tmpl)
+        st.info("📢 模版渲染预览效果：")
+        st.code(rendered, language="text")
+
     # ── 冷却设置（全局）──────────────────────────────────────────────
     st.markdown("---")
     st.markdown("#### ⏱️ 告警冷却设置")

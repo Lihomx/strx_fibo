@@ -33,11 +33,24 @@ def _mark(ticker: str, tf: str) -> None:
 # ── 消息构建 ────────────────────────────────────────────────────────
 
 def build_message(ticker: str, name: str, tf: str,
-                  fibo: Dict, conf: Dict) -> str:
+                  fibo: Dict, conf: Dict, template: str = None) -> str:
     from assets import tv_url  # 使用 assets 版本，支持 cn 域名 + 时间框架
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    if template:
+        res = template
+        res = res.replace("{label}", str(conf.get("label", "")))
+        res = res.replace("{name}", str(name))
+        res = res.replace("{ticker}", str(ticker))
+        res = res.replace("{tf}", str(tf))
+        res = res.replace("{price}", f"{fibo.get('current', 0.0):,.4f}" if fibo.get("current") is not None else "—")
+        res = res.replace("{zone_bot}", f"{fibo.get('zone_bot', 0.0):,.4f}" if fibo.get("zone_bot") is not None else "—")
+        res = res.replace("{zone_top}", f"{fibo.get('zone_top', 0.0):,.4f}" if fibo.get("zone_top") is not None else "—")
+        res = res.replace("{retrace_pct}", f"{fibo.get('retrace_pct', 0.0):.1f}" if fibo.get("retrace_pct") is not None else "—")
+        res = res.replace("{url}", tv_url(ticker, tf))
+        res = res.replace("{time}", now)
+        return res
     return (
-        f"📐 STRX Fibo 信号  {conf['label']}\n"
+        f"📐 STRX Fibo 信号  {conf.get('label', '')}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"🏷  {name} ({ticker})\n"
         f"📅 框架: {tf}\n"
@@ -119,7 +132,8 @@ def dispatch_alerts(ticker: str, name: str, timeframe: str,
     if _is_cooldown(ticker, timeframe, cooldown):
         return
 
-    text = build_message(ticker, name, timeframe, fibo, conf)
+    tmpl = cfg.get("alert_template", "").strip()
+    text = build_message(ticker, name, timeframe, fibo, conf, template=tmpl if tmpl else None)
     sent = False
 
     if cfg.get("dingtalk_enabled"):

@@ -123,6 +123,8 @@ DEFAULT_CFG = {
     "scan_enabled":     False,
     "scan_hour":        9,
     "scan_minute":      0,
+    "scan_interval_minutes": 17,
+    "alert_template": "📐 STRX Fibo 信号 {label}\n━━━━━━━━━━━━━━━━━━━━\n🏷 {name} ({ticker})\n📅 框架: {tf}\n💰 价格: {price}\n📏 黄金区: {zone_bot} – {zone_top}\n📉 回撤: {retrace_pct}%\n🔗 {url}\n🕐 {time}",
 }
 
 
