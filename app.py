@@ -1,8 +1,15 @@
-"""
-STRX Automatic Fibo Scanner Pro v3
-====================================
-Streamlit Cloud 原生版 · 平铺文件结构 · JSON 存储
-"""
+import faulthandler
+faulthandler.enable()
+
+import pandas as pd
+try:
+    pd.options.future.infer_string = False
+except Exception:
+    pass
+try:
+    pd.options.mode.string_storage = "python"
+except Exception:
+    pass
 
 import sys
 import os
@@ -129,8 +136,7 @@ div[data-testid="stSidebar"] .stButton>button:hover{background:var(--secondary-b
 """, unsafe_allow_html=True)
 
 # ── 移动端 viewport meta 与 PWA manifest 注入 ───────────────────────
-import streamlit.components.v1 as _stcv1
-_stcv1.html("""<script>
+st.markdown("""<script>
 if (!document.querySelector('meta[name="viewport"]')) {
     var m = document.createElement('meta');
     m.name = 'viewport';
@@ -182,7 +188,7 @@ if (!document.querySelector('meta[name="theme-color"]')) {
             _saved = _getMain().scrollTop;
         }
     }, true);
-    // 500ms 后清除保存的位置（rerun 应已完成）
+    // 500ms 后清除保存的位置（rerun应已完成）
     var _clearSaved = function() {
         setTimeout(function() { _saved = null; }, 500);
     };
@@ -198,7 +204,7 @@ if (!document.querySelector('meta[name="theme-color"]')) {
         _obsBody.observe(_mainDoc().body, { childList: true, subtree: false });
     } catch(e) {}
 })();
-</script>""", height=0)
+</script>""", unsafe_allow_html=True)
 
 # ── 导入页面模块（直接 import，无子文件夹）──────────────────────────
 import storage
@@ -592,8 +598,7 @@ def main():
 
     # ── 动态更新浏览器标签页标题 ──
     try:
-        import streamlit.components.v1 as _st_comp
-        _st_comp.html(f"""
+        st.markdown(f"""
         <script>
         (function() {{
             var parentDoc = window.parent.document;
@@ -616,7 +621,7 @@ def main():
             parentDoc.title = title + " - STRX Fibo Scanner";
         }})();
         </script>
-        """, height=0, width=0)
+        """, unsafe_allow_html=True)
     except Exception:
         pass
 
@@ -660,8 +665,7 @@ def main():
         if btn_disabled:
             btn_style = "background: #cccccc !important; color: #888888 !important; cursor: not-allowed !important; pointer-events: none !important; box-shadow: none !important;"
 
-        import streamlit.components.v1 as components
-        components.html(f"""
+        st.markdown(f"""
         <script>
         (function() {{
             var doc = window.parent.document;
@@ -715,7 +719,7 @@ def main():
                 doc.head.appendChild(style);
             }}
             
-            // 创建悬浮容器和按钮
+            // 创建悬浮容器 and 按钮
             var fab = doc.createElement('div');
             fab.id = 'global-mobile-fab';
             
@@ -741,11 +745,10 @@ def main():
             doc.body.appendChild(fab);
         }})();
         </script>
-        """, height=0, width=0)
+        """, unsafe_allow_html=True)
     else:
         # 如果不是扫描页面，确保从 parent document 中移除任何残留的 FAB 按钮
-        import streamlit.components.v1 as components
-        components.html("""
+        st.markdown("""
         <script>
         (function() {
             var doc = window.parent.document;
@@ -754,7 +757,7 @@ def main():
             if (oldBtn) oldBtn.remove();
         })();
         </script>
-        """, height=0, width=0)
+        """, unsafe_allow_html=True)
 
     # ── 移动端底部导航栏（仅小屏显示）────────────────────────────
     _cur_page  = st.session_state.get("page", "scanner")

@@ -66,9 +66,8 @@ def _trigger_batch_open_in_parent(urls: list[str]):
     """Try opening tabs from the parent window to reduce iframe popup blocking."""
     if not urls:
         return
-    import streamlit.components.v1 as _stc_v1
     payload = json.dumps(urls, ensure_ascii=False)
-    _stc_v1.html(
+    st.markdown(
         f"""<script>
 const urls = {payload};
 const op = (window.parent && window.parent.open) ? window.parent.open.bind(window.parent) : window.open.bind(window);
@@ -76,7 +75,7 @@ for (let i = 0; i < urls.length; i++) {{
   setTimeout(() => op(urls[i], '_blank'), i * 120);
 }}
 </script>""",
-        height=0,
+        unsafe_allow_html=True,
     )
 
 
@@ -662,12 +661,11 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
             _highlight_tk, _t_val = _open_wl
             _display_nm = _highlight_tk
         _wl_url = f"/?_t={_t_val}&_page=watchlist&_anchor={_highlight_tk}"
-        import streamlit.components.v1 as _stc_v1
-        _stc_v1.html(
+        st.markdown(
             f"""<script>
             try {{ window.open('{_wl_url}', '_blank'); }} catch(e) {{}}
             </script>""",
-            height=0,
+            unsafe_allow_html=True,
         )
         st.success(f"⭐ 已收藏「{_display_nm}」| 自选页已在新标签页打开，已自动定位到该品种")
 

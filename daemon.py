@@ -11,6 +11,17 @@ daemon.py — 实时推送常驻守护进程
 
 import os
 import sys
+
+import pandas as pd
+try:
+    pd.options.future.infer_string = False
+except Exception:
+    pass
+try:
+    pd.options.mode.string_storage = "python"
+except Exception:
+    pass
+
 import time
 import argparse
 import logging

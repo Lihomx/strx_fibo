@@ -12,7 +12,6 @@ from datetime import date
 from html import escape as _he
 import re
 import streamlit as st
-import streamlit.components.v1 as _components
 import storage
 
 def _tv_link(ticker: str) -> str:
@@ -49,7 +48,7 @@ def _restore_focus_row_if_needed():
     if not anchor:
         return
     anchor = str(anchor).replace('"', "").replace("'", "")
-    _components.html(
+    st.markdown(
         f"""
         <script>
         setTimeout(function() {{
@@ -62,7 +61,7 @@ def _restore_focus_row_if_needed():
         }}, 40);
         </script>
         """,
-        height=0,
+        unsafe_allow_html=True,
     )
 
 def _get_viewed() -> set:

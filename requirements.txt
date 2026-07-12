@@ -1,15 +1,16 @@
 # ── 核心框架 ────────────────────────────────────────────────────────
 streamlit==1.59.0
-pandas==3.0.2
-requests==2.33.1
+pandas>=2.2.3
+numpy>=2.1.0
+requests>=2.33.1
 
 # ── 数据源
-yfinance==1.5.1
-akshare==1.18.64
+yfinance>=1.5.1
+# akshare 已移至运行时按需/可选导入，避免其依赖 py-mini-racer 在 python 3.13 平台下因源码编译缓慢导致部署超时
 
 # ── 云端同步与存储
-supabase==2.31.0
-openpyxl==3.1.5
-plotly==6.8.0
+supabase>=2.31.0
+openpyxl>=3.1.5
+plotly>=6.8.0
 streamlit-autorefresh
-
+apscheduler==3.10.4

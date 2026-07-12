@@ -13,6 +13,17 @@ run_scan_only.py
 
 import os
 import sys
+
+import pandas as pd
+try:
+    pd.options.future.infer_string = False
+except Exception:
+    pass
+try:
+    pd.options.mode.string_storage = "python"
+except Exception:
+    pass
+
 import logging
 
 logging.basicConfig(
