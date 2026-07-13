@@ -124,6 +124,8 @@ DEFAULT_CFG = {
     "scan_hour":        9,
     "scan_minute":      0,
     "scan_interval_minutes": 17,
+    "daily_scan_enabled": True,
+    "periodic_scan_enabled": True,
     "alert_template": "📐 STRX Fibo 信号 {label}\n━━━━━━━━━━━━━━━━━━━━\n🏷 {name} ({ticker})\n📅 框架: {tf}\n💰 价格: {price}\n📏 黄金区: {zone_bot} – {zone_top}\n📉 回撤: {retrace_pct}%\n🔗 {url}\n🕐 {time}",
     "alert_template_ema_pivot": "🚀 EMA20 + Daily Pivot 信号 {label}\n━━━━━━━━━━━━━━━━━━━━\n🏷 {name} ({ticker})\n📅 框架: {tf}\n💰 价格: {price}\n📈 EMA20: {ema}\n🎯 Pivot: {pivot}\n🔗 {url}\n🕐 {time}",
 }

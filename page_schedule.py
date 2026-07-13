@@ -36,7 +36,9 @@ def render():
     with st.form("schedule_config_form"):
         enabled = st.toggle("启用后台定时扫描 (总开关)", value=bool(cfg.get("scan_enabled")))
         
+        st.markdown("---")
         st.markdown("**1. 每日全量自动扫描**")
+        daily_enabled = st.checkbox("启用每日全量扫描", value=bool(cfg.get("daily_scan_enabled", True)))
         col1, col2 = st.columns(2)
         with col1:
             hour = st.number_input("扫描小时（24h制）", min_value=0, max_value=23,
@@ -45,7 +47,9 @@ def render():
             minute = st.number_input("扫描分钟", min_value=0, max_value=59,
                                      value=int(cfg.get("scan_minute", 0)))
                                      
+        st.markdown("---")
         st.markdown("**2. 自选周期扫描 (EMA20 + Daily Pivot 多头 15m)**")
+        periodic_enabled = st.checkbox("启用自选周期扫描", value=bool(cfg.get("periodic_scan_enabled", True)))
         interval_min = st.number_input("自选扫描间隔（分钟）", min_value=1, max_value=1440,
                                        value=int(cfg.get("scan_interval_minutes", 17)),
                                        help="开启后，每隔指定分钟对收藏夹内品种进行 15分钟 EMA20 + 日内 Pivot 多头条件扫描。")
@@ -54,18 +58,25 @@ def render():
 
     if submit:
         cfg.update({
-            "scan_enabled": enabled,
-            "scan_hour":    hour,
-            "scan_minute":  minute,
+            "scan_enabled":          enabled,
+            "daily_scan_enabled":    daily_enabled,
+            "periodic_scan_enabled": periodic_enabled,
+            "scan_hour":             hour,
+            "scan_minute":           minute,
             "scan_interval_minutes": interval_min,
         })
         ok = storage.save_config(cfg)
         if ok:
             if enabled:
                 restart_scheduler(hour, minute)
-                st.success(f"✅ 已保存并重启定时器！\n"
-                           f"1. 每日全量扫描：每天 {hour:02d}:{minute:02d} CST\n"
-                           f"2. 自选周期扫描：每 {interval_min} 分钟一次")
+                msg_parts = []
+                if daily_enabled:
+                    msg_parts.append(f"1. 每日全量扫描：每天 {hour:02d}:{minute:02d} CST")
+                if periodic_enabled:
+                    msg_parts.append(f"2. 自选周期扫描：每 {interval_min} 分钟一次")
+                if not msg_parts:
+                    msg_parts.append("（注意：未勾选任何具体扫描任务，定时器处于空载状态）")
+                st.success(f"✅ 已保存并重启定时器！\n" + "\n".join(msg_parts))
                 st.rerun()
             else:
                 st.success("✅ 已保存，后台定时扫描已停用")

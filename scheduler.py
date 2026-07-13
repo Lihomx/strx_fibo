@@ -51,21 +51,31 @@ def start_scheduler_if_needed() -> bool:
             timezone="Asia/Shanghai",
             job_defaults={"misfire_grace_time": 300, "coalesce": True},
         )
-        _scheduler.add_job(
-            _run_scheduled_scan,
-            CronTrigger(hour=hour, minute=minute, timezone="Asia/Shanghai"),
-            id="daily_fibo_scan",
-            replace_existing=True,
-        )
-        _scheduler.add_job(
-            _run_periodic_watchlist_scan,
-            IntervalTrigger(minutes=interval_min, timezone="Asia/Shanghai"),
-            id="periodic_watchlist_scan",
-            replace_existing=True,
-        )
+        added_jobs = []
+        if cfg.get("daily_scan_enabled", True):
+            _scheduler.add_job(
+                _run_scheduled_scan,
+                CronTrigger(hour=hour, minute=minute, timezone="Asia/Shanghai"),
+                id="daily_fibo_scan",
+                replace_existing=True,
+            )
+            added_jobs.append(f"daily at {hour:02d}:{minute:02d} CST")
+        if cfg.get("periodic_scan_enabled", True):
+            _scheduler.add_job(
+                _run_periodic_watchlist_scan,
+                IntervalTrigger(minutes=interval_min, timezone="Asia/Shanghai"),
+                id="periodic_watchlist_scan",
+                replace_existing=True,
+            )
+            added_jobs.append(f"periodic every {interval_min}m")
+
+        if not added_jobs:
+            logging.info("Scheduler has no jobs enabled, not starting.")
+            return False
+
         _scheduler.start()
         _started = True
-        logging.info(f"Scheduler started: daily at {hour:02d}:{minute:02d} CST, periodic watchlist scan every {interval_min}m")
+        logging.info(f"Scheduler started with jobs: {', '.join(added_jobs)}")
         return True
 
 
