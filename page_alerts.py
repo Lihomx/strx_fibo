@@ -195,18 +195,42 @@ def render():
             st.info("📢 模版渲染预览效果：")
             st.code(rendered, language="text")
 
-    # ── 冷却设置（全局）──────────────────────────────────────────────
+    # ── 告警过滤与冷却设置（全局）────────────────────────────────────────
     st.markdown("---")
-    st.markdown("#### ⏱️ 告警冷却设置")
-    with st.form("cooldown_form"):
-        cd = st.slider("冷却时间（分钟）",
-                       min_value=30, max_value=1440,
-                       value=int(cfg.get("alert_cooldown", 240)),
-                       step=30,
-                       help="同一资产同一框架两次告警之间的最短间隔")
-        if st.form_submit_button("💾 保存冷却设置", width="stretch"):
-            storage.save_config({"alert_cooldown": cd})
-            st.success(f"✅ 冷却时间已设为 {cd} 分钟")
+    st.markdown("#### ⚙️ 告警触发与冷却设置")
+    with st.form("alert_settings_form"):
+        col_rule1, col_rule2 = st.columns(2)
+        with col_rule1:
+            fibo_in_zone = st.checkbox("📐 Fibonacci 告警: 仅在黄金区内时发送",
+                                        value=bool(cfg.get("alert_fibo_in_zone_only", True)),
+                                        help="开启后，只有当价格处于黄金区内时才会发送告警；关闭则即使在黄金区外也发送。")
+        with col_rule2:
+            pass
+            
+        st.markdown("<div style='margin: 10px 0;'></div>", unsafe_allow_html=True)
+        
+        col_cd1, col_cd2 = st.columns(2)
+        with col_cd1:
+            cd_fibo = st.slider("📐 Fibonacci 扫描冷却时间（分钟）",
+                                min_value=15, max_value=1440,
+                                value=int(cfg.get("alert_cooldown_fibo", cfg.get("alert_cooldown", 240))),
+                                step=15,
+                                help="同一资产在 Fibonacci 扫描中的告警最小间隔（分钟）")
+        with col_cd2:
+            cd_ema = st.slider("🚀 EMA + Daily Pivot 冷却时间（分钟）",
+                               min_value=15, max_value=1440,
+                               value=int(cfg.get("alert_cooldown_ema_pivot", cfg.get("alert_cooldown", 240))),
+                               step=15,
+                               help="同一资产在 EMA + Daily Pivot 扫描中的告警最小间隔（分钟）")
+                               
+        if st.form_submit_button("💾 保存设置", width="stretch"):
+            storage.save_config({
+                "alert_fibo_in_zone_only": fibo_in_zone,
+                "alert_cooldown_fibo": cd_fibo,
+                "alert_cooldown_ema_pivot": cd_ema,
+            })
+            st.success("✅ 告警过滤与冷却时间配置已保存")
+            st.rerun()
 
     # ── 告警日志 ─────────────────────────────────────────────────────
     with tab3:

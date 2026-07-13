@@ -15,12 +15,16 @@ from typing import Dict, Tuple
 import storage
 
 # ── 冷却缓存（文件持久化）────────────────────────────────────────────
-def _is_cooldown(ticker: str, tf: str, minutes: int) -> bool:
-    key = f"{ticker}::{tf}"
+def _is_cooldown(scanner: str, ticker: str, tf: str, minutes: int) -> bool:
+    key = f"{scanner}::{ticker}::{tf}"
     cooldowns = storage.load_cooldowns()
     last_str = cooldowns.get(key)
     if not last_str:
-        return False
+        # 兼容旧版本格式 (无 scanner 前缀)
+        legacy_key = f"{ticker}::{tf}"
+        last_str = cooldowns.get(legacy_key)
+        if not last_str:
+            return False
     try:
         last = datetime.fromisoformat(last_str)
         return (datetime.now() - last).total_seconds() < minutes * 60
@@ -28,8 +32,8 @@ def _is_cooldown(ticker: str, tf: str, minutes: int) -> bool:
         return False
 
 
-def _mark(ticker: str, tf: str) -> None:
-    key = f"{ticker}::{tf}"
+def _mark(scanner: str, ticker: str, tf: str) -> None:
+    key = f"{scanner}::{ticker}::{tf}"
     storage.save_cooldown(key, datetime.now().isoformat())
 
 
@@ -161,8 +165,8 @@ def send_telegram(text: str, cfg: Dict) -> Tuple[bool, str]:
 
 def dispatch_alerts(ticker: str, name: str, timeframe: str,
                     fibo: Dict, conf: Dict, cfg: Dict) -> None:
-    cooldown = int(cfg.get("alert_cooldown", 240))
-    if _is_cooldown(ticker, timeframe, cooldown):
+    cooldown = int(cfg.get("alert_cooldown_fibo", cfg.get("alert_cooldown", 240)))
+    if _is_cooldown("fibo", ticker, timeframe, cooldown):
         return
 
     tmpl = cfg.get("alert_template", "").strip()
@@ -182,14 +186,14 @@ def dispatch_alerts(ticker: str, name: str, timeframe: str,
         sent = sent or ok
 
     if sent:
-        _mark(ticker, timeframe)
+        _mark("fibo", ticker, timeframe)
 
 
 def dispatch_alerts_ema_pivot(ticker: str, name: str, timeframe: str,
                               price: float, ema: float, pivot: float,
                               label: str, cfg: Dict) -> None:
-    cooldown = int(cfg.get("alert_cooldown", 240))
-    if _is_cooldown(ticker, timeframe, cooldown):
+    cooldown = int(cfg.get("alert_cooldown_ema_pivot", cfg.get("alert_cooldown", 240)))
+    if _is_cooldown("ema_pivot", ticker, timeframe, cooldown):
         return
 
     tmpl = cfg.get("alert_template_ema_pivot", "").strip()
@@ -209,4 +213,4 @@ def dispatch_alerts_ema_pivot(ticker: str, name: str, timeframe: str,
         sent = sent or ok
 
     if sent:
-        _mark(ticker, timeframe)
+        _mark("ema_pivot", ticker, timeframe)

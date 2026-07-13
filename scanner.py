@@ -811,18 +811,19 @@ def run_full_scan(
 
     # ── 告警发送 ──────────────────────────────────────────────
     try:
+        fibo_in_zone_only = bool(cfg.get("alert_fibo_in_zone_only", True))
         for ticker, (name, _) in assets.items():
             t_rows = [r for r in all_rows if r["ticker"] == ticker]
             tf_res = {r["timeframe"]: {"in_zone": r["in_zone"], "dist_pct": r.get("dist_pct") if r.get("dist_pct") is not None else 999}
                       for r in t_rows}
             conf = confluence_score(tf_res)
             for r in t_rows:
-                if r["in_zone"]:
+                if (not fibo_in_zone_only) or r["in_zone"]:
                     fibo_mock = {
                         "current":     r.get("current_price"),
                         "swing_high":  r.get("swing_high"),
                         "swing_low":   r.get("swing_low"),
-                        "in_zone":     True,
+                        "in_zone":     bool(r.get("in_zone")),
                         "dist_pct":    r.get("dist_pct", 0),
                         "retrace_pct": r.get("retrace_pct", 0),
                     }
