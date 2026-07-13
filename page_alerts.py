@@ -368,17 +368,27 @@ def render_alert_log_table(full_page=False):
                 "message": "返回消息"
             })
             
-            # 💡 动态为行着色
+            # 💡 动态为行着色：同时间批次的正常记录使用同一种交替色，失败记录保持红色高亮
             try:
+                # 获取展示数据中所有唯一时间戳并排序
+                unique_times = sorted(show_df["时间"].dropna().unique())
+                time_to_group = {t: idx for idx, t in enumerate(unique_times)}
+                
                 def make_style(row):
                     status = row.get("发送状态", "")
                     if status == "fail" or status == "失败":
-                        # 失败：柔和红背景
+                        # 失败：柔和红背景，保持高亮警示
                         return ["background-color: rgba(239, 68, 68, 0.12);"] * len(row)
-                    elif status == "ok" or status == "成功":
-                        # 成功：柔和绿背景
-                        return ["background-color: rgba(34, 197, 94, 0.08);"] * len(row)
-                    return [""] * len(row)
+                    
+                    # 正常记录交替分组底色
+                    t_val = row.get("时间", "")
+                    group_idx = time_to_group.get(t_val, 0)
+                    if group_idx % 2 == 1:
+                        # 奇数批次时间组：柔和灰蓝色背景
+                        return ["background-color: rgba(30, 144, 255, 0.05);"] * len(row)
+                    else:
+                        # 偶数批次时间组：不加底色（保持透明）
+                        return [""] * len(row)
                 styled_df = show_df.style.apply(make_style, axis=1)
             except Exception:
                 styled_df = show_df
