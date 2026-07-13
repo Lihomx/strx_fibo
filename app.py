@@ -329,6 +329,7 @@ def sidebar():
             ("⭐", "自选收藏",           "watchlist"),
             ("🔥", "热门品种",           "hotlist"),
             ("📂", "历史记录",           "history"),
+            ("📋", "告警日志",           "alert_logs"),
             ("🔔", "告警配置",           "alerts"),
             ("☁️", "云端同步",           "cloud"),
             ("⚙️", "系统设置",           "settings"),
@@ -613,6 +614,7 @@ def main():
         "hotlist":       page_hotlist.render,
         "history":       page_history.render,
         "alerts":        page_alerts.render,
+        "alert_logs":    page_alerts.render_log_page,
         "cloud":         page_cloud.render,
         "settings":      page_settings.render,
         "schedule":      page_schedule.render,
@@ -637,6 +639,7 @@ def main():
                 "hotlist": "热门品种",
                 "history": "历史记录",
                 "alerts": "告警配置",
+                "alert_logs": "告警日志",
                 "cloud": "云端同步",
                 "settings": "系统设置",
                 "symbols": "品种库"

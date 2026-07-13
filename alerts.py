@@ -14,20 +14,23 @@ from typing import Dict, Tuple
 
 import storage
 
-# ── 冷却缓存（进程内存）────────────────────────────────────────────
-_cooldown: Dict[str, datetime] = {}
-
-
+# ── 冷却缓存（文件持久化）────────────────────────────────────────────
 def _is_cooldown(ticker: str, tf: str, minutes: int) -> bool:
-    key  = f"{ticker}::{tf}"
-    last = _cooldown.get(key)
-    if not last:
+    key = f"{ticker}::{tf}"
+    cooldowns = storage.load_cooldowns()
+    last_str = cooldowns.get(key)
+    if not last_str:
         return False
-    return (datetime.now() - last).total_seconds() < minutes * 60
+    try:
+        last = datetime.fromisoformat(last_str)
+        return (datetime.now() - last).total_seconds() < minutes * 60
+    except Exception:
+        return False
 
 
 def _mark(ticker: str, tf: str) -> None:
-    _cooldown[f"{ticker}::{tf}"] = datetime.now()
+    key = f"{ticker}::{tf}"
+    storage.save_cooldown(key, datetime.now().isoformat())
 
 
 # ── 消息构建 ────────────────────────────────────────────────────────

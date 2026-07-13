@@ -210,175 +210,206 @@ def render():
 
     # ── 告警日志 ─────────────────────────────────────────────────────
     with tab3:
-        st.markdown("#### 📋 告警日志记录")
+        render_alert_log_table(full_page=False)
+
+
+def render_alert_log_table(full_page=False):
+    # 顶部视图切换
+    try:
+        view_mode = st.segmented_control(
+            "显示范围",
+            options=["最近 20 条", "最近 50 条", "最近 100 条", "全部记录"],
+            default="最近 100 条",
+            key=f"alert_log_view_mode_{'full' if full_page else 'tab'}"
+        ) or "最近 100 条"
+    except Exception:
+        view_mode = st.radio(
+            "显示范围",
+            options=["最近 20 条", "最近 50 条", "最近 100 条", "全部记录"],
+            index=2,
+            horizontal=True,
+            key=f"alert_log_view_mode_{'full' if full_page else 'tab'}"
+        )
         
-        # 顶部视图切换
-        try:
-            view_mode = st.segmented_control(
-                "显示范围",
-                options=["最近 20 条", "最近 50 条", "全部记录"],
-                default="最近 50 条",
-                key="alert_log_view_mode"
-            ) or "最近 50 条"
-        except Exception:
-            view_mode = st.radio(
-                "显示范围",
-                options=["最近 20 条", "最近 50 条", "全部记录"],
-                index=1,
-                horizontal=True,
-                key="alert_log_view_mode"
+    limit_map = {"最近 20 条": 20, "最近 50 条": 50, "最近 100 条": 100, "全部记录": 0}
+    limit_val = limit_map[view_mode]
+    
+    logs = storage.load_alert_log(limit=limit_val)
+    
+    if not logs:
+        st.info("暂无告警记录")
+    else:
+        df = pd.DataFrame(logs)
+        
+        # 兼容处理历史数据缺少 scanner 字段的情况
+        if "scanner" not in df.columns:
+            df["scanner"] = ""
+        else:
+            df["scanner"] = df["scanner"].fillna("")
+            
+        # ── 筛选器面板 ────────────────────────────────────────────────
+        with st.expander("🔍 筛选过滤条件", expanded=True):
+            f_col1, f_col2, f_col3, f_col4 = st.columns(4)
+            with f_col1:
+                import datetime
+                today = datetime.date.today()
+                seven_days_ago = today - datetime.timedelta(days=7)
+                selected_dates = st.date_input(
+                    "📅 日期范围",
+                    value=(seven_days_ago, today),
+                    help="筛选触发告警的日期区间",
+                    key=f"alert_log_date_{'full' if full_page else 'tab'}"
+                )
+            with f_col2:
+                search_q = st.text_input(
+                    "🏷️ 代码 / 品种名",
+                    placeholder="输入搜索关键字...",
+                    help="不区分大小写，搜索代码或资产名称",
+                    key=f"alert_log_search_{'full' if full_page else 'tab'}"
+                )
+            with f_col3:
+                scanner_opt = st.selectbox(
+                    "🔍 扫描器类型",
+                    options=["全部", "Fibonacci 扫描", "EMA + Daily Pivot", "其他"],
+                    help="根据触发告警的扫描类型进行筛选",
+                    key=f"alert_log_scanner_{'full' if full_page else 'tab'}"
+                )
+            with f_col4:
+                # 获取日志中已有的时间周期
+                available_tf = []
+                if "timeframe" in df.columns:
+                    available_tf = sorted(list(df["timeframe"].dropna().unique()))
+                if not available_tf:
+                    available_tf = ["15m", "4H", "Daily", "Weekly", "Monthly"]
+                timeframe_opt = st.multiselect(
+                    "⏱️ 时间框架",
+                    options=available_tf,
+                    help="多选过滤时间框架",
+                    key=f"alert_log_tf_{'full' if full_page else 'tab'}"
+                )
+        
+        # ── 应用筛选逻辑 ─────────────────────────────────────────────
+        # 1. 日期筛选
+        if selected_dates:
+            if isinstance(selected_dates, (tuple, list)) and len(selected_dates) == 2:
+                start_date, end_date = selected_dates
+            elif isinstance(selected_dates, (tuple, list)) and len(selected_dates) == 1:
+                start_date = selected_dates[0]
+                end_date = selected_dates[0]
+            else:
+                start_date = selected_dates
+                end_date = selected_dates
+                
+            start_str = start_date.strftime("%Y-%m-%d")
+            end_str = end_date.strftime("%Y-%m-%d")
+            df = df[df["time"].apply(lambda t: start_str <= str(t)[:10] <= end_str)]
+            
+        # 2. 文本搜索
+        if search_q:
+            q = search_q.strip().lower()
+            df = df[
+                df["ticker"].str.lower().str.contains(q, na=False) |
+                df["name"].str.lower().str.contains(q, na=False)
+            ]
+            
+        # 3. 扫描器筛选
+        if scanner_opt == "Fibonacci 扫描":
+            df = df[df["scanner"] == "fibo"]
+        elif scanner_opt == "EMA + Daily Pivot":
+            df = df[df["scanner"] == "ema_pivot"]
+        elif scanner_opt == "其他":
+            df = df[~df["scanner"].isin(["fibo", "ema_pivot"])]
+            
+        # 4. 时间框架筛选
+        if timeframe_opt:
+            df = df[df["timeframe"].isin(timeframe_opt)]
+            
+        # ── 统计摘要指标 ─────────────────────────────────────────────
+        m_col1, m_col2, m_col3 = st.columns(3)
+        with m_col1:
+            st.metric("📊 过滤后记录数", f"{len(df)} 条")
+        with m_col2:
+            ok_count = len(df[df["status"] == "ok"]) if "status" in df.columns else 0
+            st.metric("✅ 发送成功", f"{ok_count} 条")
+        with m_col3:
+            fail_count = len(df[df["status"] == "fail"]) if "status" in df.columns else 0
+            st.metric("❌ 发送失败", f"{fail_count} 条", delta=f"{fail_count} 次异常" if fail_count > 0 else None, delta_color="inverse")
+            
+        # ── 列表渲染 ─────────────────────────────────────────────────
+        if df.empty:
+            st.warning("⚠️ 没有找到符合筛选条件的告警记录")
+        else:
+            from assets import tv_url
+            
+            # 转换扫描器标签
+            def get_scanner_label(s):
+                if s == "fibo":
+                    return "Fibonacci"
+                elif s == "ema_pivot":
+                    return "EMA + Daily Pivot"
+                return "其他/历史记录"
+                
+            df["scanner_name"] = df["scanner"].apply(get_scanner_label)
+            df["tradingview"] = df["ticker"].apply(lambda t: tv_url(t, "15m"))
+            
+            show_cols = ["time", "ticker", "name", "scanner_name", "timeframe", "tradingview", "channel", "status", "message"]
+            show_df = df[[c for c in show_cols if c in df.columns]]
+            
+            # 重命名表头以提升视觉体验
+            show_df = show_df.rename(columns={
+                "time": "时间",
+                "ticker": "代码",
+                "name": "名称",
+                "scanner_name": "扫描器",
+                "timeframe": "周期",
+                "tradingview": "TradingView (15m)",
+                "channel": "通知通道",
+                "status": "发送状态",
+                "message": "返回消息"
+            })
+            
+            # 💡 动态为行着色
+            try:
+                def make_style(row):
+                    status = row.get("发送状态", "")
+                    if status == "fail" or status == "失败":
+                        # 失败：柔和红背景
+                        return ["background-color: rgba(239, 68, 68, 0.12);"] * len(row)
+                    elif status == "ok" or status == "成功":
+                        # 成功：柔和绿背景
+                        return ["background-color: rgba(34, 197, 94, 0.08);"] * len(row)
+                    return [""] * len(row)
+                styled_df = show_df.style.apply(make_style, axis=1)
+            except Exception:
+                styled_df = show_df
+            
+            st.dataframe(
+                styled_df,
+                column_config={
+                    "TradingView (15m)": st.column_config.LinkColumn(
+                        "TradingView (15m)",
+                        display_text="📈 打开图表",
+                        help="点击在 TradingView 中以 15m 周期查看"
+                    )
+                },
+                use_container_width=True,
+                height=700
             )
             
-        limit_map = {"最近 20 条": 20, "最近 50 条": 50, "全部记录": 0}
-        limit_val = limit_map[view_mode]
-        
-        logs = storage.load_alert_log(limit=limit_val)
-        
-        if not logs:
-            st.info("暂无告警记录")
-        else:
-            df = pd.DataFrame(logs)
-            
-            # 兼容处理历史数据缺少 scanner 字段的情况
-            if "scanner" not in df.columns:
-                df["scanner"] = ""
-            else:
-                df["scanner"] = df["scanner"].fillna("")
-                
-            # ── 筛选器面板 ────────────────────────────────────────────────
-            with st.expander("🔍 筛选过滤条件", expanded=True):
-                f_col1, f_col2, f_col3, f_col4 = st.columns(4)
-                with f_col1:
-                    import datetime
-                    today = datetime.date.today()
-                    seven_days_ago = today - datetime.timedelta(days=7)
-                    selected_dates = st.date_input(
-                        "📅 日期范围",
-                        value=(seven_days_ago, today),
-                        help="筛选触发告警的日期区间"
-                    )
-                with f_col2:
-                    search_q = st.text_input(
-                        "🏷️ 代码 / 品种名",
-                        placeholder="输入搜索关键字...",
-                        help="不区分大小写，搜索代码或资产名称"
-                    )
-                with f_col3:
-                    scanner_opt = st.selectbox(
-                        "🔍 扫描器类型",
-                        options=["全部", "Fibonacci 扫描", "EMA + Daily Pivot", "其他"],
-                        help="根据触发告警的扫描类型进行筛选"
-                    )
-                with f_col4:
-                    # 获取日志中已有的时间周期
-                    available_tf = []
-                    if "timeframe" in df.columns:
-                        available_tf = sorted(list(df["timeframe"].dropna().unique()))
-                    if not available_tf:
-                        available_tf = ["15m", "4H", "Daily", "Weekly", "Monthly"]
-                    timeframe_opt = st.multiselect(
-                        "⏱️ 时间框架",
-                        options=available_tf,
-                        help="多选过滤时间框架"
-                    )
-            
-            # ── 应用筛选逻辑 ─────────────────────────────────────────────
-            # 1. 日期筛选
-            if selected_dates:
-                if isinstance(selected_dates, (tuple, list)) and len(selected_dates) == 2:
-                    start_date, end_date = selected_dates
-                elif isinstance(selected_dates, (tuple, list)) and len(selected_dates) == 1:
-                    start_date = selected_dates[0]
-                    end_date = selected_dates[0]
-                else:
-                    start_date = selected_dates
-                    end_date = selected_dates
-                    
-                start_str = start_date.strftime("%Y-%m-%d")
-                end_str = end_date.strftime("%Y-%m-%d")
-                df = df[df["time"].apply(lambda t: start_str <= str(t)[:10] <= end_str)]
-                
-            # 2. 文本搜索
-            if search_q:
-                q = search_q.strip().lower()
-                df = df[
-                    df["ticker"].str.lower().str.contains(q, na=False) |
-                    df["name"].str.lower().str.contains(q, na=False)
-                ]
-                
-            # 3. 扫描器筛选
-            if scanner_opt == "Fibonacci 扫描":
-                df = df[df["scanner"] == "fibo"]
-            elif scanner_opt == "EMA + Daily Pivot":
-                df = df[df["scanner"] == "ema_pivot"]
-            elif scanner_opt == "其他":
-                df = df[~df["scanner"].isin(["fibo", "ema_pivot"])]
-                
-            # 4. 时间框架筛选
-            if timeframe_opt:
-                df = df[df["timeframe"].isin(timeframe_opt)]
-                
-            # ── 统计摘要指标 ─────────────────────────────────────────────
-            m_col1, m_col2, m_col3 = st.columns(3)
-            with m_col1:
-                st.metric("📊 过滤后记录数", f"{len(df)} 条")
-            with m_col2:
-                ok_count = len(df[df["status"] == "ok"]) if "status" in df.columns else 0
-                st.metric("✅ 发送成功", f"{ok_count} 条")
-            with m_col3:
-                fail_count = len(df[df["status"] == "fail"]) if "status" in df.columns else 0
-                st.metric("❌ 发送失败", f"{fail_count} 条", delta=f"{fail_count} 次异常" if fail_count > 0 else None, delta_color="inverse")
-                
-            # ── 列表渲染 ─────────────────────────────────────────────────
-            if df.empty:
-                st.warning("⚠️ 没有找到符合筛选条件的告警记录")
-            else:
-                from assets import tv_url
-                
-                # 转换扫描器标签
-                def get_scanner_label(s):
-                    if s == "fibo":
-                        return "Fibonacci"
-                    elif s == "ema_pivot":
-                        return "EMA + Daily Pivot"
-                    return "其他/历史记录"
-                    
-                df["scanner_name"] = df["scanner"].apply(get_scanner_label)
-                df["tradingview"] = df["ticker"].apply(lambda t: tv_url(t, "15m"))
-                
-                show_cols = ["time", "ticker", "name", "scanner_name", "timeframe", "tradingview", "channel", "status", "message"]
-                show_df = df[[c for c in show_cols if c in df.columns]]
-                
-                # 重命名表头以提升视觉体验
-                show_df = show_df.rename(columns={
-                    "time": "时间",
-                    "ticker": "代码",
-                    "name": "名称",
-                    "scanner_name": "扫描器",
-                    "timeframe": "周期",
-                    "tradingview": "TradingView (15m)",
-                    "channel": "通知通道",
-                    "status": "发送状态",
-                    "message": "返回消息"
-                })
-                
-                st.dataframe(
-                    show_df,
-                    column_config={
-                        "TradingView (15m)": st.column_config.LinkColumn(
-                            "TradingView (15m)",
-                            display_text="📈 打开图表",
-                            help="点击在 TradingView 中以 15m 周期查看"
-                        )
-                    },
-                    use_container_width=True,
-                    height=450
-                )
-                
-            # 清空日志按钮
-            col_clear, _ = st.columns([1, 3])
-            with col_clear:
-                if st.button("🗑️ 清空所有日志", width="stretch"):
-                    storage.clear_alert_log()
-                    st.success("已成功清空所有日志记录")
-                    st.rerun()
+        # 操作按钮：刷新 & 清空
+        col_btn1, col_btn2, _ = st.columns([1, 1, 4])
+        with col_btn1:
+            if st.button("🔄 刷新日志", key=f"alert_log_refresh_{'full' if full_page else 'tab'}", use_container_width=True):
+                st.rerun()
+        with col_btn2:
+            if st.button("🗑️ 清空所有日志", key=f"alert_log_clear_{'full' if full_page else 'tab'}", use_container_width=True):
+                storage.clear_alert_log()
+                st.success("已成功清空所有日志记录")
+                st.rerun()
+
+
+def render_log_page():
+    st.markdown("## 📋 告警日志")
+    render_alert_log_table(full_page=True)
+
+

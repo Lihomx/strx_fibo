@@ -72,6 +72,29 @@ def _save(path: str, data) -> bool:
             return False
 
 
+# ── 告警冷却持久化 ───────────────────────────────────────────────────
+F_COOLDOWN = os.path.join(_BASE, "data_cooldown.json")
+
+def load_cooldowns() -> Dict[str, str]:
+    return _load(F_COOLDOWN, {})
+
+def save_cooldown(key: str, val_str: str) -> bool:
+    data = load_cooldowns()
+    data[key] = val_str
+    
+    # 自动清理超过 24 小时（86400秒）的过期冷却记录，防止 JSON 文件无限变大
+    now = datetime.now()
+    pruned = {}
+    for k, v in data.items():
+        try:
+            dt = datetime.fromisoformat(v)
+            if (now - dt).total_seconds() < 86400:
+                pruned[k] = v
+        except Exception:
+            pass
+    return _save(F_COOLDOWN, pruned)
+
+
 def _save_with_backup(path: str, data) -> bool:
     """写入文件，同时在 backups/ 目录保留带时间戳的副本（仅限自选收藏相关文件）。"""
     ok = _save(path, data)
