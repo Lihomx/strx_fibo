@@ -495,6 +495,30 @@ def _check_password() -> bool:
 
 # ── 路由 ──────────────────────────────────────────────────────────
 def main():
+    # ── 处理 _trigger 定时扫描指令 (放在密码检查之前，避免被登录阻拦) ──
+    _trigger_val = st.query_params.get("_trigger", "")
+    if _trigger_val:
+        if _trigger_val == "periodic":
+            import scheduler
+            st.write("🔄 收到外部触发：正在执行自选周期扫描 (EMA20 + Daily Pivot 15m)...")
+            try:
+                scheduler._run_periodic_watchlist_scan()
+                st.success("✅ 自选周期扫描已执行并推送告警！")
+            except Exception as e:
+                st.error(f"❌ 扫描异常: {e}")
+            st.stop()
+            return
+        elif _trigger_val == "daily":
+            import scheduler
+            st.write("🔄 收到外部触发：正在执行每日全量扫描...")
+            try:
+                scheduler._run_scheduled_scan()
+                st.success("✅ 每日全量扫描已执行！")
+            except Exception as e:
+                st.error(f"❌ 扫描异常: {e}")
+            st.stop()
+            return
+
     if not _check_password():
         st.stop()
         return
