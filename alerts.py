@@ -169,13 +169,13 @@ def dispatch_alerts(ticker: str, name: str, timeframe: str,
     if cfg.get("dingtalk_enabled"):
         ok, msg = send_dingtalk(text, cfg)
         storage.log_alert(ticker, name, timeframe, "dingtalk",
-                          "ok" if ok else "fail", msg)
+                          "ok" if ok else "fail", msg, scanner="fibo")
         sent = sent or ok
 
     if cfg.get("telegram_enabled"):
         ok, msg = send_telegram(text, cfg)
         storage.log_alert(ticker, name, timeframe, "telegram",
-                          "ok" if ok else "fail", msg)
+                          "ok" if ok else "fail", msg, scanner="fibo")
         sent = sent or ok
 
     if sent:
@@ -196,13 +196,13 @@ def dispatch_alerts_ema_pivot(ticker: str, name: str, timeframe: str,
     if cfg.get("dingtalk_enabled"):
         ok, msg = send_dingtalk(text, cfg)
         storage.log_alert(ticker, name, timeframe, "dingtalk",
-                          "ok" if ok else "fail", msg)
+                          "ok" if ok else "fail", msg, scanner="ema_pivot")
         sent = sent or ok
 
     if cfg.get("telegram_enabled"):
         ok, msg = send_telegram(text, cfg)
         storage.log_alert(ticker, name, timeframe, "telegram",
-                          "ok" if ok else "fail", msg)
+                          "ok" if ok else "fail", msg, scanner="ema_pivot")
         sent = sent or ok
 
     if sent:

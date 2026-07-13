@@ -462,8 +462,7 @@ def clear_scanned_groups() -> bool:
     return _save(F_GROUPS, [])
 
 
-# ── 告警日志 ─────────────────────────────────────────────────────────
-def log_alert(ticker_or_entry, name=None, timeframe=None, channel=None, status=None, message=None) -> bool:
+def log_alert(ticker_or_entry, name=None, timeframe=None, channel=None, status=None, message=None, scanner=None) -> bool:
     if isinstance(ticker_or_entry, dict):
         entry = ticker_or_entry
     else:
@@ -474,7 +473,8 @@ def log_alert(ticker_or_entry, name=None, timeframe=None, channel=None, status=N
             "timeframe": timeframe or "",
             "channel": channel or "",
             "status": status or "",
-            "message": message or ""
+            "message": message or "",
+            "scanner": scanner or ""
         }
     logs: List[Dict] = _load(F_ALERTS, [])
     logs.append(entry)
@@ -485,7 +485,10 @@ def log_alert(ticker_or_entry, name=None, timeframe=None, channel=None, status=N
 
 def load_alerts(limit: int = 100) -> List[Dict]:
     logs = _load(F_ALERTS, [])
-    return list(reversed(logs))[:limit]
+    logs_rev = list(reversed(logs))
+    if limit == 0:
+        return logs_rev
+    return logs_rev[:limit]
 
 
 def load_alert_log(limit: int = 100) -> List[Dict]:
