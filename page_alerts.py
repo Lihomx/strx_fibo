@@ -216,9 +216,24 @@ def render():
             st.info("暂无告警记录")
         else:
             df = pd.DataFrame(logs)
-            show_cols = ["time","ticker","name","timeframe","channel","status","message"]
+            from assets import tv_url
+            df["tradingview"] = df["ticker"].apply(lambda t: tv_url(t, "15m"))
+            
+            show_cols = ["time", "ticker", "name", "timeframe", "tradingview", "channel", "status", "message"]
             show_df   = df[[c for c in show_cols if c in df.columns]]
-            st.dataframe(show_df, width="stretch", height=400)
+            
+            st.dataframe(
+                show_df,
+                column_config={
+                    "tradingview": st.column_config.LinkColumn(
+                        "TradingView (15m)",
+                        display_text="📈 打开图表",
+                        help="点击在 TradingView 中以 15m 周期查看"
+                    )
+                },
+                use_container_width=True,
+                height=400
+            )
             col1, col2 = st.columns([1,3])
             with col1:
                 if st.button("🗑️ 清空日志", width="stretch"):
