@@ -238,6 +238,7 @@ def render():
 
 
 def render_alert_log_table(full_page=False):
+    cfg = storage.load_config()
     # 顶部视图切换
     try:
         view_mode = st.segmented_control(
@@ -270,6 +271,34 @@ def render_alert_log_table(full_page=False):
             df["scanner"] = ""
         else:
             df["scanner"] = df["scanner"].fillna("")
+            
+        # ── 时区转换处理 ─────────────────────────────────────────────
+        tz_name = cfg.get("timezone", "Asia/Shanghai")
+        
+        def convert_tz(t_str):
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
+            if not t_str or not isinstance(t_str, str):
+                return str(t_str)
+            # 1. 尝试解析 ISO 格式 (带时区偏移)
+            try:
+                dt = datetime.fromisoformat(t_str.replace("Z", "+00:00"))
+                tz = ZoneInfo(tz_name)
+                return dt.astimezone(tz).strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                pass
+            # 2. 尝试解析旧格式 "YYYY-MM-DD HH:MM"
+            try:
+                dt = datetime.strptime(t_str, "%Y-%m-%d %H:%M")
+                # 旧记录默认视为 UTC 时区时间，转换为目标时区
+                dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+                tz = ZoneInfo(tz_name)
+                return dt.astimezone(tz).strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                return t_str
+                
+        if "time" in df.columns:
+            df["time"] = df["time"].apply(convert_tz)
             
         # ── 筛选器面板 ────────────────────────────────────────────────
         with st.expander("🔍 筛选过滤条件", expanded=True):

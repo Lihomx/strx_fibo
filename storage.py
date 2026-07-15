@@ -486,11 +486,12 @@ def clear_scanned_groups() -> bool:
 
 
 def log_alert(ticker_or_entry, name=None, timeframe=None, channel=None, status=None, message=None, scanner=None) -> bool:
+    from datetime import datetime, timezone
     if isinstance(ticker_or_entry, dict):
         entry = ticker_or_entry
     else:
         entry = {
-            "time": _now_str(),
+            "time": datetime.now(timezone.utc).isoformat(),
             "ticker": ticker_or_entry,
             "name": name or "",
             "timeframe": timeframe or "",

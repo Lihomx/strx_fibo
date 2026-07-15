@@ -10,7 +10,7 @@ def render():
     st.markdown("## ⚙️ 系统设置")
     cfg = storage.load_config()
 
-    tab1, tab2, tab3 = st.tabs(["📐 Fibonacci 参数", "📡 数据源", "💾 存储 & 缓存"])
+    tab1, tab2, tab3 = st.tabs(["📐 Fibonacci 参数", "📡 数据源", "⚙️ 系统与缓存"])
 
     # ── Tab1: Fibo 参数 ───────────────────────────────────────────────
     with tab1:
@@ -80,9 +80,40 @@ def render():
             cfg.update({"data_source": ds, "twelvedata_key": tdkey})
             if storage.save_config(cfg): st.success("✅ 已保存")
 
-    # ── Tab3: 存储 & 缓存 ────────────────────────────────────────────
+    # ── Tab3: 系统与缓存 ─────────────────────────────────────────────
     with tab3:
-        st.markdown("### 存储 & 缓存管理")
+        st.markdown("### 🌍 全球时区设置")
+        import zoneinfo
+        try:
+            all_tzs = sorted(list(zoneinfo.available_timezones()))
+        except Exception:
+            all_tzs = ["Asia/Shanghai", "UTC", "America/New_York", "Europe/London", "Asia/Tokyo", "Asia/Singapore"]
+        
+        common_tzs = ["Asia/Shanghai", "UTC", "America/New_York", "Europe/London", "Asia/Tokyo", "Asia/Singapore"]
+        other_tzs = [tz for tz in all_tzs if tz not in common_tzs]
+        display_tzs = common_tzs + other_tzs
+        
+        current_tz = cfg.get("timezone", "Asia/Shanghai")
+        if current_tz not in display_tzs:
+            display_tzs.insert(0, current_tz)
+            
+        tz_index = display_tzs.index(current_tz)
+        
+        with st.form("timezone_settings_form"):
+            selected_tz = st.selectbox(
+                "显示时区",
+                options=display_tzs,
+                index=tz_index,
+                help="设置后，系统将自动转换并以该时区显示所有的告警记录和时间戳。"
+            )
+            if st.form_submit_button("💾 保存时区设置"):
+                cfg["timezone"] = selected_tz
+                if storage.save_config(cfg):
+                    st.success(f"✅ 系统时区已成功切换为 {selected_tz}")
+                    st.rerun()
+                    
+        st.markdown("---")
+        st.markdown("### 💾 存储 & 缓存管理")
         stats = storage.storage_stats()
         total_symbols = sum(len(g) for g in ASSET_GROUPS.values())
 
