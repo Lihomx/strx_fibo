@@ -422,22 +422,74 @@ def inject_custom_theme():
             color: var(--text-color) !important;
         }
         
-        /* 统一所有 Streamlit 按钮：排除自选列表专用按钮 */
-        [data-testid^="stBaseButton"]:not([id*="wl_v_"]):not([id*="wl_pin_"]):not([id*="wl_del_"]):not([id*="wl_cat_btn_"]):not([id*="wl_tags_btn_"]):not([id*="wl_note_btn_"]):not([id*="wl_hist_btn_"]):not([id*="wl_chart_btn_"]),
-        .stButton > button:not([id*="wl_v_"]):not([id*="wl_pin_"]):not([id*="wl_del_"]):not([id*="wl_cat_btn_"]):not([id*="wl_tags_btn_"]):not([id*="wl_note_btn_"]):not([id*="wl_hist_btn_"]):not([id*="wl_chart_btn_"]),
+        /* ══ 全局按钮统一深色背景（消除白色） ══ */
+        button,
+        .stButton > button,
+        div[data-testid="stHorizontalBlock"] button,
         div[data-testid="stHorizontalBlock"] a,
         div[data-testid="stSegmentedControl"] button {
             background-color: var(--secondary-background-color) !important;
             color: var(--text-color) !important;
             border: 1px solid var(--border-color) !important;
         }
-        .stButton > button:not([id*="wl_v_"]):not([id*="wl_pin_"]):not([id*="wl_del_"]):not([id*="wl_cat_btn_"]):not([id*="wl_tags_btn_"]):not([id*="wl_note_btn_"]):not([id*="wl_hist_btn_"]):not([id*="wl_chart_btn_"]):hover,
+        button:hover,
+        .stButton > button:hover,
         div[data-testid="stHorizontalBlock"] a:hover,
         div[data-testid="stSegmentedControl"] button:hover {
             background-color: var(--primary-color) !important;
             color: var(--background-color) !important;
             border-color: var(--primary-color) !important;
         }
+
+        /* ══ 自选收藏夹专用按钮（高特异性 0,0,2,2 覆盖全局 0,0,1,2） ══ */
+        div[data-testid="stHorizontalBlock"] button[id*="wl_v_"],
+        div[data-testid="stHorizontalBlock"] button[id*="wl_pin_"],
+        div[data-testid="stHorizontalBlock"] button[id*="wl_del_"] {
+            background: rgba(128,128,128,0.12) !important;
+            border: 1px solid rgba(128,128,128,0.3) !important;
+            border-radius: 8px !important;
+            color: var(--text-color) !important;
+            font-size: 17px !important;
+            min-height: 40px !important;
+            transition: all 0.15s ease !important;
+        }
+        div[data-testid="stHorizontalBlock"] button[id*="wl_v_"]:hover {
+            background: rgba(34,197,94,0.22) !important;
+            border-color: rgba(34,197,94,0.6) !important;
+            color: #4ade80 !important;
+        }
+        div[data-testid="stHorizontalBlock"] button[id*="wl_pin_"]:hover {
+            background: rgba(234,179,8,0.22) !important;
+            border-color: rgba(234,179,8,0.6) !important;
+            color: #fbbf24 !important;
+        }
+        div[data-testid="stHorizontalBlock"] button[id*="wl_del_"]:hover {
+            background: rgba(239,68,68,0.22) !important;
+            border-color: rgba(239,68,68,0.6) !important;
+            color: #f87171 !important;
+        }
+        div[data-testid="stHorizontalBlock"] button[id*="wl_cat_btn_"],
+        div[data-testid="stHorizontalBlock"] button[id*="wl_tags_btn_"],
+        div[data-testid="stHorizontalBlock"] button[id*="wl_note_btn_"],
+        div[data-testid="stHorizontalBlock"] button[id*="wl_hist_btn_"],
+        div[data-testid="stHorizontalBlock"] button[id*="wl_chart_btn_"] {
+            background: rgba(99,102,241,0.12) !important;
+            border: 1px solid rgba(99,102,241,0.3) !important;
+            border-radius: 6px !important;
+            color: #a5b4fc !important;
+            font-size: 15px !important;
+            min-height: 34px !important;
+        }
+        div[data-testid="stHorizontalBlock"] button[id*="wl_cat_btn_"]:hover,
+        div[data-testid="stHorizontalBlock"] button[id*="wl_tags_btn_"]:hover,
+        div[data-testid="stHorizontalBlock"] button[id*="wl_note_btn_"]:hover,
+        div[data-testid="stHorizontalBlock"] button[id*="wl_hist_btn_"]:hover,
+        div[data-testid="stHorizontalBlock"] button[id*="wl_chart_btn_"]:hover {
+            background: rgba(99,102,241,0.28) !important;
+            border-color: rgba(99,102,241,0.65) !important;
+            color: #c7d2fe !important;
+        }
+
         
         /* 分段选择控件的激活选中状态 */
         div[data-testid="stSegmentedControl"] button[aria-checked="true"],
@@ -571,9 +623,18 @@ def inject_custom_theme():
         }
 
         /* ── Popover / Tooltip 弹出浮层 ── */
-        div[data-baseweb="popover"] > div {
+        div[data-baseweb="popover"] > div,
+        div[data-baseweb="tooltip"] > div,
+        div[data-baseweb="tooltip"],
+        div[role="tooltip"] {
             background-color: var(--secondary-background-color) !important;
+            color: var(--text-color) !important;
             border: 1px solid var(--border-color) !important;
+        }
+        div[data-baseweb="tooltip"] *,
+        div[role="tooltip"] *,
+        div[data-baseweb="popover"] * {
+            color: var(--text-color) !important;
         }
 
         /* ── Toast 提示 ── */
