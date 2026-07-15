@@ -172,90 +172,97 @@ def render():
     # ── 品种名内联编辑按钮样式 + 按钮行美化 + 移动端列强制水平排列 ──
     st.markdown("""
     <style>
-    /* ── 品种名编辑按钮：透明背景，下划线风格 ── */
-    [data-testid="stButton"] button[kind="secondary"][id*="wl_name_click_"] {
+    /* ── 品种名编辑按钮：透明风格 ── */
+    button[id*="wl_name_click_"] {
         background: transparent !important;
         border: none !important;
         padding: 0 !important;
         font-size: 14px !important;
         font-weight: 700 !important;
-        color: var(--text-color, #111) !important;
+        color: var(--text-color, #e2e8f0) !important;
         box-shadow: none !important;
         text-align: left !important;
         cursor: text !important;
-        text-decoration: underline dotted rgba(128,128,128,0.5) !important;
+        text-decoration: underline dotted rgba(148,163,184,0.5) !important;
     }
-    [data-testid="stButton"] button[kind="secondary"][id*="wl_name_click_"]:hover {
-        background: rgba(59,130,246,0.08) !important;
-        color: var(--primary-color, #3b82f6) !important;
-        text-decoration: underline solid var(--primary-color, #3b82f6) !important;
+    button[id*="wl_name_click_"]:hover {
+        background: rgba(59,130,246,0.1) !important;
+        color: #38bdf8 !important;
     }
 
-    /* ── 自选列表操作按钮行 ── */
-    /* 第一行：👁 📈 🏦 📌 🗑 */
-    div[data-testid="stHorizontalBlock"]:has(button[id*="wl_v_"]) .stButton > button,
-    div[data-testid="stHorizontalBlock"]:has(button[id*="wl_v_"]) a[data-testid="stBaseLinkButton-secondary"] {
-        background: rgba(255,255,255,0.06) !important;
-        border: 1px solid rgba(255,255,255,0.12) !important;
+    /* ═══ 第一行操作按钮：👁 标记已看 / 📈 TradingView / 🏦 新浪 / 📌 置顶 / 🗑 删除 ═══ */
+    button[id*="wl_v_"],
+    button[id*="wl_pin_"],
+    button[id*="wl_del_"] {
+        background: rgba(255,255,255,0.07) !important;
+        border: 1px solid rgba(255,255,255,0.15) !important;
         border-radius: 8px !important;
-        color: var(--text-color, #f1f5f9) !important;
+        color: #cbd5e1 !important;
         font-size: 18px !important;
         font-weight: 600 !important;
-        padding: 6px 0 !important;
-        transition: all 0.18s ease !important;
-        min-height: 40px !important;
+        min-height: 42px !important;
+        transition: background 0.15s, border-color 0.15s, transform 0.12s !important;
     }
-    div[data-testid="stHorizontalBlock"]:has(button[id*="wl_v_"]) .stButton > button:hover,
-    div[data-testid="stHorizontalBlock"]:has(button[id*="wl_v_"]) a[data-testid="stBaseLinkButton-secondary"]:hover {
-        background: rgba(59,130,246,0.18) !important;
-        border-color: rgba(59,130,246,0.5) !important;
+    button[id*="wl_v_"]:hover {
+        background: rgba(34,197,94,0.2) !important;
+        border-color: rgba(34,197,94,0.55) !important;
+        color: #4ade80 !important;
         transform: translateY(-1px) !important;
-        box-shadow: 0 4px 12px rgba(59,130,246,0.15) !important;
     }
-    /* 已看按钮高亮为绿色 */
-    button[id*="wl_v_"]:not(:disabled) {
-        color: var(--text-color, #f1f5f9) !important;
+    button[id*="wl_pin_"]:hover {
+        background: rgba(234,179,8,0.18) !important;
+        border-color: rgba(234,179,8,0.5) !important;
+        color: #fbbf24 !important;
+        transform: translateY(-1px) !important;
+    }
+    button[id*="wl_del_"]:hover {
+        background: rgba(239,68,68,0.18) !important;
+        border-color: rgba(239,68,68,0.5) !important;
+        color: #f87171 !important;
+        transform: translateY(-1px) !important;
     }
 
-    /* ── 第二行：📁 🏷️ ✏️ 📋 📊 控制按钮 ── */
-    div[data-testid="stHorizontalBlock"]:has(button[id*="wl_cat_btn_"]) .stButton > button {
-        background: rgba(255,255,255,0.04) !important;
-        border: 1px solid rgba(255,255,255,0.08) !important;
+    /* ═══ 第二行控制按钮：📁 分类 / 🏷️ 标签 / ✏️ 备注 / 📋 历史 / 📊 K线 ═══ */
+    button[id*="wl_cat_btn_"],
+    button[id*="wl_tags_btn_"],
+    button[id*="wl_note_btn_"],
+    button[id*="wl_hist_btn_"],
+    button[id*="wl_chart_btn_"] {
+        background: rgba(99,102,241,0.1) !important;
+        border: 1px solid rgba(99,102,241,0.25) !important;
         border-radius: 6px !important;
-        color: rgba(200,210,220,0.85) !important;
-        font-size: 15px !important;
-        padding: 4px 0 !important;
-        transition: all 0.15s ease !important;
-        min-height: 34px !important;
-    }
-    div[data-testid="stHorizontalBlock"]:has(button[id*="wl_cat_btn_"]) .stButton > button:hover {
-        background: rgba(99,102,241,0.15) !important;
-        border-color: rgba(99,102,241,0.4) !important;
         color: #a5b4fc !important;
+        font-size: 15px !important;
+        min-height: 34px !important;
+        transition: background 0.15s, border-color 0.15s !important;
+    }
+    button[id*="wl_cat_btn_"]:hover,
+    button[id*="wl_tags_btn_"]:hover,
+    button[id*="wl_note_btn_"]:hover,
+    button[id*="wl_hist_btn_"]:hover,
+    button[id*="wl_chart_btn_"]:hover {
+        background: rgba(99,102,241,0.25) !important;
+        border-color: rgba(99,102,241,0.6) !important;
+        color: #c7d2fe !important;
     }
 
-    /* ═══ 移动端：保持水平排列 ═══ */
+    /* ═══ 移动端：强制水平排列 ═══ */
     @media (max-width: 768px) {
         div[data-testid="stHorizontalBlock"] {
             flex-wrap: nowrap !important;
-            gap: 4px !important;
+            gap: 3px !important;
         }
         div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
             min-width: 0 !important;
             flex: 1 1 0 !important;
-            width: auto !important;
         }
-        div[data-testid="stHorizontalBlock"] .stButton > button {
+        div[data-testid="stHorizontalBlock"] button {
             min-height: 32px !important;
-            height: 32px !important;
-            padding: 2px 4px !important;
-            font-size: 14px !important;
+            font-size: 13px !important;
         }
         div[data-testid="stHorizontalBlock"] a[data-testid="stBaseLinkButton-secondary"] {
             min-height: 32px !important;
-            height: 32px !important;
-            padding: 2px 4px !important;
-            font-size: 14px !important;
+            font-size: 13px !important;
         }
     }
     </style>
