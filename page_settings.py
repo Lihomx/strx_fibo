@@ -113,6 +113,31 @@ def render():
                     st.rerun()
                     
         st.markdown("---")
+        st.markdown("### 🎨 显示风格与字体")
+        with st.form("appearance_settings_form"):
+            col_app1, col_app2 = st.columns(2)
+            with col_app1:
+                font_size_opt = st.selectbox(
+                    "全局字体大小",
+                    options=["默认 (14px)", "大 (16px)", "超大 (18px)"],
+                    index=["默认 (14px)", "大 (16px)", "超大 (18px)"].index(cfg.get("font_size", "默认 (14px)")),
+                    help="调整系统正文、列表、卡片和表格的字体大小。"
+                )
+            with col_app2:
+                theme_style_opt = st.selectbox(
+                    "系统显示风格 (主题)",
+                    options=["原厂默认", "极简深邃 (Minimal Dark)", "温暖护眼 (Warm Sepia)", "清新雅致 (Sage Forest)"],
+                    index=["原厂默认", "极简深邃 (Minimal Dark)", "温暖护眼 (Warm Sepia)", "清新雅致 (Sage Forest)"].index(cfg.get("theme_style", "原厂默认")),
+                    help="提供护眼、极简暗黑等不同配色风格，适合长期盯盘使用。"
+                )
+            if st.form_submit_button("💾 保存显示设置"):
+                cfg["font_size"] = font_size_opt
+                cfg["theme_style"] = theme_style_opt
+                if storage.save_config(cfg):
+                    st.success("✅ 显示风格与字体设置已成功保存！")
+                    st.rerun()
+                    
+        st.markdown("---")
         st.markdown("### 💾 存储 & 缓存管理")
         stats = storage.storage_stats()
         total_symbols = sum(len(g) for g in ASSET_GROUPS.values())

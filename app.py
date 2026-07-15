@@ -225,6 +225,241 @@ import cloud_sync
 
 
 
+def inject_custom_theme():
+    cfg = storage.load_config()
+    font_size_opt = cfg.get("font_size", "默认 (14px)")
+    theme_opt = cfg.get("theme_style", "原厂默认")
+    
+    size_map = {
+        "默认 (14px)": {"body": "14px", "header": "20px", "table": "14px", "badge": "11px", "sub": "11px"},
+        "大 (16px)": {"body": "16px", "header": "22px", "table": "16px", "badge": "12px", "sub": "12px"},
+        "超大 (18px)": {"body": "18px", "header": "24px", "table": "18px", "badge": "14px", "sub": "13px"}
+    }
+    s = size_map.get(font_size_opt, size_map["默认 (14px)"])
+    
+    theme_css = ""
+    if theme_opt == "极简深邃 (Minimal Dark)":
+        theme_css = """
+        html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"], .main {
+            background-color: #0f172a !important;
+            color: #f1f5f9 !important;
+        }
+        [data-testid="stSidebar"] {
+            background-color: #1e293b !important;
+            border-right: 1px solid rgba(255,255,255,0.05) !important;
+        }
+        [data-testid="stSidebar"] .stButton>button {
+            background-color: #1e293b !important;
+            color: #e2e8f0 !important;
+            border-color: rgba(255,255,255,0.08) !important;
+        }
+        [data-testid="stSidebar"] .stButton>button:hover {
+            background-color: #334155 !important;
+            border-color: #38bdf8 !important;
+        }
+        .m-card {
+            background-color: #1e293b !important;
+            border-color: rgba(255,255,255,0.08) !important;
+            color: #f1f5f9 !important;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06) !important;
+        }
+        .m-lbl {
+            color: #94a3b8 !important;
+        }
+        .alert-log-container {
+            border-color: rgba(255, 255, 255, 0.08) !important;
+        }
+        .alert-log-table th {
+            background-color: #1e293b !important;
+            color: #94a3b8 !important;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.08) !important;
+        }
+        .alert-log-table td {
+            color: #e2e8f0 !important;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+        }
+        .alert-log-row-odd {
+            background-color: rgba(56, 189, 248, 0.03) !important;
+        }
+        .alert-log-row-even {
+            background-color: transparent !important;
+        }
+        .alert-log-table tr:hover {
+            background-color: rgba(255, 255, 255, 0.04) !important;
+        }
+        div[data-baseweb="select"] > div, input, textarea, div[data-testid="stMarkdownContainer"] p {
+            color: #f1f5f9 !important;
+        }
+        .stButton>button {
+            background-color: #1e293b !important;
+            color: #f1f5f9 !important;
+            border-color: rgba(255,255,255,0.1) !important;
+        }
+        .stButton>button:hover {
+            background-color: #334155 !important;
+            border-color: #38bdf8 !important;
+            color: #38bdf8 !important;
+        }
+        """
+    elif theme_opt == "温暖护眼 (Warm Sepia)":
+        theme_css = """
+        html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"], .main {
+            background-color: #fcf8f2 !important;
+            color: #3e362e !important;
+        }
+        [data-testid="stSidebar"] {
+            background-color: #f4ece1 !important;
+            border-right: 1px solid rgba(0,0,0,0.05) !important;
+        }
+        [data-testid="stSidebar"] .stButton>button {
+            background-color: #f4ece1 !important;
+            color: #5c4f43 !important;
+            border-color: rgba(0,0,0,0.05) !important;
+        }
+        [data-testid="stSidebar"] .stButton>button:hover {
+            background-color: #eadac6 !important;
+            border-color: #d97706 !important;
+        }
+        .m-card {
+            background-color: #ffffff !important;
+            border-color: rgba(220, 210, 190, 0.6) !important;
+            color: #3e362e !important;
+            box-shadow: 0 2px 8px rgba(60,50,40,0.04) !important;
+        }
+        .m-lbl {
+            color: #7e6e5f !important;
+        }
+        .alert-log-container {
+            border-color: rgba(220, 210, 190, 0.6) !important;
+        }
+        .alert-log-table th {
+            background-color: #f4ece1 !important;
+            color: #7e6e5f !important;
+            border-bottom: 2px solid rgba(220, 210, 190, 0.6) !important;
+        }
+        .alert-log-table td {
+            color: #3e362e !important;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.05) !important;
+        }
+        .alert-log-row-odd {
+            background-color: rgba(217, 119, 6, 0.04) !important;
+        }
+        .alert-log-row-even {
+            background-color: transparent !important;
+        }
+        .alert-log-table tr:hover {
+            background-color: rgba(0, 0, 0, 0.02) !important;
+        }
+        div[data-baseweb="select"] > div, input, textarea, div[data-testid="stMarkdownContainer"] p {
+            color: #3e362e !important;
+        }
+        .stButton>button {
+            background-color: #ffffff !important;
+            color: #3e362e !important;
+            border-color: rgba(220,210,190,0.6) !important;
+        }
+        .stButton>button:hover {
+            background-color: #fcf8f2 !important;
+            border-color: #d97706 !important;
+            color: #d97706 !important;
+        }
+        """
+    elif theme_opt == "清新雅致 (Sage Forest)":
+        theme_css = """
+        html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"], .main {
+            background-color: #f3f6f5 !important;
+            color: #242d2a !important;
+        }
+        [data-testid="stSidebar"] {
+            background-color: #e5ece9 !important;
+            border-right: 1px solid rgba(0,0,0,0.05) !important;
+        }
+        [data-testid="stSidebar"] .stButton>button {
+            background-color: #e5ece9 !important;
+            color: #40524c !important;
+            border-color: rgba(0,0,0,0.05) !important;
+        }
+        [data-testid="stSidebar"] .stButton>button:hover {
+            background-color: #d2ded9 !important;
+            border-color: #0d9488 !important;
+        }
+        .m-card {
+            background-color: #ffffff !important;
+            border-color: rgba(180, 195, 190, 0.5) !important;
+            color: #242d2a !important;
+            box-shadow: 0 2px 8px rgba(20,30,25,0.03) !important;
+        }
+        .m-lbl {
+            color: #5c7068 !important;
+        }
+        .alert-log-container {
+            border-color: rgba(180, 195, 190, 0.5) !important;
+        }
+        .alert-log-table th {
+            background-color: #e5ece9 !important;
+            color: #5c7068 !important;
+            border-bottom: 2px solid rgba(180, 195, 190, 0.5) !important;
+        }
+        .alert-log-table td {
+            color: #242d2a !important;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.04) !important;
+        }
+        .alert-log-row-odd {
+            background-color: rgba(13, 148, 136, 0.03) !important;
+        }
+        .alert-log-row-even {
+            background-color: transparent !important;
+        }
+        .alert-log-table tr:hover {
+            background-color: rgba(0, 0, 0, 0.02) !important;
+        }
+        div[data-baseweb="select"] > div, input, textarea, div[data-testid="stMarkdownContainer"] p {
+            color: #242d2a !important;
+        }
+        .stButton>button {
+            background-color: #ffffff !important;
+            color: #242d2a !important;
+            border-color: rgba(180,195,190,0.5) !important;
+        }
+        .stButton>button:hover {
+            background-color: #f3f6f5 !important;
+            border-color: #0d9488 !important;
+            color: #0d9488 !important;
+        }
+        """
+
+    font_css = f"""
+    html, body, [class*="css"], [class*="st-"], span, p, div, label, input, select, textarea, button {{
+        font-size: {s['body']} !important;
+    }}
+    h1, h2, h3, h4, h5, h6 {{
+        font-size: {s['header']} !important;
+    }}
+    .m-lbl {{
+        font-size: {s['badge']} !important;
+    }}
+    .m-sub {{
+        font-size: {s['sub']} !important;
+    }}
+    .badge {{
+        font-size: {s['badge']} !important;
+    }}
+    .alert-log-table {{
+        font-size: {s['table']} !important;
+    }}
+    .alert-log-table th {{
+        font-size: calc({s['table']} - 1px) !important;
+    }}
+    """
+    
+    st.markdown(f"""
+    <style>
+    {theme_css}
+    {font_css}
+    </style>
+    """, unsafe_allow_html=True)
+
+
 # ── 侧边栏 ─────────────────────────────────────────────────────────
 def sidebar():
     with st.sidebar:
@@ -523,6 +758,9 @@ def main():
     if not _check_password():
         st.stop()
         return
+
+    # ── 应用显示风格和字体大小设置 ──────────────────────────────
+    inject_custom_theme()
 
     # ── 启动时：从云端自动恢复所有数据 ──────────────────────────
     if not st.session_state.get("_cloud_pulled"):
