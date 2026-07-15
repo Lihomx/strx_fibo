@@ -169,9 +169,10 @@ def _fetch_ticker_name(ticker: str) -> str:
 def render():
     st.markdown("## ⭐ 自选收藏夹")
 
-    # ── 品种名内联编辑按钮样式 + 移动端列强制水平排列 ──
+    # ── 品种名内联编辑按钮样式 + 按钮行美化 + 移动端列强制水平排列 ──
     st.markdown("""
     <style>
+    /* ── 品种名编辑按钮：透明背景，下划线风格 ── */
     [data-testid="stButton"] button[kind="secondary"][id*="wl_name_click_"] {
         background: transparent !important;
         border: none !important;
@@ -182,39 +183,79 @@ def render():
         box-shadow: none !important;
         text-align: left !important;
         cursor: text !important;
-        text-decoration: underline dotted #9ca3af !important;
+        text-decoration: underline dotted rgba(128,128,128,0.5) !important;
     }
     [data-testid="stButton"] button[kind="secondary"][id*="wl_name_click_"]:hover {
-        background: var(--secondary-background-color, #f0f9ff) !important;
-        color: var(--primary-color, #1d4ed8) !important;
-        text-decoration: underline solid var(--primary-color, #1d4ed8) !important;
+        background: rgba(59,130,246,0.08) !important;
+        color: var(--primary-color, #3b82f6) !important;
+        text-decoration: underline solid var(--primary-color, #3b82f6) !important;
     }
-    /* ═══ 核心修复：阻止 Streamlit 在移动端将 st.columns 堆叠为垂直 ═══ */
+
+    /* ── 自选列表操作按钮行 ── */
+    /* 第一行：👁 📈 🏦 📌 🗑 */
+    div[data-testid="stHorizontalBlock"]:has(button[id*="wl_v_"]) .stButton > button,
+    div[data-testid="stHorizontalBlock"]:has(button[id*="wl_v_"]) a[data-testid="stBaseLinkButton-secondary"] {
+        background: rgba(255,255,255,0.06) !important;
+        border: 1px solid rgba(255,255,255,0.12) !important;
+        border-radius: 8px !important;
+        color: var(--text-color, #f1f5f9) !important;
+        font-size: 18px !important;
+        font-weight: 600 !important;
+        padding: 6px 0 !important;
+        transition: all 0.18s ease !important;
+        min-height: 40px !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(button[id*="wl_v_"]) .stButton > button:hover,
+    div[data-testid="stHorizontalBlock"]:has(button[id*="wl_v_"]) a[data-testid="stBaseLinkButton-secondary"]:hover {
+        background: rgba(59,130,246,0.18) !important;
+        border-color: rgba(59,130,246,0.5) !important;
+        transform: translateY(-1px) !important;
+        box-shadow: 0 4px 12px rgba(59,130,246,0.15) !important;
+    }
+    /* 已看按钮高亮为绿色 */
+    button[id*="wl_v_"]:not(:disabled) {
+        color: var(--text-color, #f1f5f9) !important;
+    }
+
+    /* ── 第二行：📁 🏷️ ✏️ 📋 📊 控制按钮 ── */
+    div[data-testid="stHorizontalBlock"]:has(button[id*="wl_cat_btn_"]) .stButton > button {
+        background: rgba(255,255,255,0.04) !important;
+        border: 1px solid rgba(255,255,255,0.08) !important;
+        border-radius: 6px !important;
+        color: rgba(200,210,220,0.85) !important;
+        font-size: 15px !important;
+        padding: 4px 0 !important;
+        transition: all 0.15s ease !important;
+        min-height: 34px !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(button[id*="wl_cat_btn_"]) .stButton > button:hover {
+        background: rgba(99,102,241,0.15) !important;
+        border-color: rgba(99,102,241,0.4) !important;
+        color: #a5b4fc !important;
+    }
+
+    /* ═══ 移动端：保持水平排列 ═══ */
     @media (max-width: 768px) {
-        /* 强制所有 stHorizontalBlock 保持水平排列，不折行 */
         div[data-testid="stHorizontalBlock"] {
             flex-wrap: nowrap !important;
             gap: 4px !important;
         }
-        /* 每个列最小宽度为 0，允许收缩 */
         div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
             min-width: 0 !important;
             flex: 1 1 0 !important;
             width: auto !important;
         }
-        /* 操作按钮更紧凑 */
         div[data-testid="stHorizontalBlock"] .stButton > button {
             min-height: 32px !important;
             height: 32px !important;
             padding: 2px 4px !important;
-            font-size: 13px !important;
+            font-size: 14px !important;
         }
-        /* 外链按钮 st.link_button 同步变小 */
         div[data-testid="stHorizontalBlock"] a[data-testid="stBaseLinkButton-secondary"] {
             min-height: 32px !important;
             height: 32px !important;
             padding: 2px 4px !important;
-            font-size: 13px !important;
+            font-size: 14px !important;
         }
     }
     </style>
@@ -440,16 +481,34 @@ def _render_item_row(item, result_map, cats, viewed_set):
     st.markdown(f'<div id="{_row_anchor_id(ticker)}"></div>', unsafe_allow_html=True)
 
     if viewed:
-        row_style = "background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.3);opacity:0.85;color:var(--text-color);"
+        row_style = (
+            "background:rgba(34,197,94,0.10);"
+            "border-left:3px solid rgba(34,197,94,0.7);"
+            "border-top:1px solid rgba(34,197,94,0.2);"
+            "border-right:1px solid rgba(34,197,94,0.2);"
+            "border-bottom:1px solid rgba(34,197,94,0.2);"
+            "opacity:0.88;"
+        )
     elif pinned:
-        row_style = "background:rgba(234,179,8,0.08);border:1px solid rgba(234,179,8,0.3);color:var(--text-color);"
+        row_style = (
+            "background:rgba(234,179,8,0.10);"
+            "border-left:3px solid rgba(234,179,8,0.7);"
+            "border-top:1px solid rgba(234,179,8,0.25);"
+            "border-right:1px solid rgba(234,179,8,0.25);"
+            "border-bottom:1px solid rgba(234,179,8,0.25);"
+        )
     else:
-        row_style = "background:var(--background-color, #fff);border:1px solid var(--border-color, #e5e7eb);color:var(--text-color);"
+        row_style = (
+            "background:var(--secondary-background-color, rgba(30,41,59,0.6));"
+            "border:1px solid var(--border-color, rgba(255,255,255,0.1));"
+        )
 
     display_name = _he(name or ticker)
     ticker_badge = (
-        f' <span style="font-family:monospace;font-size:10px;color:#9ca3af;'
-        f'background:#f3f4f6;padding:1px 5px;border-radius:3px">{_he(ticker)}</span>'
+        f' <span style="font-family:monospace;font-size:10px;'
+        f'color:rgba(148,163,184,0.9);background:rgba(148,163,184,0.12);'
+        f'border:1px solid rgba(148,163,184,0.2);'
+        f'padding:1px 6px;border-radius:4px;vertical-align:middle">{_he(ticker)}</span>'
     ) if name else ""
     pin_icon  = "📌 " if pinned else ""
     view_icon = "✅ " if viewed else ""
@@ -460,14 +519,14 @@ def _render_item_row(item, result_map, cats, viewed_set):
         in_zone = r.get("in_zone", False)
         dist   = r.get("dist_pct")
         dist_s = f"{dist:.0f}%" if dist is not None else "—"
-        bg = "rgba(234,179,8,0.15)" if in_zone else "rgba(107,114,128,0.1)"
-        bd = "rgba(234,179,8,0.4)" if in_zone else "rgba(107,114,128,0.2)"
+        bg = "rgba(234,179,8,0.18)" if in_zone else "rgba(107,114,128,0.12)"
+        bd = "rgba(234,179,8,0.5)" if in_zone else "rgba(107,114,128,0.25)"
+        fc = "#fbbf24" if in_zone else "#94a3b8"
         ico = "⚡" if in_zone else "·"
         fibo_html += (
             f'<span style="background:{bg};border:1px solid {bd};border-radius:5px;'
-            f'padding:2px 6px;font-size:10px;white-space:nowrap;margin-right:3px;color:var(--text-color);">'
-            f'<b style="color:var(--text-color);">{_he(tf)}</b> '
-            f'<span style="opacity:0.8;color:var(--text-color);">{ico}{dist_s}</span></span>'
+            f'padding:2px 7px;font-size:10px;white-space:nowrap;margin-right:4px;color:{fc};">'
+            f'<b>{_he(tf)}</b> {ico}{dist_s}</span>'
         )
 
     note_html = ""
@@ -475,7 +534,8 @@ def _render_item_row(item, result_map, cats, viewed_set):
         nt   = latest.get("text","")
         nt_s = (nt[:50]+"…") if len(nt)>50 else nt
         note_html = (
-            f'<div style="color:#ef4444;font-size:12px;font-weight:600;margin-top:3px">'
+            f'<div style="color:#f87171;font-size:12px;font-weight:500;margin-top:5px;'
+            f'padding-top:5px;border-top:1px solid rgba(239,68,68,0.2)">'
             f'📝 {_he(nt_s)}</div>'
         )
 
@@ -505,24 +565,24 @@ def _render_item_row(item, result_map, cats, viewed_set):
             on_change=_save_name,
         )
     else:
-        # ── 展示模式：点击品种名进入编辑 ─────────────────────────
+        # ── 展示模式 ─────────────────────────────────────────────
         tags_html = ""
         for t in item.get("tags", []):
             tags_html += (
-                f'<span style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.4);border-radius:4px;'
-                f'padding:2px 6px;font-size:10px;white-space:nowrap;margin-right:4px;color:var(--text-color);font-weight:500;">'
+                f'<span style="background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.35);border-radius:4px;'
+                f'padding:2px 7px;font-size:10px;white-space:nowrap;margin-right:4px;color:#a5b4fc;font-weight:500;">'
                 f'🏷️ {t}</span>'
             )
         st.markdown(
-            f'<div style="{row_style}border-radius:8px;padding:8px 12px;margin-bottom:4px">'
-            f'<div style="font-size:14px;font-weight:700;color:#111">'
+            f'<div style="{row_style}border-radius:10px;padding:10px 14px;margin-bottom:2px;">'
+            f'<div style="font-size:15px;font-weight:700;color:var(--text-color,#f1f5f9);line-height:1.3;">'
             f'{pin_icon}{view_icon}{display_name}{ticker_badge}</div>'
-            + (f'<div style="margin-top:4px">{fibo_html}{tags_html}</div>' if fibo_html or tags_html else "")
+            + (f'<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:3px;">{fibo_html}{tags_html}</div>' if fibo_html or tags_html else "")
             + note_html
             + '</div>',
             unsafe_allow_html=True,
         )
-        # 点击品种名按钮 → 进入编辑
+        # 品种名按钮 → 进入编辑
         if st.button(
             f"✎ {name or ticker}",
             key=f"wl_name_click_{ticker}",
