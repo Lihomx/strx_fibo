@@ -359,6 +359,39 @@ def render_alert_log_table(full_page=False):
             fail_count = len(df[df["status"] == "fail"]) if "status" in df.columns else 0
             st.metric("❌ 发送失败", f"{fail_count} 条", delta=f"{fail_count} 次异常" if fail_count > 0 else None, delta_color="inverse")
             
+        # 自动监测新日志以触发 toast 提示
+        total_logs = storage.load_alert_log(limit=0)
+        current_total_count = len(total_logs)
+        count_state_key = f"alert_log_prev_count_{'full' if full_page else 'tab'}"
+        if count_state_key in st.session_state:
+            prev_count = st.session_state[count_state_key]
+            if current_total_count > prev_count:
+                st.toast(f"🔔 检测到 {current_total_count - prev_count} 条新的告警日志已生成！", icon="🔔")
+        st.session_state[count_state_key] = current_total_count
+
+        # ── 操作工具栏（置于指标下方，日志上方） ──────────────────────────────
+        col_btn1, col_btn2, col_btn3, col_btn4 = st.columns([1.5, 2, 1.5, 3])
+        with col_btn1:
+            if st.button("🔄 刷新日志", key=f"alert_log_refresh_top_{'full' if full_page else 'tab'}", use_container_width=True):
+                st.rerun()
+        with col_btn2:
+            auto_refresh = st.checkbox("⏱️ 开启自动检测刷新 (30s)", 
+                                       value=True, 
+                                       key=f"alert_log_auto_refresh_chk_{'full' if full_page else 'tab'}",
+                                       help="每30秒自动检测并刷新最新的告警日志")
+        with col_btn3:
+            if st.button("🗑️ 清空日志", key=f"alert_log_clear_top_{'full' if full_page else 'tab'}", use_container_width=True):
+                storage.clear_alert_log()
+                st.success("已成功清空所有日志记录")
+                st.rerun()
+        with col_btn4:
+            pass
+
+        # 启用自动刷新
+        if auto_refresh:
+            from streamlit_autorefresh import st_autorefresh
+            st_autorefresh(interval=30000, key=f"alert_log_autorefresh_runner_{'full' if full_page else 'tab'}")
+
         # ── 列表渲染 ─────────────────────────────────────────────────
         if df.empty:
             st.warning("⚠️ 没有找到符合筛选条件的告警记录")
@@ -392,54 +425,164 @@ def render_alert_log_table(full_page=False):
                 "message": "返回消息"
             })
             
-            # 💡 动态为行着色：同时间批次的正常记录使用同一种交替色，失败记录保持红色高亮
+            # 💡 用 HTML 渲染美观、大字体的表格，支持悬停高亮和批次底色交替，自适应深浅色主题
             try:
                 # 获取展示数据中所有唯一时间戳并排序
                 unique_times = sorted(show_df["时间"].dropna().unique())
                 time_to_group = {t: idx for idx, t in enumerate(unique_times)}
                 
-                def make_style(row):
+                # 开始构建 HTML 结构
+                html_table = """
+                <style>
+                .alert-log-container {
+                    max-height: 850px;
+                    overflow-y: auto;
+                    border: 1px solid rgba(128, 128, 128, 0.2);
+                    border-radius: 8px;
+                    margin-top: 15px;
+                    margin-bottom: 20px;
+                }
+                .alert-log-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-family: inherit;
+                    font-size: 14px; /* 字体大小调大 */
+                }
+                .alert-log-table th {
+                    background-color: rgba(128, 128, 128, 0.1);
+                    color: inherit;
+                    font-weight: 600;
+                    padding: 14px 16px;
+                    text-align: left;
+                    border-bottom: 2px solid rgba(128, 128, 128, 0.2);
+                    position: sticky;
+                    top: 0;
+                    z-index: 10;
+                    font-size: 13px;
+                }
+                .alert-log-table td {
+                    padding: 14px 16px; /* 增加行内边距，提升行高 */
+                    border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+                    vertical-align: middle;
+                }
+                .alert-log-row-odd {
+                    background-color: rgba(30, 144, 255, 0.05);
+                }
+                .alert-log-row-even {
+                    background-color: transparent;
+                }
+                .alert-log-row-fail {
+                    background-color: rgba(239, 68, 68, 0.12) !important;
+                }
+                .alert-log-table tr:hover {
+                    background-color: rgba(128, 128, 128, 0.08) !important;
+                }
+                .badge-success {
+                    background-color: rgba(34, 197, 94, 0.15);
+                    color: #4ade80;
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    font-weight: 500;
+                    font-size: 12px;
+                    display: inline-block;
+                    border: 1px solid rgba(34, 197, 94, 0.3);
+                }
+                .badge-danger {
+                    background-color: rgba(239, 68, 68, 0.15);
+                    color: #f87171;
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    font-weight: 500;
+                    font-size: 12px;
+                    display: inline-block;
+                    border: 1px solid rgba(239, 68, 68, 0.3);
+                }
+                .tv-btn {
+                    display: inline-flex;
+                    align-items: center;
+                    background-color: rgba(30, 144, 255, 0.15);
+                    color: #38bdf8 !important;
+                    padding: 5px 10px;
+                    border-radius: 4px;
+                    text-decoration: none !important;
+                    font-size: 12px;
+                    font-weight: 500;
+                    transition: all 0.2s ease;
+                    border: 1px solid rgba(30, 144, 255, 0.3);
+                }
+                .tv-btn:hover {
+                    background-color: rgba(30, 144, 255, 0.3);
+                    color: #60a5fa !important;
+                    transform: translateY(-1px);
+                }
+                </style>
+                <div class="alert-log-container">
+                    <table class="alert-log-table">
+                        <thead>
+                            <tr>
+                                <th>时间</th>
+                                <th>代码</th>
+                                <th>名称</th>
+                                <th>扫描器</th>
+                                <th>周期</th>
+                                <th>TradingView</th>
+                                <th>通知通道</th>
+                                <th>发送状态</th>
+                                <th>返回消息</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                """
+                
+                for idx, row in show_df.iterrows():
                     status = row.get("发送状态", "")
-                    if status == "fail" or status == "失败":
-                        # 失败：柔和红背景，保持高亮警示
-                        return ["background-color: rgba(239, 68, 68, 0.12);"] * len(row)
-                    
-                    # 正常记录交替分组底色
                     t_val = row.get("时间", "")
-                    group_idx = time_to_group.get(t_val, 0)
-                    if group_idx % 2 == 1:
-                        # 奇数批次时间组：柔和灰蓝色背景
-                        return ["background-color: rgba(30, 144, 255, 0.05);"] * len(row)
+                    
+                    # 确定行样式类
+                    row_class = ""
+                    if status == "fail" or status == "失败":
+                        row_class = 'class="alert-log-row-fail"'
                     else:
-                        # 偶数批次时间组：不加底色（保持透明）
-                        return [""] * len(row)
-                styled_df = show_df.style.apply(make_style, axis=1)
-            except Exception:
-                styled_df = show_df
-            
-            st.dataframe(
-                styled_df,
-                column_config={
-                    "TradingView (15m)": st.column_config.LinkColumn(
-                        "TradingView (15m)",
-                        display_text="📈 打开图表",
-                        help="点击在 TradingView 中以 15m 周期查看"
-                    )
-                },
-                use_container_width=True,
-                height=700
-            )
-            
-        # 操作按钮：刷新 & 清空
-        col_btn1, col_btn2, _ = st.columns([1, 1, 4])
-        with col_btn1:
-            if st.button("🔄 刷新日志", key=f"alert_log_refresh_{'full' if full_page else 'tab'}", use_container_width=True):
-                st.rerun()
-        with col_btn2:
-            if st.button("🗑️ 清空所有日志", key=f"alert_log_clear_{'full' if full_page else 'tab'}", use_container_width=True):
-                storage.clear_alert_log()
-                st.success("已成功清空所有日志记录")
-                st.rerun()
+                        group_idx = time_to_group.get(t_val, 0)
+                        if group_idx % 2 == 1:
+                            row_class = 'class="alert-log-row-odd"'
+                        else:
+                            row_class = 'class="alert-log-row-even"'
+                            
+                    # 格式化状态徽标
+                    if status == "fail" or status == "失败":
+                        status_html = '<span class="badge-danger">❌ 失败</span>'
+                    elif status == "ok" or status == "成功":
+                        status_html = '<span class="badge-success">✅ 成功</span>'
+                    else:
+                        status_html = f'<span>{status}</span>'
+                        
+                    # 格式化 TradingView 链接为按钮
+                    tv_url_val = row.get("TradingView (15m)", "")
+                    tv_html = f'<a href="{tv_url_val}" target="_blank" class="tv-btn">📈 图表</a>' if tv_url_val else "—"
+                    
+                    html_table += f"""
+                            <tr {row_class}>
+                                <td>{row.get("时间", "—")}</td>
+                                <td><b>{row.get("代码", "—")}</b></td>
+                                <td>{row.get("名称", "—")}</td>
+                                <td>{row.get("扫描器", "—")}</td>
+                                <td><code>{row.get("周期", "—")}</code></td>
+                                <td>{tv_html}</td>
+                                <td>{row.get("通知通道", "—")}</td>
+                                <td>{status_html}</td>
+                                <td>{row.get("返回消息", "—")}</td>
+                            </tr>
+                    """
+                
+                html_table += """
+                        </tbody>
+                    </table>
+                </div>
+                """
+                st.markdown(html_table, unsafe_allow_html=True)
+            except Exception as e:
+                st.dataframe(show_df, use_container_width=True, height=850)
 
 
 def render_log_page():
