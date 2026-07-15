@@ -245,6 +245,7 @@ def inject_custom_theme():
             --secondary-background-color: #1e293b !important;
             --text-color: #f1f5f9 !important;
             --primary-color: #38bdf8 !important;
+            --border-color: rgba(255, 255, 255, 0.08) !important;
         }
         html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"], .main {
             background-color: #0f172a !important;
@@ -256,15 +257,6 @@ def inject_custom_theme():
         }
         [data-testid="stSidebar"] * {
             color: #e2e8f0 !important;
-        }
-        [data-testid="stSidebar"] .stButton>button {
-            background-color: #1e293b !important;
-            color: #e2e8f0 !important;
-            border-color: rgba(255,255,255,0.08) !important;
-        }
-        [data-testid="stSidebar"] .stButton>button:hover {
-            background-color: #334155 !important;
-            border-color: #38bdf8 !important;
         }
         .m-card {
             background-color: #1e293b !important;
@@ -296,73 +288,29 @@ def inject_custom_theme():
         .alert-log-table tr:hover {
             background-color: rgba(255, 255, 255, 0.04) !important;
         }
-        /* 统一输入框、选择框、下拉菜单、日期控件的背景与文字颜色 */
-        div[data-baseweb="select"] > div,
-        div[data-baseweb="select"] ul,
-        div[data-baseweb="select"] li,
-        div[data-testid="stDateInput"] > div,
-        div[data-baseweb="popover"] *,
-        div[role="listbox"] *,
-        li[role="option"],
-        input, 
-        textarea, 
-        select {
-            background-color: #1e293b !important;
-            color: #f1f5f9 !important;
-            border-color: rgba(255,255,255,0.1) !important;
-        }
-        div[data-baseweb="select"] span,
-        div[data-baseweb="select"] div {
-            color: #f1f5f9 !important;
-        }
-        div[data-baseweb="calendar"] * {
-            background-color: #1e293b !important;
-            color: #f1f5f9 !important;
-        }
-        label, .stWidgetLabel, div[data-testid="stWidgetLabel"] p {
-            color: #f1f5f9 !important;
-        }
-        .stButton>button {
-            background-color: #1e293b !important;
-            color: #f1f5f9 !important;
-            border-color: rgba(255,255,255,0.1) !important;
-        }
-        .stButton>button:hover {
-            background-color: #334155 !important;
-            border-color: #38bdf8 !important;
-            color: #38bdf8 !important;
-        }
         """
     elif theme_opt == "温暖护眼 (Warm Sepia)":
         theme_css = """
         :root {
-            --background-color: #fcf8f2 !important;
-            --secondary-background-color: #f4ece1 !important;
+            --background-color: #f5eee2 !important;
+            --secondary-background-color: #eadac6 !important;
             --text-color: #3e362e !important;
             --primary-color: #d97706 !important;
+            --border-color: rgba(220, 210, 190, 0.6) !important;
         }
         html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"], .main {
-            background-color: #fcf8f2 !important;
+            background-color: #f5eee2 !important;
             color: #3e362e !important;
         }
         [data-testid="stSidebar"] {
-            background-color: #f4ece1 !important;
+            background-color: #eadac6 !important;
             border-right: 1px solid rgba(0,0,0,0.05) !important;
         }
         [data-testid="stSidebar"] * {
             color: #5c4f43 !important;
         }
-        [data-testid="stSidebar"] .stButton>button {
-            background-color: #f4ece1 !important;
-            color: #5c4f43 !important;
-            border-color: rgba(0,0,0,0.05) !important;
-        }
-        [data-testid="stSidebar"] .stButton>button:hover {
-            background-color: #eadac6 !important;
-            border-color: #d97706 !important;
-        }
         .m-card {
-            background-color: #ffffff !important;
+            background-color: #f5eee2 !important;
             border-color: rgba(220, 210, 190, 0.6) !important;
             color: #3e362e !important;
             box-shadow: 0 2px 8px rgba(60,50,40,0.04) !important;
@@ -374,7 +322,7 @@ def inject_custom_theme():
             border-color: rgba(220, 210, 190, 0.6) !important;
         }
         .alert-log-table th {
-            background-color: #f4ece1 !important;
+            background-color: #eadac6 !important;
             color: #7e6e5f !important;
             border-bottom: 2px solid rgba(220, 210, 190, 0.6) !important;
         }
@@ -391,73 +339,29 @@ def inject_custom_theme():
         .alert-log-table tr:hover {
             background-color: rgba(0, 0, 0, 0.02) !important;
         }
-        /* 统一输入框、选择框、下拉菜单、日期控件的背景与文字颜色 */
-        div[data-baseweb="select"] > div,
-        div[data-baseweb="select"] ul,
-        div[data-baseweb="select"] li,
-        div[data-testid="stDateInput"] > div,
-        div[data-baseweb="popover"] *,
-        div[role="listbox"] *,
-        li[role="option"],
-        input, 
-        textarea, 
-        select {
-            background-color: #ffffff !important;
-            color: #3e362e !important;
-            border-color: rgba(220, 210, 190, 0.6) !important;
-        }
-        div[data-baseweb="select"] span,
-        div[data-baseweb="select"] div {
-            color: #3e362e !important;
-        }
-        div[data-baseweb="calendar"] * {
-            background-color: #ffffff !important;
-            color: #3e362e !important;
-        }
-        label, .stWidgetLabel, div[data-testid="stWidgetLabel"] p {
-            color: #3e362e !important;
-        }
-        .stButton>button {
-            background-color: #ffffff !important;
-            color: #3e362e !important;
-            border-color: rgba(220,210,190,0.6) !important;
-        }
-        .stButton>button:hover {
-            background-color: #fcf8f2 !important;
-            border-color: #d97706 !important;
-            color: #d97706 !important;
-        }
         """
     elif theme_opt == "清新雅致 (Sage Forest)":
         theme_css = """
         :root {
-            --background-color: #f3f6f5 !important;
-            --secondary-background-color: #e5ece9 !important;
+            --background-color: #e5ece9 !important;
+            --secondary-background-color: #d2ded9 !important;
             --text-color: #242d2a !important;
             --primary-color: #0d9488 !important;
+            --border-color: rgba(180, 195, 190, 0.5) !important;
         }
         html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"], .main {
-            background-color: #f3f6f5 !important;
+            background-color: #e5ece9 !important;
             color: #242d2a !important;
         }
         [data-testid="stSidebar"] {
-            background-color: #e5ece9 !important;
+            background-color: #d2ded9 !important;
             border-right: 1px solid rgba(0,0,0,0.05) !important;
         }
         [data-testid="stSidebar"] * {
             color: #40524c !important;
         }
-        [data-testid="stSidebar"] .stButton>button {
-            background-color: #e5ece9 !important;
-            color: #40524c !important;
-            border-color: rgba(0,0,0,0.05) !important;
-        }
-        [data-testid="stSidebar"] .stButton>button:hover {
-            background-color: #d2ded9 !important;
-            border-color: #0d9488 !important;
-        }
         .m-card {
-            background-color: #ffffff !important;
+            background-color: #e5ece9 !important;
             border-color: rgba(180, 195, 190, 0.5) !important;
             color: #242d2a !important;
             box-shadow: 0 2px 8px rgba(20,30,25,0.03) !important;
@@ -469,7 +373,7 @@ def inject_custom_theme():
             border-color: rgba(180, 195, 190, 0.5) !important;
         }
         .alert-log-table th {
-            background-color: #e5ece9 !important;
+            background-color: #d2ded9 !important;
             color: #5c7068 !important;
             border-bottom: 2px solid rgba(180, 195, 190, 0.5) !important;
         }
@@ -486,6 +390,11 @@ def inject_custom_theme():
         .alert-log-table tr:hover {
             background-color: rgba(0, 0, 0, 0.02) !important;
         }
+        """
+
+    if theme_opt != "原厂默认":
+        # 针对这三套自定义主题通用覆盖组件样式（使用 CSS variables）
+        theme_css += """
         /* 统一输入框、选择框、下拉菜单、日期控件的背景与文字颜色 */
         div[data-baseweb="select"] > div,
         div[data-baseweb="select"] ul,
@@ -497,30 +406,62 @@ def inject_custom_theme():
         input, 
         textarea, 
         select {
-            background-color: #ffffff !important;
-            color: #242d2a !important;
-            border-color: rgba(180, 195, 190, 0.5) !important;
+            background-color: var(--secondary-background-color) !important;
+            color: var(--text-color) !important;
+            border-color: var(--border-color) !important;
         }
         div[data-baseweb="select"] span,
         div[data-baseweb="select"] div {
-            color: #242d2a !important;
+            color: var(--text-color) !important;
         }
         div[data-baseweb="calendar"] * {
-            background-color: #ffffff !important;
-            color: #242d2a !important;
+            background-color: var(--secondary-background-color) !important;
+            color: var(--text-color) !important;
         }
         label, .stWidgetLabel, div[data-testid="stWidgetLabel"] p {
-            color: #242d2a !important;
+            color: var(--text-color) !important;
         }
-        .stButton>button {
-            background-color: #ffffff !important;
-            color: #242d2a !important;
-            border-color: rgba(180,195,190,0.5) !important;
+        
+        /* 统一所有 Streamlit 按钮、链接按钮、分段控件按钮的背景与文字，彻底消除白色背景 */
+        [data-testid^="stBaseButton"],
+        [data-testid^="stBaseLinkButton"],
+        button,
+        .stButton > button,
+        div[data-testid="stHorizontalBlock"] button,
+        div[data-testid="stHorizontalBlock"] a,
+        div[data-testid="stSegmentedControl"] button {
+            background-color: var(--secondary-background-color) !important;
+            color: var(--text-color) !important;
+            border: 1px solid var(--border-color) !important;
         }
-        .stButton>button:hover {
-            background-color: #f3f6f5 !important;
-            border-color: #0d9488 !important;
-            color: #0d9488 !important;
+        [data-testid^="stBaseButton"]:hover,
+        [data-testid^="stBaseLinkButton"]:hover,
+        button:hover,
+        .stButton > button:hover,
+        div[data-testid="stHorizontalBlock"] button:hover,
+        div[data-testid="stHorizontalBlock"] a:hover,
+        div[data-testid="stSegmentedControl"] button:hover {
+            background-color: var(--primary-color) !important;
+            color: var(--background-color) !important;
+            border-color: var(--primary-color) !important;
+        }
+        
+        /* 分段选择控件的激活选中状态 */
+        div[data-testid="stSegmentedControl"] button[aria-checked="true"],
+        div[data-testid="stSegmentedControl"] button[aria-checked="true"] * {
+            background-color: var(--primary-color) !important;
+            color: var(--background-color) !important;
+        }
+
+        /* 标签页 Tab 控件的背景与底部线条 */
+        div[data-testid="stTabs"] button {
+            background-color: transparent !important;
+            color: var(--text-color) !important;
+            border: none !important;
+        }
+        div[data-testid="stTabs"] button[aria-selected="true"] {
+            color: var(--primary-color) !important;
+            border-bottom: 2px solid var(--primary-color) !important;
         }
         """
 
