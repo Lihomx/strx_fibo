@@ -431,108 +431,26 @@ def render_alert_log_table(full_page=False):
                 unique_times = sorted(show_df["时间"].dropna().unique())
                 time_to_group = {t: idx for idx, t in enumerate(unique_times)}
                 
-                # 开始构建 HTML 结构
-                html_table = """
-                <style>
-                .alert-log-container {
-                    max-height: 850px;
-                    overflow-y: auto;
-                    border: 1px solid rgba(128, 128, 128, 0.2);
-                    border-radius: 8px;
-                    margin-top: 15px;
-                    margin-bottom: 20px;
-                }
-                .alert-log-table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    font-family: inherit;
-                    font-size: 14px; /* 字体大小调大 */
-                }
-                .alert-log-table th {
-                    background-color: rgba(128, 128, 128, 0.1);
-                    color: inherit;
-                    font-weight: 600;
-                    padding: 14px 16px;
-                    text-align: left;
-                    border-bottom: 2px solid rgba(128, 128, 128, 0.2);
-                    position: sticky;
-                    top: 0;
-                    z-index: 10;
-                    font-size: 13px;
-                }
-                .alert-log-table td {
-                    padding: 14px 16px; /* 增加行内边距，提升行高 */
-                    border-bottom: 1px solid rgba(128, 128, 128, 0.1);
-                    vertical-align: middle;
-                }
-                .alert-log-row-odd {
-                    background-color: rgba(30, 144, 255, 0.05);
-                }
-                .alert-log-row-even {
-                    background-color: transparent;
-                }
-                .alert-log-row-fail {
-                    background-color: rgba(239, 68, 68, 0.12) !important;
-                }
-                .alert-log-table tr:hover {
-                    background-color: rgba(128, 128, 128, 0.08) !important;
-                }
-                .badge-success {
-                    background-color: rgba(34, 197, 94, 0.15);
-                    color: #4ade80;
-                    padding: 4px 8px;
-                    border-radius: 4px;
-                    font-weight: 500;
-                    font-size: 12px;
-                    display: inline-block;
-                    border: 1px solid rgba(34, 197, 94, 0.3);
-                }
-                .badge-danger {
-                    background-color: rgba(239, 68, 68, 0.15);
-                    color: #f87171;
-                    padding: 4px 8px;
-                    border-radius: 4px;
-                    font-weight: 500;
-                    font-size: 12px;
-                    display: inline-block;
-                    border: 1px solid rgba(239, 68, 68, 0.3);
-                }
-                .tv-btn {
-                    display: inline-flex;
-                    align-items: center;
-                    background-color: rgba(30, 144, 255, 0.15);
-                    color: #38bdf8 !important;
-                    padding: 5px 10px;
-                    border-radius: 4px;
-                    text-decoration: none !important;
-                    font-size: 12px;
-                    font-weight: 500;
-                    transition: all 0.2s ease;
-                    border: 1px solid rgba(30, 144, 255, 0.3);
-                }
-                .tv-btn:hover {
-                    background-color: rgba(30, 144, 255, 0.3);
-                    color: #60a5fa !important;
-                    transform: translateY(-1px);
-                }
-                </style>
-                <div class="alert-log-container">
-                    <table class="alert-log-table">
-                        <thead>
-                            <tr>
-                                <th>时间</th>
-                                <th>代码</th>
-                                <th>名称</th>
-                                <th>扫描器</th>
-                                <th>周期</th>
-                                <th>TradingView</th>
-                                <th>通知通道</th>
-                                <th>发送状态</th>
-                                <th>返回消息</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                """
+                # 开始构建 HTML 结构 (使用列表拼接，避免出现 4 个空格以上的缩进导致 Markdown 渲染为代码块)
+                html_parts = []
+                html_parts.append("<style>")
+                html_parts.append(".alert-log-container { max-height: 850px; overflow-y: auto; border: 1px solid rgba(128, 128, 128, 0.2); border-radius: 8px; margin-top: 15px; margin-bottom: 20px; }")
+                html_parts.append(".alert-log-table { width: 100%; border-collapse: collapse; font-family: inherit; font-size: 14px; }")
+                html_parts.append(".alert-log-table th { background-color: rgba(128, 128, 128, 0.1); color: inherit; font-weight: 600; padding: 14px 16px; text-align: left; border-bottom: 2px solid rgba(128, 128, 128, 0.2); position: sticky; top: 0; z-index: 10; font-size: 13px; }")
+                html_parts.append(".alert-log-table td { padding: 14px 16px; border-bottom: 1px solid rgba(128, 128, 128, 0.1); vertical-align: middle; }")
+                html_parts.append(".alert-log-row-odd { background-color: rgba(30, 144, 255, 0.05); }")
+                html_parts.append(".alert-log-row-even { background-color: transparent; }")
+                html_parts.append(".alert-log-row-fail { background-color: rgba(239, 68, 68, 0.12) !important; }")
+                html_parts.append(".alert-log-table tr:hover { background-color: rgba(128, 128, 128, 0.08) !important; }")
+                html_parts.append(".badge-success { background-color: rgba(34, 197, 94, 0.15); color: #4ade80; padding: 4px 8px; border-radius: 4px; font-weight: 500; font-size: 12px; display: inline-block; border: 1px solid rgba(34, 197, 94, 0.3); }")
+                html_parts.append(".badge-danger { background-color: rgba(239, 68, 68, 0.15); color: #f87171; padding: 4px 8px; border-radius: 4px; font-weight: 500; font-size: 12px; display: inline-block; border: 1px solid rgba(239, 68, 68, 0.3); }")
+                html_parts.append(".tv-btn { display: inline-flex; align-items: center; background-color: rgba(30, 144, 255, 0.15); color: #38bdf8 !important; padding: 5px 10px; border-radius: 4px; text-decoration: none !important; font-size: 12px; font-weight: 500; transition: all 0.2s ease; border: 1px solid rgba(30, 144, 255, 0.3); }")
+                html_parts.append(".tv-btn:hover { background-color: rgba(30, 144, 255, 0.3); color: #60a5fa !important; transform: translateY(-1px); }")
+                html_parts.append("</style>")
+                html_parts.append("<div class=\"alert-log-container\">")
+                html_parts.append("<table class=\"alert-log-table\">")
+                html_parts.append("<thead><tr><th>时间</th><th>代码</th><th>名称</th><th>扫描器</th><th>周期</th><th>TradingView</th><th>通知通道</th><th>发送状态</th><th>返回消息</th></tr></thead>")
+                html_parts.append("<tbody>")
                 
                 for idx, row in show_df.iterrows():
                     status = row.get("发送状态", "")
@@ -561,25 +479,23 @@ def render_alert_log_table(full_page=False):
                     tv_url_val = row.get("TradingView (15m)", "")
                     tv_html = f'<a href="{tv_url_val}" target="_blank" class="tv-btn">📈 图表</a>' if tv_url_val else "—"
                     
-                    html_table += f"""
-                            <tr {row_class}>
-                                <td>{row.get("时间", "—")}</td>
-                                <td><b>{row.get("代码", "—")}</b></td>
-                                <td>{row.get("名称", "—")}</td>
-                                <td>{row.get("扫描器", "—")}</td>
-                                <td><code>{row.get("周期", "—")}</code></td>
-                                <td>{tv_html}</td>
-                                <td>{row.get("通知通道", "—")}</td>
-                                <td>{status_html}</td>
-                                <td>{row.get("返回消息", "—")}</td>
-                            </tr>
-                    """
+                    row_html = (
+                        f"<tr {row_class}>"
+                        f"<td>{row.get('时间', '—')}</td>"
+                        f"<td><b>{row.get('代码', '—')}</b></td>"
+                        f"<td>{row.get('名称', '—')}</td>"
+                        f"<td>{row.get('扫描器', '—')}</td>"
+                        f"<td><code>{row.get('周期', '—')}</code></td>"
+                        f"<td>{tv_html}</td>"
+                        f"<td>{row.get('通知通道', '—')}</td>"
+                        f"<td>{status_html}</td>"
+                        f"<td>{row.get('返回消息', '—')}</td>"
+                        f"</tr>"
+                    )
+                    html_parts.append(row_html)
                 
-                html_table += """
-                        </tbody>
-                    </table>
-                </div>
-                """
+                html_parts.append("</tbody></table></div>")
+                html_table = "".join(html_parts)
                 st.markdown(html_table, unsafe_allow_html=True)
             except Exception as e:
                 st.dataframe(show_df, use_container_width=True, height=850)
