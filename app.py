@@ -626,15 +626,20 @@ def inject_custom_theme():
         div[data-baseweb="popover"] > div,
         div[data-baseweb="tooltip"] > div,
         div[data-baseweb="tooltip"],
-        div[role="tooltip"] {
+        div[role="tooltip"],
+        .stTooltipContent,
+        [data-testid="stTooltipContent"] {
             background-color: var(--secondary-background-color) !important;
             color: var(--text-color) !important;
             border: 1px solid var(--border-color) !important;
         }
         div[data-baseweb="tooltip"] *,
         div[role="tooltip"] *,
-        div[data-baseweb="popover"] * {
+        div[data-baseweb="popover"] *,
+        .stTooltipContent *,
+        [data-testid="stTooltipContent"] * {
             color: var(--text-color) !important;
+            background-color: transparent !important;
         }
 
         /* ── Toast 提示 ── */
