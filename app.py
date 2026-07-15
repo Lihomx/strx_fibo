@@ -463,6 +463,132 @@ def inject_custom_theme():
             color: var(--primary-color) !important;
             border-bottom: 2px solid var(--primary-color) !important;
         }
+
+        /* ── Metric 指标卡 ── */
+        div[data-testid="stMetric"] {
+            background-color: var(--secondary-background-color) !important;
+            border: 1px solid var(--border-color) !important;
+            border-radius: 8px !important;
+            padding: 12px 16px !important;
+        }
+        div[data-testid="stMetric"] label,
+        div[data-testid="stMetricLabel"] *,
+        div[data-testid="stMetricValue"] *,
+        div[data-testid="stMetricDelta"] * {
+            color: var(--text-color) !important;
+        }
+
+        /* ── Expander 展开面板 ── */
+        div[data-testid="stExpander"] {
+            background-color: var(--secondary-background-color) !important;
+            border: 1px solid var(--border-color) !important;
+            border-radius: 8px !important;
+        }
+        div[data-testid="stExpander"] summary,
+        div[data-testid="stExpander"] summary *,
+        .streamlit-expanderHeader,
+        .streamlit-expanderHeader * {
+            background-color: var(--secondary-background-color) !important;
+            color: var(--text-color) !important;
+        }
+        div[data-testid="stExpander"] > div {
+            background-color: var(--secondary-background-color) !important;
+        }
+
+        /* ── Checkbox / Radio 复选框 ── */
+        div[data-testid="stCheckbox"] *,
+        div[data-testid="stRadio"] * {
+            color: var(--text-color) !important;
+        }
+        div[data-testid="stCheckbox"] label,
+        div[data-testid="stRadio"] label {
+            color: var(--text-color) !important;
+        }
+
+        /* ── Multiselect 多选框 ── */
+        div[data-baseweb="tag"] {
+            background-color: var(--primary-color) !important;
+            color: var(--background-color) !important;
+        }
+        div[data-baseweb="tag"] span {
+            color: var(--background-color) !important;
+        }
+        div[data-baseweb="multi-select"] > div {
+            background-color: var(--secondary-background-color) !important;
+            color: var(--text-color) !important;
+            border-color: var(--border-color) !important;
+        }
+
+        /* ── Date Input 日期选择框 ── */
+        div[data-testid="stDateInput"] input,
+        div[data-testid="stDateInput"] * {
+            background-color: var(--secondary-background-color) !important;
+            color: var(--text-color) !important;
+            border-color: var(--border-color) !important;
+        }
+
+        /* ── Form 表单容器 ── */
+        div[data-testid="stForm"] {
+            background-color: var(--secondary-background-color) !important;
+            border: 1px solid var(--border-color) !important;
+            border-radius: 8px !important;
+            padding: 16px !important;
+        }
+
+        /* ── Slider 滑块 ── */
+        div[data-testid="stSlider"] * {
+            color: var(--text-color) !important;
+        }
+        div[data-testid="stSlider"] div[role="slider"] {
+            background-color: var(--primary-color) !important;
+        }
+
+        /* ── stInfo / stSuccess / stWarning / stError 信息框 ── */
+        div[data-testid="stAlert"] {
+            background-color: var(--secondary-background-color) !important;
+            color: var(--text-color) !important;
+        }
+        div[data-testid="stAlert"] * {
+            color: var(--text-color) !important;
+        }
+
+        /* ── 代码块 ── */
+        code, pre, .stCode {
+            background-color: var(--secondary-background-color) !important;
+            color: var(--text-color) !important;
+            border: 1px solid var(--border-color) !important;
+        }
+
+        /* ── Caption / Small Text 小字 ── */
+        div[data-testid="stCaptionContainer"] *,
+        small, .caption {
+            color: var(--text-color) !important;
+            opacity: 0.7;
+        }
+
+        /* ── stMarkdownContainer 内联 HTML 文字 ── */
+        div[data-testid="stMarkdownContainer"] * {
+            color: var(--text-color) !important;
+        }
+
+        /* ── Container 通用容器 ── */
+        div[data-testid="stVerticalBlock"],
+        div[data-testid="stHorizontalBlock"] {
+            color: var(--text-color) !important;
+        }
+
+        /* ── Popover / Tooltip 弹出浮层 ── */
+        div[data-baseweb="popover"] > div {
+            background-color: var(--secondary-background-color) !important;
+            border: 1px solid var(--border-color) !important;
+        }
+
+        /* ── Toast 提示 ── */
+        div[data-testid="stToast"] {
+            background-color: var(--secondary-background-color) !important;
+            color: var(--text-color) !important;
+            border: 1px solid var(--border-color) !important;
+        }
         """
 
     font_css = f"""
