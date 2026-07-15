@@ -240,6 +240,12 @@ def inject_custom_theme():
     theme_css = ""
     if theme_opt == "极简深邃 (Minimal Dark)":
         theme_css = """
+        :root {
+            --background-color: #0f172a !important;
+            --secondary-background-color: #1e293b !important;
+            --text-color: #f1f5f9 !important;
+            --primary-color: #38bdf8 !important;
+        }
         html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"], .main {
             background-color: #0f172a !important;
             color: #f1f5f9 !important;
@@ -247,6 +253,9 @@ def inject_custom_theme():
         [data-testid="stSidebar"] {
             background-color: #1e293b !important;
             border-right: 1px solid rgba(255,255,255,0.05) !important;
+        }
+        [data-testid="stSidebar"] * {
+            color: #e2e8f0 !important;
         }
         [data-testid="stSidebar"] .stButton>button {
             background-color: #1e293b !important;
@@ -287,7 +296,30 @@ def inject_custom_theme():
         .alert-log-table tr:hover {
             background-color: rgba(255, 255, 255, 0.04) !important;
         }
-        div[data-baseweb="select"] > div, input, textarea, div[data-testid="stMarkdownContainer"] p {
+        /* 统一输入框、选择框、下拉菜单、日期控件的背景与文字颜色 */
+        div[data-baseweb="select"] > div,
+        div[data-baseweb="select"] ul,
+        div[data-baseweb="select"] li,
+        div[data-testid="stDateInput"] > div,
+        div[data-baseweb="popover"] *,
+        div[role="listbox"] *,
+        li[role="option"],
+        input, 
+        textarea, 
+        select {
+            background-color: #1e293b !important;
+            color: #f1f5f9 !important;
+            border-color: rgba(255,255,255,0.1) !important;
+        }
+        div[data-baseweb="select"] span,
+        div[data-baseweb="select"] div {
+            color: #f1f5f9 !important;
+        }
+        div[data-baseweb="calendar"] * {
+            background-color: #1e293b !important;
+            color: #f1f5f9 !important;
+        }
+        label, .stWidgetLabel, div[data-testid="stWidgetLabel"] p {
             color: #f1f5f9 !important;
         }
         .stButton>button {
@@ -303,6 +335,12 @@ def inject_custom_theme():
         """
     elif theme_opt == "温暖护眼 (Warm Sepia)":
         theme_css = """
+        :root {
+            --background-color: #fcf8f2 !important;
+            --secondary-background-color: #f4ece1 !important;
+            --text-color: #3e362e !important;
+            --primary-color: #d97706 !important;
+        }
         html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"], .main {
             background-color: #fcf8f2 !important;
             color: #3e362e !important;
@@ -310,6 +348,9 @@ def inject_custom_theme():
         [data-testid="stSidebar"] {
             background-color: #f4ece1 !important;
             border-right: 1px solid rgba(0,0,0,0.05) !important;
+        }
+        [data-testid="stSidebar"] * {
+            color: #5c4f43 !important;
         }
         [data-testid="stSidebar"] .stButton>button {
             background-color: #f4ece1 !important;
@@ -350,7 +391,30 @@ def inject_custom_theme():
         .alert-log-table tr:hover {
             background-color: rgba(0, 0, 0, 0.02) !important;
         }
-        div[data-baseweb="select"] > div, input, textarea, div[data-testid="stMarkdownContainer"] p {
+        /* 统一输入框、选择框、下拉菜单、日期控件的背景与文字颜色 */
+        div[data-baseweb="select"] > div,
+        div[data-baseweb="select"] ul,
+        div[data-baseweb="select"] li,
+        div[data-testid="stDateInput"] > div,
+        div[data-baseweb="popover"] *,
+        div[role="listbox"] *,
+        li[role="option"],
+        input, 
+        textarea, 
+        select {
+            background-color: #ffffff !important;
+            color: #3e362e !important;
+            border-color: rgba(220, 210, 190, 0.6) !important;
+        }
+        div[data-baseweb="select"] span,
+        div[data-baseweb="select"] div {
+            color: #3e362e !important;
+        }
+        div[data-baseweb="calendar"] * {
+            background-color: #ffffff !important;
+            color: #3e362e !important;
+        }
+        label, .stWidgetLabel, div[data-testid="stWidgetLabel"] p {
             color: #3e362e !important;
         }
         .stButton>button {
@@ -366,6 +430,12 @@ def inject_custom_theme():
         """
     elif theme_opt == "清新雅致 (Sage Forest)":
         theme_css = """
+        :root {
+            --background-color: #f3f6f5 !important;
+            --secondary-background-color: #e5ece9 !important;
+            --text-color: #242d2a !important;
+            --primary-color: #0d9488 !important;
+        }
         html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"], .main {
             background-color: #f3f6f5 !important;
             color: #242d2a !important;
@@ -373,6 +443,9 @@ def inject_custom_theme():
         [data-testid="stSidebar"] {
             background-color: #e5ece9 !important;
             border-right: 1px solid rgba(0,0,0,0.05) !important;
+        }
+        [data-testid="stSidebar"] * {
+            color: #40524c !important;
         }
         [data-testid="stSidebar"] .stButton>button {
             background-color: #e5ece9 !important;
@@ -413,7 +486,30 @@ def inject_custom_theme():
         .alert-log-table tr:hover {
             background-color: rgba(0, 0, 0, 0.02) !important;
         }
-        div[data-baseweb="select"] > div, input, textarea, div[data-testid="stMarkdownContainer"] p {
+        /* 统一输入框、选择框、下拉菜单、日期控件的背景与文字颜色 */
+        div[data-baseweb="select"] > div,
+        div[data-baseweb="select"] ul,
+        div[data-baseweb="select"] li,
+        div[data-testid="stDateInput"] > div,
+        div[data-baseweb="popover"] *,
+        div[role="listbox"] *,
+        li[role="option"],
+        input, 
+        textarea, 
+        select {
+            background-color: #ffffff !important;
+            color: #242d2a !important;
+            border-color: rgba(180, 195, 190, 0.5) !important;
+        }
+        div[data-baseweb="select"] span,
+        div[data-baseweb="select"] div {
+            color: #242d2a !important;
+        }
+        div[data-baseweb="calendar"] * {
+            background-color: #ffffff !important;
+            color: #242d2a !important;
+        }
+        label, .stWidgetLabel, div[data-testid="stWidgetLabel"] p {
             color: #242d2a !important;
         }
         .stButton>button {
