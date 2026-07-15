@@ -422,23 +422,16 @@ def inject_custom_theme():
             color: var(--text-color) !important;
         }
         
-        /* 统一所有 Streamlit 按钮、链接按钮、分段控件按钮的背景与文字，彻底消除白色背景 */
-        [data-testid^="stBaseButton"],
-        [data-testid^="stBaseLinkButton"],
-        button,
-        .stButton > button,
-        div[data-testid="stHorizontalBlock"] button,
+        /* 统一所有 Streamlit 按钮：排除自选列表专用按钮 */
+        [data-testid^="stBaseButton"]:not([id*="wl_v_"]):not([id*="wl_pin_"]):not([id*="wl_del_"]):not([id*="wl_cat_btn_"]):not([id*="wl_tags_btn_"]):not([id*="wl_note_btn_"]):not([id*="wl_hist_btn_"]):not([id*="wl_chart_btn_"]),
+        .stButton > button:not([id*="wl_v_"]):not([id*="wl_pin_"]):not([id*="wl_del_"]):not([id*="wl_cat_btn_"]):not([id*="wl_tags_btn_"]):not([id*="wl_note_btn_"]):not([id*="wl_hist_btn_"]):not([id*="wl_chart_btn_"]),
         div[data-testid="stHorizontalBlock"] a,
         div[data-testid="stSegmentedControl"] button {
             background-color: var(--secondary-background-color) !important;
             color: var(--text-color) !important;
             border: 1px solid var(--border-color) !important;
         }
-        [data-testid^="stBaseButton"]:hover,
-        [data-testid^="stBaseLinkButton"]:hover,
-        button:hover,
-        .stButton > button:hover,
-        div[data-testid="stHorizontalBlock"] button:hover,
+        .stButton > button:not([id*="wl_v_"]):not([id*="wl_pin_"]):not([id*="wl_del_"]):not([id*="wl_cat_btn_"]):not([id*="wl_tags_btn_"]):not([id*="wl_note_btn_"]):not([id*="wl_hist_btn_"]):not([id*="wl_chart_btn_"]):hover,
         div[data-testid="stHorizontalBlock"] a:hover,
         div[data-testid="stSegmentedControl"] button:hover {
             background-color: var(--primary-color) !important;
