@@ -13,6 +13,7 @@ from html import escape as _he
 import re
 import streamlit as st
 import storage
+from scanner import fetch_data
 
 def _tv_link(ticker: str) -> str:
     try:
@@ -776,10 +777,9 @@ def _render_inline_controls(item, ticker, cats):
         with st.container(border=True):
             st.markdown(f"##### 📊 {item.get('name') or ticker} 趋势图")
             try:
-                import yfinance as yf
                 import plotly.graph_objects as go
                 import pandas as pd
-                df = yf.download(ticker, period="1y", interval="1d", progress=False, auto_adjust=True)
+                df = fetch_data(ticker, interval="1d", period="1y")
                 if df is not None and not df.empty:
                     df_slice = df.tail(100)
                     if isinstance(df_slice.columns, pd.MultiIndex):

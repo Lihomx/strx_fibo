@@ -195,3 +195,33 @@ def render():
             if st.button("🔧 重置参数为默认"):
                 if storage.save_config({}):
                     st.success("✅ 已重置"); st.rerun()
+
+        st.markdown("---")
+        st.markdown("### 🚫 退市与无效代码过滤管理")
+        delisted_list = storage.load_delisted_tickers()
+        if delisted_list:
+            st.warning(f"⚠️ 当前已自动过滤以下 {len(delisted_list)} 个连续失败的无效/退市代码（扫描时将自动跳过，避免无效请求导致 API 限流）：")
+            st.text_area("已过滤代码", value=", ".join(delisted_list), height=80, disabled=True, label_visibility="collapsed")
+            
+            sub_col1, sub_col2 = st.columns([2, 3])
+            with sub_col1:
+                if st.button("🗑️ 清空过滤列表", key="clear_delisted_btn", type="secondary", use_container_width=True):
+                    storage.save_delisted_tickers([])
+                    st.success("✅ 已清空过滤列表，下次扫描将重新尝试获取这些代码的数据")
+                    st.rerun()
+            with sub_col2:
+                del_ticker = st.text_input("手动移出过滤列表", placeholder="例如: 601138.SS", key="del_ticker_inp", label_visibility="collapsed").strip().upper()
+                if del_ticker:
+                    if st.button("🔓 移出", key="remove_single_delisted_btn", type="primary", use_container_width=True):
+                        storage.remove_delisted_ticker(del_ticker)
+                        storage.reset_scan_failure(del_ticker)
+                        st.success(f"✅ 已将 {del_ticker} 移出过滤列表")
+                        st.rerun()
+        else:
+            st.success("✅ 当前无过滤的退市/无效代码。")
+            manual_add = st.text_input("手动添加退市/无效代码", placeholder="例如: 000000.SS", key="add_ticker_inp").strip().upper()
+            if manual_add:
+                if st.button("🚫 过滤该代码", key="add_single_delisted_btn", type="primary"):
+                    storage.add_delisted_ticker(manual_add)
+                    st.success(f"✅ 已将 {manual_add} 加入过滤列表")
+                    st.rerun()

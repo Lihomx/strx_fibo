@@ -205,9 +205,7 @@ def render():
                                         value=bool(cfg.get("alert_fibo_in_zone_only", True)),
                                         help="开启后，只有当价格处于黄金区内时才会发送告警；关闭则即使在黄金区外也发送。")
         with col_rule2:
-            filter_4h = st.checkbox("🚀 EMA + Pivot 告警: 当前价格必须在 4小时 20-MA 均线之上",
-                                    value=bool(cfg.get("filter_4h_ema20", False)),
-                                    help="开启后，在进行 EMA20 + Daily Pivot 扫描时，当前价格必须运行在4小时周期的 20 EMA均线之上，否则进行过滤不触发告警。")
+            pass
             
         st.markdown("<div style='margin: 10px 0;'></div>", unsafe_allow_html=True)
         

@@ -149,6 +149,7 @@ DEFAULT_CFG = {
     "scan_interval_minutes": 17,
     "daily_scan_enabled": True,
     "periodic_scan_enabled": True,
+    "filter_4h_ema20": False,
     "alert_template": "📐 STRX Fibo 信号 {label}\n━━━━━━━━━━━━━━━━━━━━\n🏷 {name} ({ticker})\n📅 框架: {tf}\n💰 价格: {price}\n📏 黄金区: {zone_bot} – {zone_top}\n📉 回撤: {retrace_pct}%\n🔗 {url}\n🕐 {time}",
     "alert_template_ema_pivot": "🚀 EMA20 + Daily Pivot 信号 {label}\n━━━━━━━━━━━━━━━━━━━━\n🏷 {name} ({ticker})\n📅 框架: {tf}\n💰 价格: {price}\n📈 EMA20: {ema}\n🎯 Pivot: {pivot}\n🔗 {url}\n🕐 {time}",
 }
@@ -1679,6 +1680,69 @@ def remove_tickers_from_group(group_id: str, tickers: List[str]) -> bool:
         target["tickers"] = list(t_set)
         return save_symbol_groups(groups)
     return False
+
+
+# ── 退市与无效代码管理 ──────────────────────────────────────────
+F_DELISTED = os.path.join(_BASE, "data_delisted.json")
+F_FAILURES = os.path.join(_BASE, "data_scan_failures.json")
+
+def load_delisted_tickers() -> List[str]:
+    """返回已被判定为退市或无效的代码列表"""
+    return _load(F_DELISTED, [])
+
+def save_delisted_tickers(tickers: List[str]) -> bool:
+    return _save(F_DELISTED, sorted(list(set(tickers))))
+
+def is_ticker_delisted(ticker: str) -> bool:
+    t = ticker.strip().upper()
+    if not t:
+        return False
+    delisted = load_delisted_tickers()
+    return t in delisted
+
+def add_delisted_ticker(ticker: str) -> bool:
+    t = ticker.strip().upper()
+    if not t:
+        return False
+    delisted = load_delisted_tickers()
+    if t not in delisted:
+        delisted.append(t)
+        return save_delisted_tickers(delisted)
+    return True
+
+def remove_delisted_ticker(ticker: str) -> bool:
+    t = ticker.strip().upper()
+    if not t:
+        return False
+    delisted = load_delisted_tickers()
+    if t in delisted:
+        delisted.remove(t)
+        return save_delisted_tickers(delisted)
+    return True
+
+def increment_scan_failure(ticker: str) -> int:
+    """递增指定代码的扫描失败次数，若连续失败次数达到阈值（如5次），则自动加入退市/无效列表"""
+    t = ticker.strip().upper()
+    if not t:
+        return 0
+    failures = _load(F_FAILURES, {})
+    count = failures.get(t, 0) + 1
+    failures[t] = count
+    _save(F_FAILURES, failures)
+    
+    if count >= 5:
+        add_delisted_ticker(t)
+    return count
+
+def reset_scan_failure(ticker: str) -> None:
+    """重置指定代码的扫描失败次数"""
+    t = ticker.strip().upper()
+    if not t:
+        return
+    failures = _load(F_FAILURES, {})
+    if t in failures:
+        failures.pop(t)
+        _save(F_FAILURES, failures)
 
 
 

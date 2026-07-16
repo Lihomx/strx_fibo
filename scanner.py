@@ -120,6 +120,28 @@ def _ak_a_share(ticker: str, interval: str) -> Optional[pd.DataFrame]:
         symbol = re.sub(r"\.(SS|SH|SZ|BJ)$", "", ticker.upper())
         if not re.match(r"^\d{6}$", symbol):
             return None
+            
+        # 1. 检查是否为分钟级别/日内数据 (例如: 15m, 4h)
+        m = re.match(r"^(\d+)(m|M)$", interval)
+        if m:
+            minutes = int(m.group(1))
+            if minutes in (1, 5, 15, 30, 60):
+                period = str(minutes)
+                df = ak.stock_zh_a_hist_min_em(symbol=symbol, period=period, adjust="qfq")
+                return _to_ohlc(df, date_col="时间")
+            elif minutes == 240:  # 4h 降采样自 60m
+                df_60m = ak.stock_zh_a_hist_min_em(symbol=symbol, period="60", adjust="qfq")
+                df = _to_ohlc(df_60m, date_col="时间")
+                if df is not None and not df.empty:
+                    df = df.resample("4H").agg({
+                        "Open": "first",
+                        "High": "max",
+                        "Low": "min",
+                        "Close": "last"
+                    }).dropna()
+                return df
+
+        # 2. 日线/周线/月线级别数据
         period, days = _AK_PERIOD.get(interval, ("daily", 365 * 3))
         df = ak.stock_zh_a_hist(
             symbol=symbol, period=period,
@@ -128,7 +150,7 @@ def _ak_a_share(ticker: str, interval: str) -> Optional[pd.DataFrame]:
         )
         return _to_ohlc(df)
     except Exception as e:
-        logger.debug(f"ak_a_share {ticker}: {e}")
+        logger.debug(f"ak_a_share {ticker} ({interval}): {e}")
         return None
 
 
@@ -250,21 +272,34 @@ def get_all_us_tickers() -> List[Tuple[str, str]]:
 # yfinance — 通用兜底
 # ════════════════════════════════════════════════════════════════════
 def fetch_yfinance(ticker: str, interval: str, period: str) -> Optional[pd.DataFrame]:
-    try:
-        import yfinance as yf
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            df = yf.download(ticker, interval=interval, period=period,
-                             progress=False, auto_adjust=True)
-        if df is None or df.empty:
+    import time
+    import random
+    # 随机微小延迟，降低高并发冲突
+    time.sleep(random.uniform(0.1, 0.4))
+    
+    for attempt in range(2):
+        try:
+            import yfinance as yf
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                df = yf.download(ticker, interval=interval, period=period,
+                                 progress=False, auto_adjust=True)
+            if df is None or df.empty:
+                if attempt == 0:
+                    time.sleep(random.uniform(1.0, 2.0))
+                    continue
+                return None
+            if hasattr(df.columns, "levels"):
+                df.columns = df.columns.get_level_values(0)
+            out = df[["Open", "High", "Low", "Close"]].dropna()
+            return out if not out.empty else None
+        except Exception as e:
+            logger.debug(f"yfinance {ticker} (attempt {attempt+1}): {e}")
+            if attempt == 0:
+                time.sleep(random.uniform(1.0, 2.0))
+                continue
             return None
-        if hasattr(df.columns, "levels"):
-            df.columns = df.columns.get_level_values(0)
-        out = df[["Open", "High", "Low", "Close"]].dropna()
-        return out if not out.empty else None
-    except Exception as e:
-        logger.debug(f"yfinance {ticker}: {e}")
-        return None
+    return None
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -461,17 +496,20 @@ def _cached_fetch_data(ticker: str, interval: str, period: str, data_source: str
 def _fetch_data_impl(ticker: str, interval: str, period: str, data_source: str, td_key: str) -> Optional[pd.DataFrame]:
     tt = _ticker_type(ticker)
     if tt in ("a_share", "a_bare"):
-        # 优先级: AKShare > yfinance > 网易财经 > 新浪财经
+        # 优先级: AKShare > 网易财经 > 新浪财经
         df = _ak_a_share(ticker, interval)
-        if df is not None:
-            return df
-        df = fetch_yfinance(ticker, interval, period)
         if df is not None:
             return df
         df = _netease_a_share(ticker, interval)
         if df is not None:
             return df
-        return _sina_a_share(ticker, interval)
+        df = _sina_a_share(ticker, interval)
+        if df is not None:
+            return df
+        # 仅在非日/周/月级别（即分钟级）且前三者都失败时，才尝试 yfinance 兜底，最大限度减少 yfinance 的无效/退市请求
+        if interval not in ("1d", "1wk", "1mo"):
+            return fetch_yfinance(ticker, interval, period)
+        return None
 
     if tt == "hk_stock":
         df = _ak_hk_stock(ticker, interval)
@@ -498,14 +536,31 @@ def _fetch_data_impl(ticker: str, interval: str, period: str, data_source: str, 
 
 def fetch_data(ticker: str, interval: str, period: str,
                cfg: Optional[Dict] = None) -> Optional[pd.DataFrame]:
+    t = ticker.strip().upper()
+    if not t:
+        return None
+    # 检查是否在已过滤列表中
+    if storage.is_ticker_delisted(t):
+        logger.debug(f"fetch_data skipped for delisted/invalid ticker: {t}")
+        return None
+
     cfg = cfg or {}
     data_source = cfg.get("data_source", "auto")
     td_key = cfg.get("twelvedata_key", "")
     try:
-        return _cached_fetch_data(ticker, interval, period, data_source, td_key)
+        df = _cached_fetch_data(t, interval, period, data_source, td_key)
     except Exception as e:
         logger.warning(f"cache_data failure, falling back to direct fetch: {e}")
-        return _fetch_data_impl(ticker, interval, period, data_source, td_key)
+        df = _fetch_data_impl(t, interval, period, data_source, td_key)
+
+    # 如果抓取到了有效数据，且之前曾经被记过失败，可以重置失败计数
+    if df is not None and not df.empty:
+        try:
+            storage.reset_scan_failure(t)
+        except Exception:
+            pass
+
+    return df
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -593,15 +648,24 @@ def _fetch_ticker_all_tfs(
         tf_names = list(TIMEFRAMES.keys())
 
     tf_results: Dict[str, Optional[Dict]] = {}
+    has_any_success = False
     for tf_name in tf_names:
         interval, period = TIMEFRAMES[tf_name]
         try:
             df   = fetch_data(ticker, interval, period, cfg)
             fibo = compute_fibo(df, lookback, zone_lo, zone_hi)
+            if fibo is not None:
+                has_any_success = True
         except Exception as e:
             logger.debug(f"scan {ticker} {tf_name}: {e}")
             fibo = None
         tf_results[tf_name] = fibo
+
+    if not has_any_success:
+        try:
+            storage.increment_scan_failure(ticker)
+        except Exception:
+            pass
 
     conf = confluence_score(tf_results)
     rows = []
