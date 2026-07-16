@@ -895,9 +895,29 @@ def scan_ema_pivot(ticker: str, cfg: Dict) -> Optional[Dict]:
         # Python: df_15m["Close"].ewm(span=20, adjust=False).mean()
         ema_series = df_15m["Close"].ewm(span=20, adjust=False).mean()
         
+        c_0 = float(df_15m["Close"].iloc[-1])
+
+        # 4.5. 4小时 20-MA 过滤限制 (如果启用)
+        if cfg.get("filter_4h_ema20", False):
+            # 获取 4h 级别的数据，最近 30 天以确保有足够的 Bar 计算 EMA20
+            df_4h = fetch_data(ticker, interval="4h", period="30d", cfg=cfg)
+            if df_4h is not None and len(df_4h) >= 20:
+                ema_4h_series = df_4h["Close"].ewm(span=20, adjust=False).mean()
+                ema_4h_0 = float(ema_4h_series.iloc[-1])
+                if c_0 <= ema_4h_0:
+                    logger.debug(f"scan_ema_pivot {ticker}: 过滤拦截 (当前价 {c_0:.4f} <= 4h EMA20 {ema_4h_0:.4f})")
+                    return {
+                        "is_signal": False,
+                        "price": c_0,
+                        "ema": float(ema_series.iloc[-1]),
+                        "pivot": daily_pivot,
+                        "triggered_now": False
+                    }
+            else:
+                logger.warning(f"scan_ema_pivot {ticker}: 4h数据不足，跳过4h过滤验证")
+        
         # 5. 条件判断
         # latest close
-        c_0 = float(df_15m["Close"].iloc[-1])
         ema_0 = float(ema_series.iloc[-1])
         cond_0 = c_0 > ema_0 and c_0 > daily_pivot
 

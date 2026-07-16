@@ -36,9 +36,23 @@ def render():
         黄金区间  = fp(0.618) ≤ close ≤ fp(0.500)
         ```
         """)
+        
+        st.markdown("---")
+        st.markdown("### 🚀 EMA20 + Daily Pivot 过滤参数")
+        filter_4h = st.checkbox(
+            "过滤条件：当前价格必须在 4小时 20-MA 均线之上",
+            value=bool(cfg.get("filter_4h_ema20", False)),
+            help="开启后，EMA20 + Daily Pivot 15分钟周期扫描在检测出多头突破信号时，会额外验证当前价格是否也运行在4小时周期的 20 EMA之上。如果不满足，则进行过滤不触发告警。"
+        )
+
         if st.button("💾 保存参数", type="primary"):
-            cfg.update({"lookback": lookback, "fibo_low": zone_lo,
-                        "fibo_high": zone_hi, "watch_dist": watch_dist})
+            cfg.update({
+                "lookback": lookback,
+                "fibo_low": zone_lo,
+                "fibo_high": zone_hi,
+                "watch_dist": watch_dist,
+                "filter_4h_ema20": filter_4h
+            })
             if storage.save_config(cfg):
                 st.success("✅ 参数已保存")
 
