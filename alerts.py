@@ -163,6 +163,33 @@ def send_telegram(text: str, cfg: Dict) -> Tuple[bool, str]:
 
 # ── 调度器 ──────────────────────────────────────────────────────────
 
+def send_browser_notification(title: str, body: str, timeout_seconds: int = 15) -> None:
+    """
+    Sends a browser notification using the native Web Notification API.
+    Disappears after the specified timeout_seconds (default 15s).
+    """
+    from streamlit.components.v1 import html
+    t_esc = title.replace('"', '\\"').replace("'", "\\'")
+    b_esc = body.replace('"', '\\"').replace("'", "\\'")
+    js_code = f"""
+    <script>
+    if ("Notification" in window) {{
+        Notification.requestPermission().then(perm => {{
+            if (perm === 'granted') {{
+                const notification = new Notification("{t_esc}", {{
+                    body: "{b_esc}"
+                }});
+                setTimeout(() => {{
+                    notification.close();
+                }}, {timeout_seconds * 1000});
+            }}
+        }});
+    }}
+    </script>
+    """
+    html(js_code, width=0, height=0)
+
+
 def dispatch_alerts(ticker: str, name: str, timeframe: str,
                     fibo: Dict, conf: Dict, cfg: Dict) -> None:
     cooldown = int(cfg.get("alert_cooldown_fibo", cfg.get("alert_cooldown", 240)))
@@ -184,6 +211,14 @@ def dispatch_alerts(ticker: str, name: str, timeframe: str,
         storage.log_alert(ticker, name, timeframe, "telegram",
                           "ok" if ok else "fail", msg, scanner="fibo")
         sent = sent or ok
+
+    # Also send browser notification to the active Streamlit app session
+    try:
+        title = f"📐 Fibo 信号: {conf.get('label', '')}"
+        body = f"{name} ({ticker}) [{timeframe}] - 价格: {fibo.get('current', 0.0)}"
+        send_browser_notification(title, body, timeout_seconds=15)
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Failed to send browser notification: {e}")
 
     if sent:
         _mark("fibo", ticker, timeframe)
@@ -211,6 +246,14 @@ def dispatch_alerts_ema_pivot(ticker: str, name: str, timeframe: str,
         storage.log_alert(ticker, name, timeframe, "telegram",
                           "ok" if ok else "fail", msg, scanner="ema_pivot")
         sent = sent or ok
+
+    # Also send browser notification to the active Streamlit app session
+    try:
+        title = f"🚀 EMA + Pivot 信号: {label}"
+        body = f"{name} ({ticker}) [{timeframe}] - 价格: {price}"
+        send_browser_notification(title, body, timeout_seconds=15)
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Failed to send browser notification: {e}")
 
     if sent:
         _mark("ema_pivot", ticker, timeframe)

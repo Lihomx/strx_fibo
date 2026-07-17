@@ -13,7 +13,7 @@ def render():
 
     cfg = storage.load_config()
 
-    tab1, tab2, tab3 = st.tabs(["📱 钉钉", "✈️ Telegram", "📋 告警日志"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📱 钉钉", "✈️ Telegram", "🖥️ 浏览器弹窗", "📋 告警日志"])
 
     # ── 钉钉 ─────────────────────────────────────────────────────────
     with tab1:
@@ -235,8 +235,25 @@ def render():
             st.success("✅ 告警过滤与冷却时间配置已保存")
             st.rerun()
 
-    # ── 告警日志 ─────────────────────────────────────────────────────
+    # ── 浏览器通知 ───────────────────────────────────────────────────
     with tab3:
+        st.markdown("#### 🖥️ 浏览器桌面通知")
+        st.markdown("""
+        <div class="n-info">
+        💡 开启后，系统在页面开启状态下可以直接在 Chrome/Edge 浏览器右下角显示通知提示弹窗。<br>
+        通知默认会在 <b>15 秒</b>后自动关闭消失。
+        </div>""", unsafe_allow_html=True)
+        
+        with st.form("browser_notify_form"):
+            b_title = st.text_input("通知标题", "📐 Fibo 信号发现", placeholder="输入测试标题")
+            b_body = st.text_input("通知内容", "贵州茅台 (600519.SS) 触及日线黄金区", placeholder="输入测试内容")
+            
+            if st.form_submit_button("🚀 发送浏览器测试通知", width="stretch"):
+                alt.send_browser_notification(b_title, b_body, timeout_seconds=15)
+                st.success("✅ 浏览器通知命令已发送，若未弹出请检查浏览器左上角是否允许此站点的通知权限。")
+
+    # ── 告警日志 ─────────────────────────────────────────────────────
+    with tab4:
         render_alert_log_table(full_page=False)
 
 
