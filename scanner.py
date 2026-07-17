@@ -122,9 +122,11 @@ def _ak_a_share(ticker: str, interval: str) -> Optional[pd.DataFrame]:
             return None
             
         # 1. 检查是否为分钟级别/日内数据 (例如: 15m, 4h)
-        m = re.match(r"^(\d+)(m|M)$", interval)
+        m = re.match(r"^(\d+)([mhMH])$", interval)
         if m:
-            minutes = int(m.group(1))
+            val = int(m.group(1))
+            unit = m.group(2).lower()
+            minutes = val * 60 if unit == "h" else val
             if minutes in (1, 5, 15, 30, 60):
                 period = str(minutes)
                 df = ak.stock_zh_a_hist_min_em(symbol=symbol, period=period, adjust="qfq")
@@ -496,7 +498,11 @@ def _cached_fetch_data(ticker: str, interval: str, period: str, data_source: str
 def _fetch_data_impl(ticker: str, interval: str, period: str, data_source: str, td_key: str) -> Optional[pd.DataFrame]:
     tt = _ticker_type(ticker)
     if tt in ("a_share", "a_bare"):
-        # 优先级: AKShare > 网易财经 > 新浪财经
+        # 1. 如果用户强制指定使用 yfinance，则直接调用 yfinance
+        if data_source == "yfinance":
+            return fetch_yfinance(ticker, interval, period)
+
+        # 2. 否则，按优先级尝试 A股专用数据源：AKShare > 网易财经 > 新浪财经
         df = _ak_a_share(ticker, interval)
         if df is not None:
             return df
@@ -506,10 +512,9 @@ def _fetch_data_impl(ticker: str, interval: str, period: str, data_source: str, 
         df = _sina_a_share(ticker, interval)
         if df is not None:
             return df
-        # 仅在非日/周/月级别（即分钟级）且前三者都失败时，才尝试 yfinance 兜底，最大限度减少 yfinance 的无效/退市请求
-        if interval not in ("1d", "1wk", "1mo"):
-            return fetch_yfinance(ticker, interval, period)
-        return None
+
+        # 3. 如果以上全部失败或不可用（例如部署在 Streamlit Cloud），使用 yfinance 兜底获取数据
+        return fetch_yfinance(ticker, interval, period)
 
     if tt == "hk_stock":
         df = _ak_hk_stock(ticker, interval)
