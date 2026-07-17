@@ -533,6 +533,13 @@ def render():
         merged_rows = storage.load_latest_results(inzone_only=False)
     last_s = next((s for s in sessions if str(s.get("session_id") or "") == active_sid), (sessions[0] if sessions else {}))
 
+    # 检查原始数据中是否全是空价格（用于判定数据拉取是否完全失败）
+    raw_total_len = len(merged_rows)
+    raw_has_price = any(r.get("current_price") is not None for r in merged_rows)
+
+    # 过滤掉抓取失败（价格为None）的脏记录，只保留有价格的有效记录渲染到列表中
+    merged_rows = [r for r in merged_rows if r.get("current_price") is not None]
+
     total  = len(set(r["ticker"] for r in merged_rows))
     inzone = sum(1 for r in merged_rows if r.get("in_zone"))
     near   = sum(1 for r in merged_rows
@@ -550,8 +557,7 @@ def render():
                    f"| 品种：{total}  | 更新：{last_s.get('scan_time','—')}")
 
     # data quality check
-    _has_price_data = any(r.get("current_price") is not None for r in merged_rows)
-    if not _has_price_data and merged_rows:
+    if raw_total_len > 0 and not raw_has_price:
         _warn_lines = [
             "⚠️ **数据获取失败**：所有品种的价格数据均为空。",
             "",

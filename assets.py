@@ -919,7 +919,7 @@ TIMEFRAMES: Dict[str, Tuple[str, str]] = {
     "4H":      ("4h",  "2y"),
     "Daily":   ("1d",  "2y"),
     "Weekly":  ("1wk", "5y"),
-    "Monthly": ("1mo", "10y"),
+    "Monthly": ("1mo", "5y"),
 }
 
 GROUP_NAMES = list(ASSET_GROUPS.keys())

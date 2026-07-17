@@ -276,31 +276,54 @@ def get_all_us_tickers() -> List[Tuple[str, str]]:
 def fetch_yfinance(ticker: str, interval: str, period: str) -> Optional[pd.DataFrame]:
     import time
     import random
-    # 随机微小延迟，降低高并发冲突
-    time.sleep(random.uniform(0.1, 0.4))
     
-    for attempt in range(2):
-        try:
-            import yfinance as yf
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                df = yf.download(ticker, interval=interval, period=period,
-                                 progress=False, auto_adjust=True)
-            if df is None or df.empty:
+    def _download_one(p: str) -> Optional[pd.DataFrame]:
+        # 随机微小延迟，降低高并发冲突
+        time.sleep(random.uniform(0.1, 0.4))
+        for attempt in range(2):
+            try:
+                import yfinance as yf
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    df = yf.download(ticker, interval=interval, period=p,
+                                     progress=False, auto_adjust=True)
+                if df is None or df.empty:
+                    if attempt == 0:
+                        time.sleep(random.uniform(1.0, 2.0))
+                        continue
+                    return None
+                if hasattr(df.columns, "levels"):
+                    df.columns = df.columns.get_level_values(0)
+                out = df[["Open", "High", "Low", "Close"]].dropna()
+                return out if not out.empty else None
+            except Exception as e:
+                logger.debug(f"yfinance {ticker} (attempt {attempt+1}, period {p}): {e}")
                 if attempt == 0:
                     time.sleep(random.uniform(1.0, 2.0))
                     continue
                 return None
-            if hasattr(df.columns, "levels"):
-                df.columns = df.columns.get_level_values(0)
-            out = df[["Open", "High", "Low", "Close"]].dropna()
-            return out if not out.empty else None
-        except Exception as e:
-            logger.debug(f"yfinance {ticker} (attempt {attempt+1}): {e}")
-            if attempt == 0:
-                time.sleep(random.uniform(1.0, 2.0))
-                continue
-            return None
+        return None
+
+    # 1. 尝试原始 period
+    df = _download_one(period)
+    if df is not None and not df.empty:
+        return df
+
+    # 2. 尝试缩短 period 兜底
+    fallback_map = {
+        "10y": "5y",
+        "5y": "2y",
+        "2y": "1y",
+        "1y": "6mo"
+    }
+    next_p = fallback_map.get(period)
+    while next_p:
+        logger.info(f"yfinance {ticker} ({interval}) empty for {period}, retrying with shorter period {next_p}")
+        df = _download_one(next_p)
+        if df is not None and not df.empty:
+            return df
+        next_p = fallback_map.get(next_p)
+
     return None
 
 
@@ -492,8 +515,11 @@ def _sina_a_share(ticker: str, interval: str) -> Optional[pd.DataFrame]:
 import streamlit as st
 
 @st.cache_data(ttl=300, show_spinner=False)
-def _cached_fetch_data(ticker: str, interval: str, period: str, data_source: str, td_key: str) -> Optional[pd.DataFrame]:
-    return _fetch_data_impl(ticker, interval, period, data_source, td_key)
+def _cached_fetch_data(ticker: str, interval: str, period: str, data_source: str, td_key: str) -> pd.DataFrame:
+    df = _fetch_data_impl(ticker, interval, period, data_source, td_key)
+    if df is None or df.empty:
+        raise ValueError("No data returned or empty dataframe")
+    return df
 
 def _fetch_data_impl(ticker: str, interval: str, period: str, data_source: str, td_key: str) -> Optional[pd.DataFrame]:
     tt = _ticker_type(ticker)
@@ -555,7 +581,8 @@ def fetch_data(ticker: str, interval: str, period: str,
     try:
         df = _cached_fetch_data(t, interval, period, data_source, td_key)
     except Exception as e:
-        logger.warning(f"cache_data failure, falling back to direct fetch: {e}")
+        if "No data returned" not in str(e):
+            logger.warning(f"cache_data failure: {e}")
         df = _fetch_data_impl(t, interval, period, data_source, td_key)
 
     # 如果抓取到了有效数据，且之前曾经被记过失败，可以重置失败计数
