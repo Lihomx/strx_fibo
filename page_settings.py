@@ -114,9 +114,9 @@ def render():
                     st.rerun()
                     
         st.markdown("---")
-        st.markdown("### 🎨 显示风格与字体")
+        st.markdown("### 🎨 显示与主页个性化设置")
         with st.form("appearance_settings_form"):
-            col_app1, col_app2 = st.columns(2)
+            col_app1, col_app2, col_app3 = st.columns(3)
             with col_app1:
                 font_size_opt = st.selectbox(
                     "全局字体大小",
@@ -131,11 +131,40 @@ def render():
                     index=["原厂默认", "极简深邃 (Minimal Dark)", "温暖护眼 (Warm Sepia)", "清新雅致 (Sage Forest)"].index(cfg.get("theme_style", "原厂默认")),
                     help="提供护眼、极简暗黑等不同配色风格，适合长期盯盘使用。"
                 )
-            if st.form_submit_button("💾 保存显示设置"):
+            with col_app3:
+                homepages_map = {
+                    "watchlist": "⭐ 自选收藏",
+                    "hotlist": "🔥 热门品种",
+                    "scanner": "📊 实时扫描",
+                    "confluence": "⚡ 共振检测",
+                    "triple_bottom": "📐 三重底扫描",
+                    "chartink": "📈 4H Breakout",
+                    "schedule": "⏰ 定时扫描",
+                    "universe": "🌍 全量品种库",
+                    "symbols": "💎 品种库",
+                    "history": "📂 历史记录",
+                    "alert_logs": "📋 告警日志",
+                    "alerts": "🔔 告警配置",
+                    "cloud": "☁️ 云端同步",
+                    "settings": "⚙️ 系统设置"
+                }
+                homepage_keys = list(homepages_map.keys())
+                current_home = cfg.get("homepage", "watchlist")
+                if current_home not in homepage_keys:
+                    current_home = "watchlist"
+                homepage_opt = st.selectbox(
+                    "默认主页",
+                    options=homepage_keys,
+                    format_func=lambda x: homepages_map[x],
+                    index=homepage_keys.index(current_home),
+                    help="设置登录后或者重新打开网址时默认显示的系统页面。"
+                )
+            if st.form_submit_button("💾 保存显示与个性化设置"):
                 cfg["font_size"] = font_size_opt
                 cfg["theme_style"] = theme_style_opt
+                cfg["homepage"] = homepage_opt
                 if storage.save_config(cfg):
-                    st.success("✅ 显示风格与字体设置已成功保存！")
+                    st.success("✅ 显示与主页个性化设置已成功保存！")
                     st.rerun()
                     
         st.markdown("---")

@@ -1036,13 +1036,14 @@ def main():
 
     # ── URL 参数跳转与同步 ────────────────────────────────────────────
     _VALID_PAGES = ("watchlist","hotlist","scanner","confluence","alerts","settings",
-                    "history","cloud","universe","chartink","schedule","triple_bottom","symbols")
+                    "history","cloud","universe","chartink","schedule","triple_bottom","symbols","alert_logs")
     _url_page = st.query_params.get("_page", "")
     if _url_page and _url_page in _VALID_PAGES:
         st.session_state["page"] = _url_page
     else:
         if "page" not in st.session_state:
-            st.session_state.page = "watchlist"
+            cfg = storage.load_config()
+            st.session_state.page = cfg.get("homepage", "watchlist")
         st.query_params["_page"] = st.session_state.page
 
 
