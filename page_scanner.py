@@ -1237,6 +1237,11 @@ def _render_custom_scan(cfg):
 
     col_ticker, col_name, col_btn = st.columns([3, 3, 2])
 
+    # 提前处理移动端触发，避免渲染后直接修改 text_input 关联的 session_state
+    if st.session_state.get("_trigger_mobile_custom"):
+        if not st.session_state.get("custom_ticker_input"):
+            st.session_state["custom_ticker_prefill"] = "AAPL"
+
     with col_ticker:
         # 若用户刚点了建议代码，将其预填入输入框
         if "custom_ticker_prefill" in st.session_state:
@@ -1261,7 +1266,6 @@ def _render_custom_scan(cfg):
                               width="stretch", key="custom_scan_btn", disabled=bg_scan_manager.is_running())
         if st.session_state.pop("_trigger_mobile_custom", False):
             if not custom_ticker:
-                st.session_state["custom_ticker_input"] = "AAPL"
                 custom_ticker = "AAPL"
             do_custom = True
 
