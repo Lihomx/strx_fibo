@@ -39,10 +39,21 @@ def _mark(scanner: str, ticker: str, tf: str) -> None:
 
 # ── 消息构建 ────────────────────────────────────────────────────────
 
+def _get_tz_now_str() -> str:
+    from zoneinfo import ZoneInfo
+    try:
+        cfg = storage.load_config()
+        tz_name = cfg.get("timezone", "Asia/Shanghai")
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("Asia/Shanghai")
+    return datetime.now(tz).strftime("%Y-%m-%d %H:%M")
+
+
 def build_message(ticker: str, name: str, tf: str,
                   fibo: Dict, conf: Dict, template: str = None) -> str:
     from assets import tv_url  # 使用 assets 版本，支持 cn 域名 + 时间框架
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = _get_tz_now_str()
     if template:
         res = template
         res = res.replace("{label}", str(conf.get("label", "")))
@@ -70,10 +81,10 @@ def build_message(ticker: str, name: str, tf: str,
 
 
 def build_message_ema_pivot(ticker: str, name: str, tf: str,
-                            price: float, ema: float, pivot: float,
-                            label: str, template: str = None) -> str:
+                             price: float, ema: float, pivot: float,
+                             label: str, template: str = None) -> str:
     from assets import tv_url  # 使用 assets 版本，支持 cn 域名 + 时间框架
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = _get_tz_now_str()
     if template:
         res = template
         res = res.replace("{label}", str(label))
