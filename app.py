@@ -984,6 +984,53 @@ def main():
     # ── 应用显示风格和字体大小设置 ──────────────────────────────
     inject_custom_theme()
 
+    # ── 全局浏览器桌面通知监听器 ──────────────────────────────
+    try:
+        import alerts as alt
+        all_logs = storage.load_alert_log(limit=50)
+        current_log_ids = {
+            f"{log.get('time','')}::{log.get('ticker','')}::{log.get('scanner','')}"
+            for log in all_logs if log
+        }
+        
+        if "prev_alert_log_ids" not in st.session_state:
+            # 首次载入页面时仅初始化缓存，不触发弹窗
+            st.session_state["prev_alert_log_ids"] = current_log_ids
+        else:
+            prev_ids = st.session_state["prev_alert_log_ids"]
+            new_ids = current_log_ids - prev_ids
+            if new_ids:
+                for log in all_logs:
+                    log_key = f"{log.get('time','')}::{log.get('ticker','')}::{log.get('scanner','')}"
+                    if log_key in new_ids:
+                        scanner_type = log.get("scanner", "")
+                        label = log.get("label", "信号")
+                        ticker = log.get("ticker", "")
+                        name = log.get("name", "")
+                        tf = log.get("timeframe", "")
+                        status = log.get("status", "ok")
+                        
+                        if status == "ok":
+                            if scanner_type == "ema_pivot":
+                                title = f"🚀 EMA + Pivot 信号: {label}"
+                            else:
+                                title = f"📐 Fibo 信号: {label}"
+                            body = f"{name} ({ticker}) [{tf}] - 价格/触发状态已更新"
+                            alt.send_browser_notification(title, body, timeout_seconds=15)
+                st.session_state["prev_alert_log_ids"] = current_log_ids
+    except Exception as e:
+        pass
+
+    # ── 非扫描页面启用全局 60 秒轮询（保持页面活跃及通知更新） ──
+    try:
+        current_p = st.session_state.get("page", "scanner")
+        refresh_pages = {"scanner", "triple_bottom", "chartink", "universe", "alerts", "alert_logs"}
+        if current_p not in refresh_pages:
+            from streamlit_autorefresh import st_autorefresh
+            st_autorefresh(interval=60000, key="global_notification_autorefresh")
+    except Exception:
+        pass
+
     # ── 启动时：从云端自动恢复所有数据 ──────────────────────────
     if not st.session_state.get("_cloud_pulled"):
         try:
