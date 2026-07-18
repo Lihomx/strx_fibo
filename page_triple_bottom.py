@@ -481,17 +481,27 @@ def render_triple_bottom_page():
                     
                     if not is_in_wl:
                         if st.button("⭐ 收藏", key=f"tb_add_wl_{i}", help="将该品种加入自选收藏夹，并标记 TripleBottom 标签", use_container_width=True):
-                            new_item = {
-                                "ticker": ticker,
-                                "name": name,
-                                "category_id": "unclassified", # 默认未分类
-                                "tags": ["TripleBottom", patt_desc.split(" (")[0]],
-                                "notes": [{"text": f"三重底自动扫描导入：{patt_desc}", "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}],
-                                "added_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            }
-                            wl.append(new_item)
-                            storage.save_watchlist(wl)
-                            st.toast(f"已成功添加 {ticker} 至自选收藏夹", icon="⭐")
+                            ok = storage.add_to_watchlist(
+                                ticker=ticker,
+                                name=name,
+                                note=f"三重底自动扫描导入：{patt_desc}"
+                            )
+                            if ok:
+                                # 追加 TripleBottom 标签（add_to_watchlist 不含 tags 字段）
+                                wl2 = storage.load_watchlist()
+                                for wl_item in wl2:
+                                    if wl_item["ticker"].upper() == ticker.upper():
+                                        tags = wl_item.setdefault("tags", [])
+                                        if "TripleBottom" not in tags:
+                                            tags.append("TripleBottom")
+                                        sub_patt = patt_desc.split(" (")[0]
+                                        if sub_patt not in tags:
+                                            tags.append(sub_patt)
+                                        break
+                                storage.save_watchlist(wl2)
+                                st.toast(f"已成功添加 {ticker} 至自选收藏夹", icon="⭐")
+                            else:
+                                st.toast(f"添加失败（{ticker} 可能已在收藏夹中）", icon="⚠️")
                             st.rerun()
                     else:
                         if st.button("✅ 已加", key=f"tb_sync_tag_{i}", help="该股票已在自选收藏夹中，点击为该股票追加 TripleBottom 与形态标签", use_container_width=True):
