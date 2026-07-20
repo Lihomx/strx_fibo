@@ -1105,7 +1105,7 @@ def main():
 
     # ── 强行重载修改过的子页面模块 ──────────────────────────────
     import importlib
-    for m in [page_triple_bottom, page_chartink]:
+    for m in [page_triple_bottom, page_chartink, page_settings, page_watchlist]:
         try:
             importlib.reload(m)
         except Exception:

@@ -28,6 +28,8 @@ import hashlib
 import logging
 import re
 import warnings
+import os
+from zoneinfo import ZoneInfo
 from datetime import datetime, timedelta
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -38,6 +40,7 @@ from assets import ASSETS, TIMEFRAMES, tv_symbol, tv_url
 from alerts import dispatch_alerts
 
 logger = logging.getLogger(__name__)
+
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -270,13 +273,232 @@ def get_all_us_tickers() -> List[Tuple[str, str]]:
         return []
 
 
+_BASE = os.path.dirname(os.path.abspath(__file__))
+CACHE_DIR = os.path.join(_BASE, "market_cache")
+
+_HOLIDAYS_CACHE = {}
+_HOLIDAYS_CACHE_TS = 0.0
+
+def _load_holidays() -> dict:
+    global _HOLIDAYS_CACHE, _HOLIDAYS_CACHE_TS
+    now = time.time()
+    if not _HOLIDAYS_CACHE or (now - _HOLIDAYS_CACHE_TS > 10.0):
+        try:
+            cfg = storage.load_config()
+            _HOLIDAYS_CACHE = cfg.get("market_holidays", {})
+            _HOLIDAYS_CACHE_TS = now
+        except Exception:
+            pass
+    return _HOLIDAYS_CACHE
+
+def _is_holiday(date_obj, region_code: str) -> bool:
+    h_list = _load_holidays().get(region_code, [])
+    return date_obj.strftime("%Y-%m-%d") in h_list
+
+def is_market_closed(ticker: str) -> bool:
+    """
+    判断目标品种对应的市场当前是否休市。
+    支持 A股/港股 (Asia/Shanghai), 美股 (America/New_York), 外汇/期货/黄金 (UTC/EST 周末休市)。
+    """
+    try:
+        tt = _ticker_type(ticker)
+        
+        # 1. 加密货币 24/7 交易，永不休市
+        if tt == "crypto":
+            return False
+            
+        # 2. 获取当前 UTC 时间
+        now_utc = datetime.now(ZoneInfo("UTC"))
+        
+        # A股 / 港股 / 亚太指数 (Asia/Shanghai)
+        if tt in ("a_share", "a_bare", "hk_stock") or (tt == "index" and ticker.startswith(("^SSEC", "^HSI", "^399"))):
+            now_local = now_utc.astimezone(ZoneInfo("Asia/Shanghai"))
+            if now_local.weekday() >= 5:
+                return True
+            if _is_holiday(now_local.date(), "CN"):
+                return True
+            hour_min = now_local.hour * 100 + now_local.minute
+            if hour_min < 900 or hour_min > 1615:
+                return True
+            return False
+            
+        # 美股 / 美股指数 (America/New_York)
+        elif tt == "us_stock" or (tt == "index" and ticker.startswith(("^GSPC", "^IXIC", "^DJI"))):
+            now_local = now_utc.astimezone(ZoneInfo("America/New_York"))
+            if now_local.weekday() >= 5:
+                return True
+            if _is_holiday(now_local.date(), "US"):
+                return True
+            hour_min = now_local.hour * 100 + now_local.minute
+            if hour_min < 930 or hour_min > 1600:
+                return True
+            return False
+            
+        # 外汇 (Forex, =X) / 期货黄金 (Futures, =F)
+        elif tt in ("forex", "futures") or "GC=" in ticker or "XAU" in ticker:
+            now_est = now_utc.astimezone(ZoneInfo("America/New_York"))
+            weekday = now_est.weekday() # 0=Mon, 4=Fri, 5=Sat, 6=Sun
+            hour = now_est.hour
+            
+            # 周五 17:00 之后休市
+            if weekday == 4 and hour >= 17:
+                return True
+            # 周六整天休市
+            if weekday == 5:
+                return True
+            # 周日 17:00 之前休市
+            if weekday == 6 and hour < 17:
+                return True
+            return False
+            
+        # 默认其他品种（按美股/全球交易日判断，周末休市）
+        else:
+            now_est = now_utc.astimezone(ZoneInfo("America/New_York"))
+            if now_est.weekday() >= 5:
+                return True
+            return False
+            
+    except Exception as e:
+        logger.debug(f"is_market_closed error for {ticker}: {e}")
+        return False
+
+def get_last_market_close(ticker: str) -> datetime:
+    """
+    获取指定品种最近一次交易日收盘的 UTC 时间。
+    """
+    try:
+        tt = _ticker_type(ticker)
+        now_utc = datetime.now(ZoneInfo("UTC"))
+        
+        if tt in ("a_share", "a_bare", "hk_stock") or (tt == "index" and ticker.startswith(("^SSEC", "^HSI", "^399"))):
+            tz = ZoneInfo("Asia/Shanghai")
+            now_local = now_utc.astimezone(tz)
+            close_hour = 16
+            
+            dt = now_local
+            if dt.weekday() >= 5 or (dt.hour < close_hour):
+                dt = dt - timedelta(days=1)
+                while dt.weekday() >= 5:
+                    dt = dt - timedelta(days=1)
+            close_dt = dt.replace(hour=close_hour, minute=0, second=0, microsecond=0)
+            return close_dt.astimezone(ZoneInfo("UTC"))
+            
+        elif tt == "us_stock" or (tt == "index" and ticker.startswith(("^GSPC", "^IXIC", "^DJI"))):
+            tz = ZoneInfo("America/New_York")
+            now_local = now_utc.astimezone(tz)
+            close_hour = 16
+            
+            dt = now_local
+            if dt.weekday() >= 5 or (dt.hour < close_hour):
+                dt = dt - timedelta(days=1)
+                while dt.weekday() >= 5:
+                    dt = dt - timedelta(days=1)
+            close_dt = dt.replace(hour=close_hour, minute=0, second=0, microsecond=0)
+            return close_dt.astimezone(ZoneInfo("UTC"))
+            
+        elif tt in ("forex", "futures") or "GC=" in ticker or "XAU" in ticker:
+            tz = ZoneInfo("America/New_York")
+            now_local = now_utc.astimezone(tz)
+            
+            dt = now_local
+            while dt.weekday() != 4:
+                dt = dt - timedelta(days=1)
+            close_dt = dt.replace(hour=17, minute=0, second=0, microsecond=0)
+            if close_dt > now_local:
+                close_dt = close_dt - timedelta(days=7)
+            return close_dt.astimezone(ZoneInfo("UTC"))
+            
+        else:
+            tz = ZoneInfo("America/New_York")
+            now_local = now_utc.astimezone(tz)
+            dt = now_local
+            if dt.weekday() >= 5 or (dt.hour < 16):
+                dt = dt - timedelta(days=1)
+                while dt.weekday() >= 5:
+                    dt = dt - timedelta(days=1)
+            close_dt = dt.replace(hour=16, minute=0, second=0, microsecond=0)
+            return close_dt.astimezone(ZoneInfo("UTC"))
+    except Exception as e:
+        logger.debug(f"get_last_market_close error for {ticker}: {e}")
+        return datetime.now(ZoneInfo("UTC")) - timedelta(days=1)
+
+def save_persistent_cache(ticker: str, interval: str, period: str, df: pd.DataFrame):
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        safe_ticker = re.sub(r"[^A-Za-z0-9_-]", "_", ticker)
+        safe_period = re.sub(r"[^A-Za-z0-9_-]", "_", period)
+        filepath = os.path.join(CACHE_DIR, f"{safe_ticker}_{interval}_{safe_period}.csv")
+        df.to_csv(filepath)
+    except Exception as e:
+        logger.debug(f"save_persistent_cache error for {ticker}_{interval}_{period}: {e}")
+
+def load_persistent_cache(ticker: str, interval: str, period: str) -> Optional[pd.DataFrame]:
+    try:
+        safe_ticker = re.sub(r"[^A-Za-z0-9_-]", "_", ticker)
+        safe_period = re.sub(r"[^A-Za-z0-9_-]", "_", period)
+        filepath = os.path.join(CACHE_DIR, f"{safe_ticker}_{interval}_{safe_period}.csv")
+        if os.path.exists(filepath):
+            df = pd.read_csv(filepath, index_col=0, parse_dates=True)
+            if not df.empty:
+                return df
+    except Exception as e:
+        logger.debug(f"load_persistent_cache error for {ticker}_{interval}_{period}: {e}")
+    return None
+
+def get_cached_data(ticker: str, interval: str, period: str) -> Optional[pd.DataFrame]:
+    try:
+        safe_ticker = re.sub(r"[^A-Za-z0-9_-]", "_", ticker)
+        safe_period = re.sub(r"[^A-Za-z0-9_-]", "_", period)
+        filepath = os.path.join(CACHE_DIR, f"{safe_ticker}_{interval}_{safe_period}.csv")
+        
+        if os.path.exists(filepath):
+            cache_mtime = datetime.fromtimestamp(os.path.getmtime(filepath), tz=ZoneInfo("UTC"))
+            now_utc = datetime.now(ZoneInfo("UTC"))
+            
+            # 1. 5分钟内短缓存，直接使用
+            if (now_utc - cache_mtime).total_seconds() < 300:
+                df = pd.read_csv(filepath, index_col=0, parse_dates=True)
+                if not df.empty:
+                    return df
+            
+            # 2. 如果市场已休市，且缓存是在最近一次收盘之后生成的，直接使用
+            if is_market_closed(ticker):
+                last_close_dt = get_last_market_close(ticker)
+                if cache_mtime > last_close_dt:
+                    df = pd.read_csv(filepath, index_col=0, parse_dates=True)
+                    if not df.empty:
+                        return df
+    except Exception as e:
+        logger.debug(f"get_cached_data error for {ticker}: {e}")
+    return None
+
+
 # ════════════════════════════════════════════════════════════════════
 # yfinance — 通用兜底
 # ════════════════════════════════════════════════════════════════════
 def fetch_yfinance(ticker: str, interval: str, period: str) -> Optional[pd.DataFrame]:
     import time
     import random
+    import logging
     
+    # ── 自动降低 yfinance 的日志级别，避免大量 delisted 警告塞满 stdout/stderr ──
+    logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+    
+    # ── 自动转换/标准化 A股 yfinance 代码 ──
+    yf_ticker = ticker.strip().upper()
+    if re.match(r"^\d{6}$", yf_ticker):
+        if yf_ticker.startswith(("6", "5", "688")):
+            yf_ticker = f"{yf_ticker}.SS"
+        else:
+            yf_ticker = f"{yf_ticker}.SZ"
+    elif re.match(r"^\d{6}\.(SH|SS|SZ|BJ)$", yf_ticker):
+        parts = yf_ticker.split(".")
+        code, suffix = parts[0], parts[1]
+        if suffix in ("SH", "SS"):
+            yf_ticker = f"{code}.SS"
+        elif suffix == "SZ":
+            yf_ticker = f"{code}.SZ"
+            
     def _download_one(p: str) -> Optional[pd.DataFrame]:
         # 随机微小延迟，降低高并发冲突
         time.sleep(random.uniform(0.1, 0.4))
@@ -285,7 +507,7 @@ def fetch_yfinance(ticker: str, interval: str, period: str) -> Optional[pd.DataF
                 import yfinance as yf
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    df = yf.download(ticker, interval=interval, period=p,
+                    df = yf.download(yf_ticker, interval=interval, period=p,
                                      progress=False, auto_adjust=True)
                 if df is None or df.empty:
                     if attempt == 0:
@@ -297,7 +519,7 @@ def fetch_yfinance(ticker: str, interval: str, period: str) -> Optional[pd.DataF
                 out = df[["Open", "High", "Low", "Close"]].dropna()
                 return out if not out.empty else None
             except Exception as e:
-                logger.debug(f"yfinance {ticker} (attempt {attempt+1}, period {p}): {e}")
+                logger.debug(f"yfinance {yf_ticker} (attempt {attempt+1}, period {p}): {e}")
                 if attempt == 0:
                     time.sleep(random.uniform(1.0, 2.0))
                     continue
@@ -318,7 +540,7 @@ def fetch_yfinance(ticker: str, interval: str, period: str) -> Optional[pd.DataF
     }
     next_p = fallback_map.get(period)
     while next_p:
-        logger.info(f"yfinance {ticker} ({interval}) empty for {period}, retrying with shorter period {next_p}")
+        logger.info(f"yfinance {yf_ticker} ({interval}) empty for {period}, retrying with shorter period {next_p}")
         df = _download_one(next_p)
         if df is not None and not df.empty:
             return df
@@ -575,9 +797,16 @@ def fetch_data(ticker: str, interval: str, period: str,
         logger.debug(f"fetch_data skipped for delisted/invalid ticker: {t}")
         return None
 
+    # 1. 尝试获取符合条件的缓存数据
+    cached_df = get_cached_data(t, interval, period)
+    if cached_df is not None:
+        return cached_df
+
     cfg = cfg or {}
     data_source = cfg.get("data_source", "auto")
     td_key = cfg.get("twelvedata_key", "")
+    
+    df = None
     try:
         df = _cached_fetch_data(t, interval, period, data_source, td_key)
     except Exception as e:
@@ -585,12 +814,18 @@ def fetch_data(ticker: str, interval: str, period: str,
             logger.warning(f"cache_data failure: {e}")
         df = _fetch_data_impl(t, interval, period, data_source, td_key)
 
-    # 如果抓取到了有效数据，且之前曾经被记过失败，可以重置失败计数
+    # 2. 如果成功抓取到了有效数据，更新持久化缓存并重置失败计数
     if df is not None and not df.empty:
+        save_persistent_cache(t, interval, period, df)
         try:
             storage.reset_scan_failure(t)
         except Exception:
             pass
+    else:
+        # 3. 抓取失败时兜底读取持久化缓存
+        df = load_persistent_cache(t, interval, period)
+        if df is not None:
+            logger.info(f"Fetch failed for {t}, fallback to persistent cache.")
 
     return df
 

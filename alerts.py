@@ -14,8 +14,13 @@ from typing import Dict, Tuple
 
 import storage
 
-# ── 冷却缓存（文件持久化）────────────────────────────────────────────
-def _is_cooldown(scanner: str, ticker: str, tf: str, minutes: int) -> bool:
+def _calc_signal_hash(price: float, label: str) -> str:
+    import hashlib
+    raw = f"{price:.6f}|{label}"
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()
+
+
+def _is_cooldown(scanner: str, ticker: str, tf: str, minutes: int, current_hash: str = "") -> bool:
     key = f"{scanner}::{ticker}::{tf}"
     cooldowns = storage.load_cooldowns()
     last_str = cooldowns.get(key)
@@ -26,15 +31,30 @@ def _is_cooldown(scanner: str, ticker: str, tf: str, minutes: int) -> bool:
         if not last_str:
             return False
     try:
-        last = datetime.fromisoformat(last_str)
+        cached_hash = ""
+        if "|" in last_str:
+            last_time_str, cached_hash = last_str.split("|", 1)
+        else:
+            last_time_str = last_str
+            
+        last = datetime.fromisoformat(last_time_str)
+        
+        # 如果哈希完全一致（说明价格和标签未发生任何变化，通常为周末休市或横盘），强制冷却 72 小时（3天）
+        if current_hash and cached_hash == current_hash:
+            if (datetime.now() - last).total_seconds() < 72 * 3600:
+                return True
+                
         return (datetime.now() - last).total_seconds() < minutes * 60
     except Exception:
         return False
 
 
-def _mark(scanner: str, ticker: str, tf: str) -> None:
+def _mark(scanner: str, ticker: str, tf: str, current_hash: str = "") -> None:
     key = f"{scanner}::{ticker}::{tf}"
-    storage.save_cooldown(key, datetime.now().isoformat())
+    val = datetime.now().isoformat()
+    if current_hash:
+        val = f"{val}|{current_hash}"
+    storage.save_cooldown(key, val)
 
 
 # ── 消息构建 ────────────────────────────────────────────────────────
@@ -204,7 +224,11 @@ def send_browser_notification(title: str, body: str, timeout_seconds: int = 15) 
 def dispatch_alerts(ticker: str, name: str, timeframe: str,
                     fibo: Dict, conf: Dict, cfg: Dict) -> None:
     cooldown = int(cfg.get("alert_cooldown_fibo", cfg.get("alert_cooldown", 240)))
-    if _is_cooldown("fibo", ticker, timeframe, cooldown):
+    cur_price = fibo.get("current", 0.0) if fibo.get("current") is not None else 0.0
+    cur_label = conf.get("label", "")
+    sig_hash = _calc_signal_hash(cur_price, cur_label)
+
+    if _is_cooldown("fibo", ticker, timeframe, cooldown, sig_hash):
         return
 
     tmpl = cfg.get("alert_template", "").strip()
@@ -226,20 +250,21 @@ def dispatch_alerts(ticker: str, name: str, timeframe: str,
     # Also send browser notification to the active Streamlit app session
     try:
         title = f"📐 Fibo 信号: {conf.get('label', '')}"
-        body = f"{name} ({ticker}) [{timeframe}] - 价格: {fibo.get('current', 0.0)}"
+        body = f"{name} ({ticker}) [{timeframe}] - 价格: {cur_price}"
         send_browser_notification(title, body, timeout_seconds=15)
     except Exception as e:
         logging.getLogger(__name__).error(f"Failed to send browser notification: {e}")
 
     if sent:
-        _mark("fibo", ticker, timeframe)
+        _mark("fibo", ticker, timeframe, sig_hash)
 
 
 def dispatch_alerts_ema_pivot(ticker: str, name: str, timeframe: str,
                               price: float, ema: float, pivot: float,
                               label: str, cfg: Dict) -> None:
     cooldown = int(cfg.get("alert_cooldown_ema_pivot", cfg.get("alert_cooldown", 240)))
-    if _is_cooldown("ema_pivot", ticker, timeframe, cooldown):
+    sig_hash = _calc_signal_hash(price, label)
+    if _is_cooldown("ema_pivot", ticker, timeframe, cooldown, sig_hash):
         return
 
     tmpl = cfg.get("alert_template_ema_pivot", "").strip()
@@ -267,4 +292,4 @@ def dispatch_alerts_ema_pivot(ticker: str, name: str, timeframe: str,
         logging.getLogger(__name__).error(f"Failed to send browser notification: {e}")
 
     if sent:
-        _mark("ema_pivot", ticker, timeframe)
+        _mark("ema_pivot", ticker, timeframe, sig_hash)

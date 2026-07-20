@@ -87,8 +87,11 @@ def save_cooldown(key: str, val_str: str) -> bool:
     pruned = {}
     for k, v in data.items():
         try:
-            dt = datetime.fromisoformat(v)
-            if (now - dt).total_seconds() < 86400:
+            ts_str = v.split("|")[0] if "|" in v else v
+            dt = datetime.fromisoformat(ts_str)
+            # 对于包含哈希的记录，由于周末可能需要过滤，我们可以多保留一段时间（比如 72 小时），否则保留 24 小时
+            max_age = 259200 if "|" in v else 86400  # 259200秒 = 72小时
+            if (now - dt).total_seconds() < max_age:
                 pruned[k] = v
         except Exception:
             pass
