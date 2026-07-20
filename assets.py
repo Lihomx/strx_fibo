@@ -80,6 +80,21 @@ def tv_url(ticker: str, timeframe: str = "") -> str:
     )
 
 
+def sina_url(ticker: str):
+    """A股返回新浪财经链接，支持 600519.SS / 000001.SZ 及纯6位数字。"""
+    t = ticker.upper().strip()
+    if t.endswith(".SS"):
+        return f"https://finance.sina.com.cn/realstock/company/sh{t[:-3]}/nc.shtml"
+    if t.endswith(".SZ"):
+        return f"https://finance.sina.com.cn/realstock/company/sz{t[:-3]}/nc.shtml"
+    if t.isdigit() and len(t) == 6:
+        if t.startswith("6") or t.startswith("5"):
+            return f"https://finance.sina.com.cn/realstock/company/sh{t}/nc.shtml"
+        if t.startswith("0") or t.startswith("3") or t.startswith("2"):
+            return f"https://finance.sina.com.cn/realstock/company/sz{t}/nc.shtml"
+    return None
+
+
 # ════════════════════════════════════════════════════════════════════
 # 40 组品种定义
 # ════════════════════════════════════════════════════════════════════

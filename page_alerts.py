@@ -484,7 +484,7 @@ def render_alert_log_table(full_page=False):
                 "name": "名称",
                 "scanner_name": "扫描器",
                 "timeframe": "周期",
-                "tradingview": "TradingView (15m)",
+                "tradingview": "行情链接",
                 "channel": "通知通道",
                 "status": "发送状态",
                 "message": "返回消息"
@@ -511,10 +511,12 @@ def render_alert_log_table(full_page=False):
                 html_parts.append(".badge-danger { background-color: rgba(239, 68, 68, 0.15); color: #f87171; padding: 4px 8px; border-radius: 4px; font-weight: 500; font-size: 12px; display: inline-block; border: 1px solid rgba(239, 68, 68, 0.3); }")
                 html_parts.append(".tv-btn { display: inline-flex; align-items: center; background-color: rgba(30, 144, 255, 0.15); color: #38bdf8 !important; padding: 5px 10px; border-radius: 4px; text-decoration: none !important; font-size: 12px; font-weight: 500; transition: all 0.2s ease; border: 1px solid rgba(30, 144, 255, 0.3); }")
                 html_parts.append(".tv-btn:hover { background-color: rgba(30, 144, 255, 0.3); color: #60a5fa !important; transform: translateY(-1px); }")
+                html_parts.append(".sina-btn { display: inline-flex; align-items: center; background-color: rgba(255, 69, 0, 0.15); color: #ff6347 !important; padding: 5px 10px; border-radius: 4px; text-decoration: none !important; font-size: 12px; font-weight: 500; transition: all 0.2s ease; border: 1px solid rgba(255, 69, 0, 0.3); margin-left: 5px; }")
+                html_parts.append(".sina-btn:hover { background-color: rgba(255, 69, 0, 0.3); color: #ff7f50 !important; transform: translateY(-1px); }")
                 html_parts.append("</style>")
                 html_parts.append("<div class=\"alert-log-container\">")
                 html_parts.append("<table class=\"alert-log-table\">")
-                html_parts.append("<thead><tr><th>时间</th><th>代码</th><th>名称</th><th>扫描器</th><th>周期</th><th>TradingView</th><th>通知通道</th><th>发送状态</th><th>返回消息</th></tr></thead>")
+                html_parts.append("<thead><tr><th>时间</th><th>代码</th><th>名称</th><th>扫描器</th><th>周期</th><th>行情链接</th><th>通知通道</th><th>发送状态</th><th>返回消息</th></tr></thead>")
                 html_parts.append("<tbody>")
                 
                 for idx, row in show_df.iterrows():
@@ -540,9 +542,14 @@ def render_alert_log_table(full_page=False):
                     else:
                         status_html = f'<span>{status}</span>'
                         
-                    # 格式化 TradingView 链接为按钮
-                    tv_url_val = row.get("TradingView (15m)", "")
+                    # 格式化 TradingView / 新浪 链接为按钮
+                    tv_url_val = row.get("行情链接", "")
                     tv_html = f'<a href="{tv_url_val}" target="_blank" class="tv-btn">📈 图表</a>' if tv_url_val else "—"
+                    
+                    from assets import sina_url
+                    sina_url_val = sina_url(row.get("代码", ""))
+                    if sina_url_val:
+                        tv_html += f'<a href="{sina_url_val}" target="_blank" class="sina-btn">🏦 新浪</a>'
                     
                     row_html = (
                         f"<tr {row_class}>"
