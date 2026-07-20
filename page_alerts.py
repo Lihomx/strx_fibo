@@ -245,12 +245,28 @@ def render():
         </div>""", unsafe_allow_html=True)
         
         with st.form("browser_notify_form"):
-            b_title = st.text_input("通知标题", "📐 Fibo 信号发现", placeholder="输入测试标题")
-            b_body = st.text_input("通知内容", "贵州茅台 (600519.SS) 触及日线黄金区", placeholder="输入测试内容")
+            sound_enabled = bool(cfg.get("browser_notification_sound_enabled", False))
+            b_sound = st.checkbox("🔊 启用声音提醒", value=sound_enabled,
+                                  help="开启后，每次触发浏览器弹出桌面通知时，都会播放一段短促的提示声音。")
+            b_title = st.text_input("测试通知标题", "📐 Fibo 信号发现", placeholder="输入测试标题")
+            b_body = st.text_input("测试通知内容", "贵州茅台 (600519.SS) 触及日线黄金区", placeholder="输入测试内容")
             
-            if st.form_submit_button("🚀 发送浏览器测试通知", width="stretch"):
-                alt.send_browser_notification(b_title, b_body, timeout_seconds=15)
-                st.success("✅ 浏览器通知命令已发送，若未弹出请检查浏览器左上角是否允许此站点的通知权限。")
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                save_btn = st.form_submit_button("💾 保存配置", use_container_width=True)
+            with col_b2:
+                test_btn = st.form_submit_button("🧪 测试发送", use_container_width=True)
+                
+        if save_btn:
+            storage.save_config({"browser_notification_sound_enabled": b_sound})
+            st.success("✅ 浏览器配置已成功保存")
+            st.rerun()
+            
+        if test_btn:
+            # 临时保存新配置以便测试声音
+            storage.save_config({"browser_notification_sound_enabled": b_sound})
+            alt.send_browser_notification(b_title, b_body, timeout_seconds=15)
+            st.success("✅ 浏览器通知测试已发送！若未弹出或未听到声音，请检查浏览器左上角通知授权及扬声器设置。")
 
     # ── 告警日志 ─────────────────────────────────────────────────────
     with tab4:

@@ -39,9 +39,9 @@ def _is_cooldown(scanner: str, ticker: str, tf: str, minutes: int, current_hash:
             
         last = datetime.fromisoformat(last_time_str)
         
-        # 如果哈希完全一致（说明价格和标签未发生任何变化，通常为周末休市或横盘），强制冷却 72 小时（3天）
+        # 如果哈希完全一致（说明价格和标签未发生任何变化，通常为周末休市或横盘），强制冷却 8 小时
         if current_hash and cached_hash == current_hash:
-            if (datetime.now() - last).total_seconds() < 72 * 3600:
+            if (datetime.now() - last).total_seconds() < 8 * 3600:
                 return True
                 
         return (datetime.now() - last).total_seconds() < minutes * 60
@@ -199,23 +199,66 @@ def send_browser_notification(title: str, body: str, timeout_seconds: int = 15) 
     Sends a browser notification using the native Web Notification API.
     Disappears after the specified timeout_seconds (default 15s).
     """
+    try:
+        cfg = storage.load_config()
+        sound_enabled = cfg.get("browser_notification_sound_enabled", False)
+    except Exception:
+        sound_enabled = False
+
     from streamlit.components.v1 import html
     t_esc = title.replace('"', '\\"').replace("'", "\\'")
     b_esc = body.replace('"', '\\"').replace("'", "\\'")
+
+    sound_js = ""
+    if sound_enabled:
+        sound_js = """
+        try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext || window.parent.AudioContext || window.parent.webkitAudioContext;
+            const ctx = new AudioContext();
+            
+            // Beep 1
+            const osc1 = ctx.createOscillator();
+            const gain1 = ctx.createGain();
+            osc1.connect(gain1);
+            gain1.connect(ctx.destination);
+            osc1.frequency.setValueAtTime(880, ctx.currentTime);
+            gain1.gain.setValueAtTime(0.08, ctx.currentTime);
+            gain1.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
+            osc1.start(ctx.currentTime);
+            osc1.stop(ctx.currentTime + 0.12);
+            
+            // Beep 2
+            const osc2 = ctx.createOscillator();
+            const gain2 = ctx.createGain();
+            osc2.connect(gain2);
+            gain2.connect(ctx.destination);
+            osc2.frequency.setValueAtTime(1046.5, ctx.currentTime + 0.15);
+            gain2.gain.setValueAtTime(0.08, ctx.currentTime + 0.15);
+            gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.32);
+            osc2.start(ctx.currentTime + 0.15);
+            osc2.stop(ctx.currentTime + 0.32);
+        } catch (e) {
+            console.error("AudioContext play failed", e);
+        }
+        """
+
     js_code = f"""
     <script>
-    if ("Notification" in window) {{
-        Notification.requestPermission().then(perm => {{
-            if (perm === 'granted') {{
-                const notification = new Notification("{t_esc}", {{
-                    body: "{b_esc}"
-                }});
-                setTimeout(() => {{
-                    notification.close();
-                }}, {timeout_seconds * 1000});
-            }}
-        }});
-    }}
+    (function() {{
+        {sound_js}
+        if ("Notification" in window) {{
+            Notification.requestPermission().then(perm => {{
+                if (perm === 'granted') {{
+                    const notification = new Notification("{t_esc}", {{
+                        body: "{b_esc}"
+                    }});
+                    setTimeout(() => {{
+                        notification.close();
+                    }}, {timeout_seconds * 1000});
+                }}
+            }});
+        }}
+    }})();
     </script>
     """
     html(js_code, width=0, height=0)
