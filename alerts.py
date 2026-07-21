@@ -200,12 +200,19 @@ def send_browser_notification(title: str, body: str, timeout_seconds: int = 15) 
     Disappears after the specified timeout_seconds (default 15s).
     """
     try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+        if not get_script_run_ctx():
+            return
+        import streamlit as st
+    except ImportError:
+        return
+
+    try:
         cfg = storage.load_config()
         sound_enabled = cfg.get("browser_notification_sound_enabled", False)
     except Exception:
         sound_enabled = False
 
-    from streamlit.components.v1 import html
     t_esc = title.replace('"', '\\"').replace("'", "\\'")
     b_esc = body.replace('"', '\\"').replace("'", "\\'")
 
@@ -261,7 +268,12 @@ def send_browser_notification(title: str, body: str, timeout_seconds: int = 15) 
     }})();
     </script>
     """
-    html(js_code, width=0, height=0)
+    # st.html() 已在 Streamlit >= 1.36 中提供，用于替代已弃用的 st.components.v1.html
+    try:
+        st.html(js_code)
+    except AttributeError:
+        from streamlit.components.v1 import html as _html
+        _html(js_code, width=0, height=0)
 
 
 def dispatch_alerts(ticker: str, name: str, timeframe: str,
