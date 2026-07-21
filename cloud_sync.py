@@ -45,9 +45,10 @@ _LATEST_FILES = {
     "symbols":             "symbols.json",
     "symbol_groups":       "symbol_groups.json",
     "triple_bottom":       "data_triple_bottom.json",
+    "alerts":              "data_alerts.json",
 }
 
-_SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "wl_categories", "config", "hotlist", "hotlist_archive", "hl_categories", "symbols", "symbol_groups", "triple_bottom"]
+_SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "wl_categories", "config", "hotlist", "hotlist_archive", "hl_categories", "symbols", "symbol_groups", "triple_bottom", "alerts"]
 _APP_BOOT_TS = time.time()
 _CLOUD_FILES   = _LATEST_FILES  # 兼容旧接口
 
@@ -340,6 +341,11 @@ def restore_from_snapshot(snapshot_path: str, file_key: str) -> Tuple[bool, str]
                 return False, "格式错误（期望列表）"
             loc._save(loc.F_SYMBOL_GROUPS, data)
             return True, f"已从快照恢复自定义分组，共 {len(data)} 个分组"
+        elif file_key == "alerts":
+            if not isinstance(data, list):
+                return False, "格式错误（期望列表）"
+            loc._save(loc.F_ALERTS, data)
+            return True, f"已从快照恢复告警日志，共 {len(data)} 条记录"
         else:
             return False, f"不支持恢复类型：{file_key}"
     except Exception as e:
@@ -720,13 +726,14 @@ def push_all(force: bool = False) -> Tuple[bool, str]:
         ("symbols",       lambda: loc.load_symbols()),
         ("symbol_groups", lambda: loc.load_symbol_groups()),
         ("triple_bottom", lambda: loc.load_triple_bottom()),
+        ("alerts",        lambda: loc._load(loc.F_ALERTS, [])),
     ]:
         try:
             data      = loader()
             ok2, msg2 = _upload_latest(file_key, data)
             if not ok2:
                 errors.append(f"{file_key}: {msg2}")
-            if file_key in ("config", "wl_categories", "hl_categories", "symbols", "symbol_groups", "triple_bottom"):
+            if file_key in ("config", "wl_categories", "hl_categories", "symbols", "symbol_groups", "triple_bottom", "alerts"):
                 _upload_snapshot(file_key, data)
         except Exception as e:
             errors.append(f"{file_key}: {e}")
@@ -738,6 +745,7 @@ def push_all(force: bool = False) -> Tuple[bool, str]:
             "watchlist_cnt":    len(loc.load_watchlist()),
             "hotlist_cnt":      len(loc.load_hotlist()),
             "scan_results_cnt": len(loc._load(loc.F_ALLRES, [])),
+            "alerts_cnt":       len(loc._load(loc.F_ALERTS, [])),
         })
     except Exception as e:
         errors.append(f"meta: {e}")
@@ -791,6 +799,38 @@ def pull_all() -> Dict[str, Any]:
         results["scan_groups"] = (True, f"{len(merged)} 组")
     else:
         results["scan_groups"] = (False, "无云端数据")
+
+    cloud_alerts = _download_latest("alerts")
+    if isinstance(cloud_alerts, list):
+        local_alerts = loc._load(loc.F_ALERTS, []) or []
+        seen = set()
+        for a in local_alerts:
+            if isinstance(a, dict):
+                k = (a.get("time"), a.get("ticker"), a.get("timeframe"), a.get("scanner"), a.get("channel"))
+                seen.add(k)
+        
+        added = 0
+        for a in cloud_alerts:
+            if isinstance(a, dict):
+                k = (a.get("time"), a.get("ticker"), a.get("timeframe"), a.get("scanner"), a.get("channel"))
+                if k not in seen:
+                    local_alerts.append(a)
+                    seen.add(k)
+                    added += 1
+        
+        if added or not os.path.exists(loc.F_ALERTS):
+            def parse_time(x):
+                try:
+                    return x.get("time", "")
+                except Exception:
+                    return ""
+            local_alerts.sort(key=parse_time)
+            if len(local_alerts) > loc._MAX_ALERTS:
+                local_alerts = local_alerts[-loc._MAX_ALERTS:]
+            loc._save(loc.F_ALERTS, local_alerts)
+        results["alerts"] = (True, f"补充 {added} 条，共 {len(local_alerts)} 条")
+    else:
+        results["alerts"] = (False, "无云端数据")
 
     if not loc._load(loc.F_CFG, {}):
         cloud_cfg = _download_latest("config")
@@ -960,6 +1000,7 @@ def get_sync_status() -> Dict[str, Any]:
             "last_sync_ts":     meta.get("last_sync_ts", 0),
             "watchlist_cnt":    meta.get("watchlist_cnt", 0),
             "scan_results_cnt": meta.get("scan_results_cnt", 0),
+            "alerts_cnt":       meta.get("alerts_cnt", 0),
             "elapsed_h":        round(elapsed_h, 1),
         }
     _status_cache    = result

@@ -1,4 +1,4 @@
-﻿"""
+"""
 page_cloud.py - Cloud sync management page
 """
 
@@ -108,15 +108,17 @@ def _control(configured: bool) -> None:
             (st.success if ok else st.error)(msg)
 
     with d2:
-        if st.button("📈 仅同步扫描记录", key="push_scan", use_container_width=True):
+        if st.button("📈 仅同步扫描与告警记录", key="push_scan", use_container_width=True):
             import storage as loc
 
-            with st.spinner("同步扫描记录..."):
+            with st.spinner("同步扫描与告警记录..."):
                 r1 = cloud_sync._upload_latest("scan_history", loc._load(loc.F_HIST, []))
                 r2 = cloud_sync._upload_latest("scan_results", loc._load(loc.F_ALLRES, []))
                 r3 = cloud_sync._upload_latest("scan_groups", loc.load_scanned_groups())
-            all_ok = all(ok for ok, _ in [r1, r2, r3])
-            (st.success if all_ok else st.error)("扫描记录同步完成" if all_ok else f"部分失败: {r1[1]}")
+                r4 = cloud_sync._upload_latest("alerts", loc._load(loc.F_ALERTS, []))
+                cloud_sync._upload_snapshot("alerts", loc._load(loc.F_ALERTS, []))
+            all_ok = all(ok for ok, _ in [r1, r2, r3, r4])
+            (st.success if all_ok else st.error)("扫描与告警记录同步完成" if all_ok else f"部分失败: {r1[1]}")
 
     with d3:
         if st.button("⚙️ 仅同步配置", key="push_cfg", use_container_width=True):
