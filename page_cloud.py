@@ -117,8 +117,12 @@ def _control(configured: bool) -> None:
                 r3 = cloud_sync._upload_latest("scan_groups", loc.load_scanned_groups())
                 r4 = cloud_sync._upload_latest("alerts", loc._load(loc.F_ALERTS, []))
                 cloud_sync._upload_snapshot("alerts", loc._load(loc.F_ALERTS, []))
-            all_ok = all(ok for ok, _ in [r1, r2, r3, r4])
-            (st.success if all_ok else st.error)("扫描与告警记录同步完成" if all_ok else f"部分失败: {r1[1]}")
+                r5 = cloud_sync._upload_latest("starred", loc._load(loc.F_STARRED, []))
+                cloud_sync._upload_snapshot("starred", loc._load(loc.F_STARRED, []))
+                r6 = cloud_sync._upload_latest("ticker_notes", loc._load(loc.F_TICKER_NOTES, {}))
+                cloud_sync._upload_snapshot("ticker_notes", loc._load(loc.F_TICKER_NOTES, {}))
+            all_ok = all(ok for ok, _ in [r1, r2, r3, r4, r5, r6])
+            (st.success if all_ok else st.error)("扫描/告警/关注/备注同步完成" if all_ok else f"部分失败: {r1[1]}")
 
     with d3:
         if st.button("⚙️ 仅同步配置", key="push_cfg", use_container_width=True):

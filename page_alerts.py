@@ -636,20 +636,35 @@ def render_alert_log_table(full_page=False):
                 html_parts.append(".tv-btn:hover { background-color: rgba(30, 144, 255, 0.3); color: #60a5fa !important; transform: translateY(-1px); }")
                 html_parts.append(".sina-btn { display: inline-flex; align-items: center; background-color: rgba(255, 69, 0, 0.15); color: #ff6347 !important; padding: 5px 10px; border-radius: 4px; text-decoration: none !important; font-size: 12px; font-weight: 500; transition: all 0.2s ease; border: 1px solid rgba(255, 69, 0, 0.3); margin-left: 5px; }")
                 html_parts.append(".sina-btn:hover { background-color: rgba(255, 69, 0, 0.3); color: #ff7f50 !important; transform: translateY(-1px); }")
+                html_parts.append(".star-btn { text-decoration: none !important; font-size: 16px; margin-right: 6px; cursor: pointer; display: inline-block; transition: transform 0.2s ease; }")
+                html_parts.append(".star-btn:hover { transform: scale(1.2); }")
+                html_parts.append(".star-active { filter: none; opacity: 1; }")
+                html_parts.append(".star-inactive { filter: grayscale(100%); opacity: 0.25; }")
+                html_parts.append(".star-inactive:hover { filter: none; opacity: 0.8; }")
+                html_parts.append(".alert-log-row-starred { background-color: rgba(245, 158, 11, 0.08) !important; font-weight: 500; }")
                 html_parts.append("</style>")
                 html_parts.append("<div class=\"alert-log-container\">")
                 html_parts.append("<table class=\"alert-log-table\">")
                 html_parts.append("<thead><tr><th>时间</th><th>代码</th><th>名称</th><th>扫描器</th><th>周期</th><th>行情链接</th><th>通知通道</th><th>发送状态</th><th>返回消息</th></tr></thead>")
                 html_parts.append("<tbody>")
                 
+                t_token = st.query_params.get("_t", "")
+                curr_page = st.query_params.get("_page", "alerts")
+                
                 for idx, row in show_df.iterrows():
                     status = row.get("发送状态", "")
                     t_val = row.get("时间", "")
+                    ticker = row.get("代码", "")
+                    name = row.get("名称", "")
+                    
+                    is_starred = storage.is_ticker_starred(ticker)
                     
                     # 确定行样式类
                     row_class = ""
                     if status == "fail" or status == "失败":
                         row_class = 'class="alert-log-row-fail"'
+                    elif is_starred:
+                        row_class = 'class="alert-log-row-starred"'
                     else:
                         group_idx = time_to_group.get(t_val, 0)
                         if group_idx % 2 == 1:
@@ -670,15 +685,21 @@ def render_alert_log_table(full_page=False):
                     tv_html = f'<a href="{tv_url_val}" target="_blank" class="tv-btn">📈 图表</a>' if tv_url_val else "—"
                     
                     from assets import sina_url
-                    sina_url_val = sina_url(row.get("代码", ""))
+                    sina_url_val = sina_url(ticker)
                     if sina_url_val:
                         tv_html += f'<a href="{sina_url_val}" target="_blank" class="sina-btn">🏦 新浪</a>'
                     
+                    star_class = "star-active" if is_starred else "star-inactive"
+                    star_html = f'<a href="/?_page={curr_page}&_t={t_token}&_toggle_star={ticker}" class="star-btn {star_class}" title="标记重点关注">⭐</a>'
+                    
+                    code_html = f'{star_html}<a href="/?_page=ticker&_ticker={ticker}&_t={t_token}" style="color:#38bdf8; text-decoration:none; font-weight:bold;">{ticker}</a>'
+                    name_html = f'<a href="/?_page=ticker&_ticker={ticker}&_t={t_token}" style="color:inherit; text-decoration:none;">{name}</a>'
+                    
                     row_html = (
                         f"<tr {row_class}>"
-                        f"<td>{row.get('时间', '—')}</td>"
-                        f"<td><b>{row.get('代码', '—')}</b></td>"
-                        f"<td>{row.get('名称', '—')}</td>"
+                        f"<td>{t_val}</td>"
+                        f"<td>{code_html}</td>"
+                        f"<td>{name_html}</td>"
                         f"<td>{row.get('扫描器', '—')}</td>"
                         f"<td><code>{row.get('周期', '—')}</code></td>"
                         f"<td>{tv_html}</td>"

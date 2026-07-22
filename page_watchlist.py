@@ -581,10 +581,15 @@ def _render_item_row(item, result_map, cats, viewed_set):
                 f'padding:2px 7px;font-size:10px;white-space:nowrap;margin-right:4px;color:#a5b4fc;font-weight:500;">'
                 f'🏷️ {t}</span>'
             )
+        t_token = st.query_params.get("_t", "")
+        ticker_url = f"/?_page=ticker&_ticker={ticker}&_t={t_token}"
+        display_name_html = f'<a href="{ticker_url}" target="_self" style="color:inherit; text-decoration:none; transition:color 0.2s;" onmouseover="this.style.color=\'#38bdf8\'" onmouseout="this.style.color=\'inherit\'">{pin_icon}{view_icon}{display_name}</a>'
+        ticker_badge_html = f'<a href="{ticker_url}" target="_self" style="text-decoration:none; margin-left:6px;">{ticker_badge}</a>'
+        
         st.markdown(
             f'<div style="{row_style}border-radius:10px;padding:10px 14px;margin-bottom:2px;">'
             f'<div style="font-size:15px;font-weight:700;color:var(--text-color,#f1f5f9);line-height:1.3;">'
-            f'{pin_icon}{view_icon}{display_name}{ticker_badge}</div>'
+            f'{display_name_html}{ticker_badge_html}</div>'
             + (f'<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:3px;">{fibo_html}{tags_html}</div>' if fibo_html or tags_html else "")
             + note_html
             + '</div>',

@@ -856,11 +856,18 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
         else:
             fav_html = ""
 
+        t_token = st.query_params.get("_t", "")
+        ticker_url = f"/?_page=ticker&_ticker={ticker}&_t={t_token}"
+        ticker_link = (
+            f"<a href='{ticker_url}' target='_self' style='color:inherit;text-decoration:none;transition:color 0.2s;' "
+            f"onmouseover='this.style.color=\"#38bdf8\"' onmouseout='this.style.color=\"inherit\"'>"
+            f"<b>{name_s}</b><br><small style='color:#9ca3af;font-family:monospace'>{ticker_s}</small></a>"
+        )
+
         zone_cls = ' class="zone"' if in_zone else ""
         rows_html.append(
             f"<tr{zone_cls}>"
-            f"<td style='width:20%'><b>{name_s}</b>"
-            f"<br><small style='color:#9ca3af;font-family:monospace'>{ticker_s}</small></td>"
+            f"<td style='width:20%'>{ticker_link}</td>"
             f"<td style='width:8%'><span class='badge b-gray'>{_cat_label(cat)}</span></td>"
             f"<td style='width:7%'><span class='badge b-gray'>{_he(tf)}</span></td>"
             f"<td style='width:9%'>{_badge(in_zone, dist)}</td>"

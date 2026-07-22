@@ -221,6 +221,7 @@ import page_chartink
 import page_schedule
 import page_triple_bottom
 import page_symbols
+import page_ticker
 import cloud_sync
 
 
@@ -709,6 +710,24 @@ def sidebar():
         if search_query:
             st.markdown("<div style='font-size:12px;font-weight:bold;margin-bottom:4px;'>🔍 搜索结果:</div>", unsafe_allow_html=True)
             found_any = False
+
+            # 0. 详情跳转
+            try:
+                symbols_list = storage.load_symbols()
+                dt_matches = [s for s in symbols_list if search_query in s["ticker"].upper() or search_query in s.get("name", "").upper()]
+                if dt_matches:
+                    found_any = True
+                    st.markdown("<div style='font-size:11px;color:#9ca3af;'>💎 详情</div>", unsafe_allow_html=True)
+                    for item in dt_matches[:2]:
+                        tk = item["ticker"]
+                        nm = item.get("name") or tk
+                        if st.button(f"💎 {nm} ({tk})", key=f"gs_dt_{tk}", use_container_width=True):
+                            st.session_state.page = "ticker"
+                            st.query_params["_page"] = "ticker"
+                            st.query_params["_ticker"] = tk
+                            st.rerun()
+            except Exception:
+                pass
             
             # 1. 自选
             try:
@@ -1011,10 +1030,12 @@ def main():
                         status = log.get("status", "ok")
                         
                         if status == "ok":
+                            is_starred = storage.is_ticker_starred(ticker)
+                            prefix = "⭐[重点关注] " if is_starred else ""
                             if scanner_type == "ema_pivot":
-                                title = f"🚀 EMA + Pivot 信号: {label}"
+                                title = f"{prefix}🚀 EMA + Pivot 信号: {label}"
                             else:
-                                title = f"📐 Fibo 信号: {label}"
+                                title = f"{prefix}📐 Fibo 信号: {label}"
                             body = f"{name} ({ticker}) [{tf}] - 价格/触发状态已更新"
                             
                             t_val = st.query_params.get("_t", "")
@@ -1085,9 +1106,19 @@ def main():
         st.query_params.pop("_fav", None)
         st.rerun()
 
+    _toggle_star = st.query_params.get("_toggle_star", "")
+    if _toggle_star:
+        try:
+            storage.toggle_starred_ticker(_toggle_star)
+            st.toast(f"重点关注状态已更新：{_toggle_star}", icon="⭐")
+        except Exception:
+            pass
+        st.query_params.pop("_toggle_star", None)
+        st.rerun()
+
     # ── URL 参数跳转与同步 ────────────────────────────────────────────
     _VALID_PAGES = ("watchlist","hotlist","scanner","confluence","alerts","settings",
-                    "history","cloud","universe","chartink","schedule","triple_bottom","symbols","alert_logs")
+                    "history","cloud","universe","chartink","schedule","triple_bottom","symbols","alert_logs","ticker")
     _url_page = st.query_params.get("_page", "")
     if _url_page and _url_page in _VALID_PAGES:
         st.session_state["page"] = _url_page
@@ -1109,7 +1140,7 @@ def main():
 
     # ── 强行重载修改过的子页面模块 ──────────────────────────────
     import importlib
-    for m in [page_triple_bottom, page_chartink, page_settings, page_watchlist]:
+    for m in [page_triple_bottom, page_chartink, page_settings, page_watchlist, page_ticker]:
         try:
             importlib.reload(m)
         except Exception:
@@ -1131,6 +1162,7 @@ def main():
         "settings":      page_settings.render,
         "schedule":      page_schedule.render,
         "symbols":       page_symbols.render,
+        "ticker":        page_ticker.render,
     }
     dispatch.get(p, page_scanner.render)()
 

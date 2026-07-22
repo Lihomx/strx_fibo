@@ -532,6 +532,53 @@ def clear_alert_log() -> bool:
     return clear_alerts()
 
 
+F_STARRED = os.path.join(_BASE, "data_starred.json")
+F_TICKER_NOTES = os.path.join(_BASE, "data_ticker_notes.json")
+
+def load_starred_tickers() -> List[str]:
+    res = _load(F_STARRED, [])
+    if not isinstance(res, list):
+        return []
+    return [str(x).strip().upper() for x in res if x]
+
+def save_starred_tickers(tickers: List[str]) -> bool:
+    clean = list(set(str(x).strip().upper() for x in tickers if x))
+    return _save(F_STARRED, clean)
+
+def toggle_starred_ticker(ticker: str) -> bool:
+    ticker = ticker.strip().upper()
+    if not ticker:
+        return False
+    starred = load_starred_tickers()
+    if ticker in starred:
+        starred.remove(ticker)
+    else:
+        starred.append(ticker)
+    return save_starred_tickers(starred)
+
+def is_ticker_starred(ticker: str) -> bool:
+    ticker = ticker.strip().upper()
+    return ticker in load_starred_tickers()
+
+def load_ticker_notes(ticker: str) -> str:
+    ticker = ticker.strip().upper()
+    all_notes = _load(F_TICKER_NOTES, {})
+    if not isinstance(all_notes, dict):
+        return ""
+    return str(all_notes.get(ticker, "")).strip()
+
+def save_ticker_note(ticker: str, note_text: str) -> bool:
+    ticker = ticker.strip().upper()
+    if not ticker:
+        return False
+    all_notes = _load(F_TICKER_NOTES, {})
+    if not isinstance(all_notes, dict):
+        all_notes = {}
+    all_notes[ticker] = note_text.strip()
+    return _save(F_TICKER_NOTES, all_notes)
+
+
+
 
 # ── 自选收藏夹 ──────────────────────────────────────────────────────
 F_WATCHLIST = os.path.join(_BASE, "data_watchlist.json")

@@ -46,9 +46,11 @@ _LATEST_FILES = {
     "symbol_groups":       "symbol_groups.json",
     "triple_bottom":       "data_triple_bottom.json",
     "alerts":              "data_alerts.json",
+    "starred":             "data_starred.json",
+    "ticker_notes":        "data_ticker_notes.json",
 }
 
-_SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "wl_categories", "config", "hotlist", "hotlist_archive", "hl_categories", "symbols", "symbol_groups", "triple_bottom", "alerts"]
+_SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "wl_categories", "config", "hotlist", "hotlist_archive", "hl_categories", "symbols", "symbol_groups", "triple_bottom", "alerts", "starred", "ticker_notes"]
 _APP_BOOT_TS = time.time()
 _CLOUD_FILES   = _LATEST_FILES  # 兼容旧接口
 
@@ -727,13 +729,15 @@ def push_all(force: bool = False) -> Tuple[bool, str]:
         ("symbol_groups", lambda: loc.load_symbol_groups()),
         ("triple_bottom", lambda: loc.load_triple_bottom()),
         ("alerts",        lambda: loc._load(loc.F_ALERTS, [])),
+        ("starred",       lambda: loc._load(loc.F_STARRED, [])),
+        ("ticker_notes",  lambda: loc._load(loc.F_TICKER_NOTES, {})),
     ]:
         try:
             data      = loader()
             ok2, msg2 = _upload_latest(file_key, data)
             if not ok2:
                 errors.append(f"{file_key}: {msg2}")
-            if file_key in ("config", "wl_categories", "hl_categories", "symbols", "symbol_groups", "triple_bottom", "alerts"):
+            if file_key in ("config", "wl_categories", "hl_categories", "symbols", "symbol_groups", "triple_bottom", "alerts", "starred", "ticker_notes"):
                 _upload_snapshot(file_key, data)
         except Exception as e:
             errors.append(f"{file_key}: {e}")
@@ -861,6 +865,33 @@ def pull_all() -> Dict[str, Any]:
 
     ok_tbsnap, msg_tbsnap = pull_tb_snapshots()
     results["tb_snapshots"] = (ok_tbsnap, msg_tbsnap)
+
+    # 重点关注品种
+    try:
+        cloud_starred = _download_latest("starred")
+        if isinstance(cloud_starred, list):
+            merged = list(set(loc.load_starred_tickers()) | set(cloud_starred))
+            loc.save_starred_tickers(merged)
+            results["starred"] = (True, f"合并后共 {len(merged)} 个")
+        else:
+            results["starred"] = (False, "无云端数据")
+    except Exception as e:
+        results["starred"] = (False, str(e))
+
+    # 品种备注
+    try:
+        cloud_notes = _download_latest("ticker_notes")
+        if isinstance(cloud_notes, dict):
+            local_notes = loc._load(loc.F_TICKER_NOTES, {}) or {}
+            for k, v in cloud_notes.items():
+                if k not in local_notes or not local_notes[k]:
+                    local_notes[k] = v
+            loc._save(loc.F_TICKER_NOTES, local_notes)
+            results["ticker_notes"] = (True, f"合并后共 {len(local_notes)} 个")
+        else:
+            results["ticker_notes"] = (False, "无云端数据")
+    except Exception as e:
+        results["ticker_notes"] = (False, str(e))
 
     return results
 

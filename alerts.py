@@ -73,6 +73,9 @@ def _get_tz_now_str() -> str:
 def build_message(ticker: str, name: str, tf: str,
                   fibo: Dict, conf: Dict, template: str = None) -> str:
     from assets import tv_url  # 使用 assets 版本，支持 cn 域名 + 时间框架
+    import storage
+    is_starred = storage.is_ticker_starred(ticker)
+    starred_prefix = "⭐[重点关注] " if is_starred else ""
     now = _get_tz_now_str()
     if template:
         res = template
@@ -86,9 +89,11 @@ def build_message(ticker: str, name: str, tf: str,
         res = res.replace("{retrace_pct}", f"{fibo.get('retrace_pct', 0.0):.1f}" if fibo.get("retrace_pct") is not None else "—")
         res = res.replace("{url}", tv_url(ticker, tf))
         res = res.replace("{time}", now)
+        if starred_prefix:
+            res = starred_prefix + "\n" + res
         return res
     return (
-        f"📐 STRX Fibo 信号  {conf.get('label', '')}\n"
+        f"{starred_prefix}📐 STRX Fibo 信号  {conf.get('label', '')}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"🏷  {name} ({ticker})\n"
         f"📅 框架: {tf}\n"
@@ -104,6 +109,9 @@ def build_message_ema_pivot(ticker: str, name: str, tf: str,
                              price: float, ema: float, pivot: float,
                              label: str, template: str = None) -> str:
     from assets import tv_url  # 使用 assets 版本，支持 cn 域名 + 时间框架
+    import storage
+    is_starred = storage.is_ticker_starred(ticker)
+    starred_prefix = "⭐[重点关注] " if is_starred else ""
     now = _get_tz_now_str()
     if template:
         res = template
@@ -116,9 +124,11 @@ def build_message_ema_pivot(ticker: str, name: str, tf: str,
         res = res.replace("{pivot}", f"{pivot:,.4f}")
         res = res.replace("{url}", tv_url(ticker, tf))
         res = res.replace("{time}", now)
+        if starred_prefix:
+            res = starred_prefix + "\n" + res
         return res
     return (
-        f"🚀 EMA20 + Daily Pivot 信号  {label}\n"
+        f"{starred_prefix}🚀 EMA20 + Daily Pivot 信号  {label}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"🏷  {name} ({ticker})\n"
         f"📅 框架: {tf}\n"
