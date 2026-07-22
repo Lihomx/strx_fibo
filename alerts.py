@@ -268,12 +268,11 @@ def send_browser_notification(title: str, body: str, timeout_seconds: int = 15) 
     }})();
     </script>
     """
-    # st.html() 已在 Streamlit >= 1.36 中提供，用于替代已弃用的 st.components.v1.html
     try:
-        st.html(js_code)
-    except AttributeError:
         from streamlit.components.v1 import html as _html
         _html(js_code, width=0, height=0)
+    except Exception as e:
+        pass
 
 
 def dispatch_alerts(ticker: str, name: str, timeframe: str,
