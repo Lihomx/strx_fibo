@@ -538,13 +538,24 @@ def _render_item_row(item, result_map, cats, viewed_set):
         )
 
     note_html = ""
+    note_lines = []
     if latest:
         nt   = latest.get("text","")
         nt_s = (nt[:50]+"…") if len(nt)>50 else nt
+        note_lines.append(f'<span style="color:#60a5fa;">📝 自选：</span>{_he(nt_s)}')
+
+    ticker_notes_data = storage.load_ticker_notes(ticker)
+    ticker_note_text = ticker_notes_data.get("text", "").strip()
+    if ticker_note_text:
+        nt_s = (ticker_note_text[:50]+"…") if len(ticker_note_text)>50 else ticker_note_text
+        note_lines.append(f'<span style="color:#f87171;">💎 备注：</span>{_he(nt_s)}')
+
+    if note_lines:
+        inner_html = "<br>".join(note_lines)
         note_html = (
-            f'<div style="color:#f87171;font-size:12px;font-weight:500;margin-top:5px;'
-            f'padding-top:5px;border-top:1px solid rgba(239,68,68,0.2)">'
-            f'📝 {_he(nt_s)}</div>'
+            f'<div style="font-size:12px;font-weight:500;margin-top:5px;'
+            f'padding-top:5px;border-top:1px solid rgba(255,255,255,0.08);line-height:1.4;">'
+            f'{inner_html}</div>'
         )
 
     # ── 编辑状态key ──────────────────────────────────────────────

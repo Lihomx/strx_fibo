@@ -177,7 +177,6 @@ def render(ticker: str = None):
             if submitted:
                 storage.save_ticker_note(ticker, new_note, new_img)
                 st.success("✅ 备注保存成功，已同步至云端！")
-                time.sleep(0.5)
                 st.rerun()
 
         # 展示保存的备注图片
