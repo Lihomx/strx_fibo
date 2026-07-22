@@ -194,7 +194,7 @@ def send_telegram(text: str, cfg: Dict) -> Tuple[bool, str]:
 
 # ── 调度器 ──────────────────────────────────────────────────────────
 
-def send_browser_notification(title: str, body: str, timeout_seconds: int = 15) -> None:
+def send_browser_notification(title: str, body: str, target_url: str = "", timeout_seconds: int = 15) -> None:
     """
     Sends a browser notification using the native Web Notification API.
     Disappears after the specified timeout_seconds (default 15s).
@@ -215,6 +215,7 @@ def send_browser_notification(title: str, body: str, timeout_seconds: int = 15) 
 
     t_esc = title.replace('"', '\\"').replace("'", "\\'")
     b_esc = body.replace('"', '\\"').replace("'", "\\'")
+    u_esc = target_url.replace('"', '\\"').replace("'", "\\'")
 
     sound_js = ""
     if sound_enabled:
@@ -249,6 +250,24 @@ def send_browser_notification(title: str, body: str, timeout_seconds: int = 15) 
         }
         """
 
+    click_js = ""
+    if u_esc:
+        click_js = f"""
+                    notification.onclick = function() {{
+                        try {{
+                            const win = window.parent || window;
+                            win.focus();
+                            win.location.href = "{u_esc}";
+                        }} catch (e) {{
+                            try {{
+                                window.top.location.href = "{u_esc}";
+                            }} catch (err) {{
+                                window.location.href = "{u_esc}";
+                            }}
+                        }}
+                    }};
+        """
+
     js_code = f"""
     <script>
     (function() {{
@@ -259,6 +278,7 @@ def send_browser_notification(title: str, body: str, timeout_seconds: int = 15) 
                     const notification = new Notification("{t_esc}", {{
                         body: "{b_esc}"
                     }});
+                    {click_js}
                     setTimeout(() => {{
                         notification.close();
                     }}, {timeout_seconds * 1000});

@@ -1016,7 +1016,11 @@ def main():
                             else:
                                 title = f"📐 Fibo 信号: {label}"
                             body = f"{name} ({ticker}) [{tf}] - 价格/触发状态已更新"
-                            alt.send_browser_notification(title, body, timeout_seconds=15)
+                            
+                            t_val = st.query_params.get("_t", "")
+                            target_url = f"/?_page=alert_logs&_t={t_val}" if t_val else "/?_page=alert_logs"
+                            
+                            alt.send_browser_notification(title, body, target_url=target_url, timeout_seconds=15)
                 st.session_state["prev_alert_log_ids"] = current_log_ids
     except Exception as e:
         pass
