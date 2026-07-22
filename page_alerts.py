@@ -239,34 +239,157 @@ def render():
     with tab3:
         st.markdown("#### 🖥️ 浏览器桌面通知")
         st.markdown("""
-        <div class="n-info">
-        💡 开启后，系统在页面开启状态下可以直接在 Chrome/Edge 浏览器右下角显示通知提示弹窗。<br>
-        通知默认会在 <b>15 秒</b>后自动关闭消失。
-        </div>""", unsafe_allow_html=True)
+        <div style="background-color: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.2); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+            <p style="margin: 0 0 8px 0; font-weight: bold; color: #fbbf24; font-size: 14px;">⚠️ 跨设备切换与浏览器通知限制说明：</p>
+            <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #cbd5e1; line-height: 1.6;">
+                <li><b>局限性</b>：浏览器桌面通知<b>仅对当前正开着网页的这台电脑和当前浏览器页签有效</b>。它无法像 Telegram/钉钉那样把消息推送到离线设备。</li>
+                <li><b>多设备切换</b>：由于您经常在<b>公司</b>和<b>家里</b>两台电脑切换使用，浏览器通知无法在未开网页的电脑上唤醒。<b>强烈建议您配置第一、第二选项卡的 🤖 Telegram 或 💬 钉钉</b>，即可在手机和所有电脑上同步且可靠地收到实时告警。</li>
+                <li><b>手势授权限制</b>：现代浏览器（Chrome/Edge）为了防止骚扰，<b>禁止自动请求通知权限</b>，必须由您在页面上<b>手动点击按钮</b>才能唤醒授权弹窗。</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
         
-        with st.form("browser_notify_form"):
-            sound_enabled = bool(cfg.get("browser_notification_sound_enabled", False))
-            b_sound = st.checkbox("🔊 启用声音提醒", value=sound_enabled,
-                                  help="开启后，每次触发浏览器弹出桌面通知时，都会播放一段短促的提示声音。")
-            b_title = st.text_input("测试通知标题", "📐 Fibo 信号发现", placeholder="输入测试标题")
-            b_body = st.text_input("测试通知内容", "贵州茅台 (600519.SS) 触及日线黄金区", placeholder="输入测试内容")
+        # 使用自定义的 HTML 组件在前端处理权限申请与测试，彻底规避现代浏览器安全限制
+        js_notify_ui = f"""
+        <div style="background-color: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; font-family: sans-serif; color: #f3f4f6;">
+            <div style="margin-bottom: 20px;">
+                <h5 style="margin: 0 0 10px 0; font-size: 14px; color: #38bdf8;">🔑 第一步：授权浏览器通知</h5>
+                <p style="margin: 0 0 10px 0; font-size: 12px; color: #94a3b8;">点击下方按钮以唤醒浏览器的通知权限申请弹窗（若已授权，会显示当前状态为已允许）：</p>
+                <button id="btn-request" onclick="requestNotificationPermission()" style="background-color: #0284c7; color: white; border: none; padding: 8px 16px; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s;">
+                    🔔 申请授权浏览器通知
+                </button>
+                <span id="permission-status" style="margin-left: 15px; font-size: 13px; font-weight: bold; color: #f59e0b;">检查中...</span>
+            </div>
             
-            col_b1, col_b2 = st.columns(2)
-            with col_b1:
-                save_btn = st.form_submit_button("💾 保存配置", use_container_width=True)
-            with col_b2:
-                test_btn = st.form_submit_button("🧪 测试发送", use_container_width=True)
+            <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.05); margin: 20px 0;" />
+            
+            <div>
+                <h5 style="margin: 0 0 10px 0; font-size: 14px; color: #38bdf8;">🧪 第二步：直接在当前浏览器测试发送</h5>
+                <p style="margin: 0 0 12px 0; font-size: 12px; color: #94a3b8;">点击下方按钮将在当前浏览器上立即弹出一行系统测试通知，并伴随提示音：</p>
                 
-        if save_btn:
-            storage.save_config({"browser_notification_sound_enabled": b_sound})
-            st.success("✅ 浏览器配置已成功保存")
-            st.rerun()
-            
-        if test_btn:
-            # 临时保存新配置以便测试声音
-            storage.save_config({"browser_notification_sound_enabled": b_sound})
-            alt.send_browser_notification(b_title, b_body, timeout_seconds=15)
-            st.success("✅ 浏览器通知测试已发送！若未弹出或未听到声音，请检查浏览器左上角通知授权及扬声器设置。")
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; font-size: 12px; color: #cbd5e1; margin-bottom: 4px;">测试标题</label>
+                    <input type="text" id="test-title" value="📐 Fibo 信号发现" style="width: 100%; max-width: 400px; background: #1e293b; border: 1px solid #475569; padding: 6px 10px; border-radius: 4px; color: white; font-size: 13px;" />
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; font-size: 12px; color: #cbd5e1; margin-bottom: 4px;">测试内容</label>
+                    <input type="text" id="test-body" value="贵州茅台 (600519.SS) 触及日线黄金区" style="width: 100%; max-width: 400px; background: #1e293b; border: 1px solid #475569; padding: 6px 10px; border-radius: 4px; color: white; font-size: 13px;" />
+                </div>
+                
+                <button id="btn-test" onclick="sendTestNotification()" style="background-color: #10b981; color: white; border: none; padding: 8px 16px; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s;">
+                    🧪 发送测试桌面通知
+                </button>
+            </div>
+        </div>
+
+        <script>
+            function updatePermissionUI() {{
+                const statusSpan = document.getElementById("permission-status");
+                if (!("Notification" in window)) {{
+                    statusSpan.innerText = "❌ 您的浏览器不支持桌面通知";
+                    statusSpan.style.color = "#ef4444";
+                    document.getElementById("btn-request").disabled = true;
+                    return;
+                }}
+                
+                const perm = Notification.permission;
+                if (perm === "granted") {{
+                    statusSpan.innerText = "✅ 已授权允许通知";
+                    statusSpan.style.color = "#22c55e";
+                }} else if (perm === "denied") {{
+                    statusSpan.innerText = "❌ 已拒绝通知（请在浏览器地址栏左侧解锁）";
+                    statusSpan.style.color = "#ef4444";
+                }} else {{
+                    statusSpan.innerText = "❔ 尚未授权（请点击左侧按钮申请）";
+                    statusSpan.style.color = "#f59e0b";
+                }}
+            }}
+
+            function requestNotificationPermission() {{
+                if (!("Notification" in window)) return;
+                Notification.requestPermission().then(function(perm) {{
+                    updatePermissionUI();
+                    if (perm === "granted") {{
+                        alert("🎉 浏览器通知授权成功！");
+                    }}
+                }});
+            }}
+
+            function playBeepSound() {{
+                try {{
+                    const AudioContext = window.AudioContext || window.webkitAudioContext || window.parent.AudioContext || window.parent.webkitAudioContext;
+                    const ctx = new AudioContext();
+                    
+                    // Beep 1
+                    const osc1 = ctx.createOscillator();
+                    const gain1 = ctx.createGain();
+                    osc1.connect(gain1);
+                    gain1.connect(ctx.destination);
+                    osc1.frequency.setValueAtTime(880, ctx.currentTime);
+                    gain1.gain.setValueAtTime(0.08, ctx.currentTime);
+                    gain1.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
+                    osc1.start(ctx.currentTime);
+                    osc1.stop(ctx.currentTime + 0.12);
+                    
+                    // Beep 2
+                    const osc2 = ctx.createOscillator();
+                    const gain2 = ctx.createGain();
+                    osc2.connect(gain2);
+                    gain2.connect(ctx.destination);
+                    osc2.frequency.setValueAtTime(1046.5, ctx.currentTime + 0.15);
+                    gain2.gain.setValueAtTime(0.08, ctx.currentTime + 0.15);
+                    gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.32);
+                    osc2.start(ctx.currentTime + 0.15);
+                    osc2.stop(ctx.currentTime + 0.32);
+                }} catch (e) {{
+                    console.error("AudioContext play failed", e);
+                }}
+            }}
+
+            function sendTestNotification() {{
+                if (!("Notification" in window)) {{
+                    alert("您的浏览器不支持桌面通知。");
+                    return;
+                }}
+                
+                const titleInput = document.getElementById("test-title").value;
+                const bodyInput = document.getElementById("test-body").value;
+                
+                playBeepSound();
+
+                if (Notification.permission === "granted") {{
+                    new Notification(titleInput, {{
+                        body: bodyInput
+                    }});
+                }} else {{
+                    Notification.requestPermission().then(function(perm) {{
+                        updatePermissionUI();
+                        if (perm === "granted") {{
+                            new Notification(titleInput, {{
+                                body: bodyInput
+                            }});
+                        }} else {{
+                            alert("❌ 无法发送通知：未获得浏览器授权。请先点击第一步按钮进行授权。");
+                        }}
+                    }});
+                }}
+            }}
+
+            // 页面加载完成后自动更新一次UI状态
+            setTimeout(updatePermissionUI, 500);
+        </script>
+        """
+        st.components.v1.html(js_notify_ui, height=360, scrolling=False)
+        
+        # 后台依然保存静音/非静音设置
+        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+        with st.form("browser_sound_config_form"):
+            sound_enabled = bool(cfg.get("browser_notification_sound_enabled", False))
+            b_sound = st.checkbox("🔊 启用后台声音提醒（仅在页面开启时随告警触发声音）", value=sound_enabled)
+            if st.form_submit_button("💾 保存声音配置", use_container_width=True):
+                storage.save_config({"browser_notification_sound_enabled": b_sound})
+                st.success("✅ 声音配置已成功保存")
+                st.rerun()
 
     # ── 告警日志 ─────────────────────────────────────────────────────
     with tab4:

@@ -436,13 +436,13 @@ def render_triple_bottom_page():
 
         # 构造状态徽章
         if status_val == "active":
-            status_badge = f"<span style='font-size:12px;background-color:#eff6ff;color:#1d4ed8;padding:2px 8px;border-radius:4px;font-weight:600;'>观望中</span>"
+            status_badge = f"<span style='font-size:12px;background-color:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>观望中</span>"
         elif status_val == "confirmed":
-            status_badge = f"<span style='font-size:12px;background-color:#dcfce7;color:#15803d;padding:2px 8px;border-radius:4px;font-weight:600;'>已突破 🚀</span>"
+            status_badge = f"<span style='font-size:12px;background-color:rgba(34,197,94,0.15);color:#86efac;border:1px solid rgba(34,197,94,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>已突破 🚀</span>"
         elif status_val == "invalidated":
-            status_badge = f"<span style='font-size:12px;background-color:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:4px;font-weight:600;'>已失效 ❌</span>"
+            status_badge = f"<span style='font-size:12px;background-color:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>已失效 ❌</span>"
         else: # expired
-            status_badge = f"<span style='font-size:12px;background-color:#f3f4f6;color:#4b5563;padding:2px 8px;border-radius:4px;font-weight:600;'>已过期 ⏰</span>"
+            status_badge = f"<span style='font-size:12px;background-color:rgba(100,116,139,0.15);color:#94a3b8;border:1px solid rgba(100,116,139,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>已过期 ⏰</span>"
 
         with st.container(border=True):
             # 卡片标题栏
@@ -450,8 +450,8 @@ def render_triple_bottom_page():
             with col_t1:
                 st.markdown(
                     f"#### **{ticker}** · {name} "
-                    f"<span style='font-size:12px;background-color:#eff6ff;color:#1d4ed8;padding:2px 8px;border-radius:4px;font-weight:600;'>{period_desc}</span> "
-                    f"<span style='font-size:12px;background-color:#fef3c7;color:#d97706;padding:2px 8px;border-radius:4px;font-weight:600;'>置信度: {conf:.0%}</span> "
+                    f"<span style='font-size:12px;background-color:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>{period_desc}</span> "
+                    f"<span style='font-size:12px;background-color:rgba(245,158,11,0.15);color:#fde047;border:1px solid rgba(245,158,11,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>置信度: {conf:.0%}</span> "
                     f"{status_badge}",
                     unsafe_allow_html=True
                 )
