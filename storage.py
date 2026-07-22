@@ -560,21 +560,27 @@ def is_ticker_starred(ticker: str) -> bool:
     ticker = ticker.strip().upper()
     return ticker in load_starred_tickers()
 
-def load_ticker_notes(ticker: str) -> str:
+def load_ticker_notes(ticker: str) -> dict:
     ticker = ticker.strip().upper()
     all_notes = _load(F_TICKER_NOTES, {})
     if not isinstance(all_notes, dict):
-        return ""
-    return str(all_notes.get(ticker, "")).strip()
+        return {"text": "", "img_url": ""}
+    val = all_notes.get(ticker, "")
+    if isinstance(val, dict):
+        return {"text": val.get("text", ""), "img_url": val.get("img_url", "")}
+    return {"text": str(val).strip(), "img_url": ""}
 
-def save_ticker_note(ticker: str, note_text: str) -> bool:
+def save_ticker_note(ticker: str, text: str, img_url: str = "") -> bool:
     ticker = ticker.strip().upper()
     if not ticker:
         return False
     all_notes = _load(F_TICKER_NOTES, {})
     if not isinstance(all_notes, dict):
         all_notes = {}
-    all_notes[ticker] = note_text.strip()
+    all_notes[ticker] = {
+        "text": text.strip(),
+        "img_url": img_url.strip()
+    }
     return _save(F_TICKER_NOTES, all_notes)
 
 

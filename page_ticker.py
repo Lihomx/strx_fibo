@@ -165,15 +165,25 @@ def render(ticker: str = None):
         st.caption("在此记录关于该品种的分析随笔、策略心得或操作日志。数据会自动进行云端备份。")
         
         # 载入备注内容
-        note_text = storage.load_ticker_notes(ticker)
+        note_data = storage.load_ticker_notes(ticker)
+        note_text = note_data.get("text", "")
+        note_img = note_data.get("img_url", "")
         
-        # 备注文本框
+        # 备注编辑表单
         with st.form("ticker_note_form", clear_on_submit=False):
-            new_note = st.text_area("编辑备注信息", value=note_text, height=260, placeholder="写下关于此品种的跟踪计划，例如：已建仓，止损位设在... 或 回撤至0.618时考虑吸纳...")
+            new_note = st.text_area("编辑备注信息", value=note_text, height=200, placeholder="写下关于此品种的跟踪计划，例如：已建仓，止损位设在... 或 回撤至0.618时考虑吸纳...")
+            new_img = st.text_input("图片链接（选填）", value=note_img, placeholder="可填入分析图表或走势图的图片 URL 链接...")
             submitted = st.form_submit_button("💾 保存备注信息", use_container_width=True, type="primary")
             if submitted:
-                storage.save_ticker_note(ticker, new_note)
+                storage.save_ticker_note(ticker, new_note, new_img)
                 st.success("✅ 备注保存成功，已同步至云端！")
+                time.sleep(0.5)
+                st.rerun()
+
+        # 展示保存的备注图片
+        if note_img:
+            st.markdown("##### 📊 品种关联图表")
+            st.image(note_img, use_container_width=True, caption=f"{name} ({ticker}) 的关联分析图表")
                 
         # 联动自选收藏的备注 (如果该品种在收藏夹中，顺便显示收藏夹历史备注)
         wl = storage.load_watchlist()
@@ -181,7 +191,19 @@ def render(ticker: str = None):
         if wl_item and wl_item.get("notes"):
             st.markdown("##### 📂 关联的自选收藏夹备注历史")
             for idx, wl_note in enumerate(wl_item["notes"]):
-                st.info(f"💡 {wl_note}")
+                if isinstance(wl_note, dict):
+                    # 美化字典备注渲染
+                    nt_text = wl_note.get("text", "")
+                    nt_ts = wl_note.get("ts", "")
+                    nt_img = wl_note.get("img_url", "")
+                    
+                    time_display = f" | {nt_ts}" if nt_ts else ""
+                    st.info(f"💡 {nt_text}{time_display}")
+                    if nt_img:
+                        st.image(nt_img, use_container_width=True, caption=f"历史备注关联图表")
+                else:
+                    # 兼容旧版字符串备注
+                    st.info(f"💡 {wl_note}")
 
     # --- Tab 2: 历史告警记录 ---
     with t2:
