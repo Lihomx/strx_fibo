@@ -289,11 +289,22 @@ def render():
 
 # ══════════════════════════════════════════════════════════════════════
 def _render_main():
+    # 从 URL 中获取 _ticker 参数并自动填入搜索框和新建框
+    url_ticker = st.query_params.get("_ticker", "")
+    if url_ticker:
+        url_ticker_clean = url_ticker.strip().upper()
+        if "wl_search" not in st.session_state:
+            st.session_state["wl_search"] = url_ticker_clean
+        if "wl_new_ticker" not in st.session_state:
+            st.session_state["wl_new_ticker"] = url_ticker_clean
+
     items      = storage.load_watchlist()
     cats       = storage.load_wl_categories()
     result_map = _cached_result_map()
 
-    with st.expander("➕ 添加新品种", expanded=len(items) == 0):
+    # 如果有 _ticker 参数且该品种不在收藏夹中，自动展开添加表单
+    has_ticker_in_wl = any(i["ticker"].upper() == url_ticker.strip().upper() for i in items) if url_ticker else True
+    with st.expander("➕ 添加新品种", expanded=(len(items) == 0 or not has_ticker_in_wl)):
         _render_add_form()
 
     items = storage.load_watchlist()
