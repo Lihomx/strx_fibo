@@ -142,14 +142,40 @@ def build_message_ema_pivot(ticker: str, name: str, tf: str,
 
 # ── DingTalk ────────────────────────────────────────────────────────
 
+def _pick_dingtalk_bot(cfg: Dict) -> Dict:
+    """
+    从 dingtalk_webhooks_pool 中按月份轮换选择机器人。
+    逻辑：(当前月份 - 1) % 机器人数量 = 本月使用索引。
+    例：Pool 有 3 个机器人，1月用机器人0，2月用1，3月用2，4月回到0……
+    如果 pool 为空或未配置，退回使用单一 dingtalk_webhook / dingtalk_secret。
+    """
+    pool = [b for b in cfg.get("dingtalk_webhooks_pool", [])
+            if isinstance(b, dict) and b.get("webhook", "").strip()]
+    if not pool:
+        return {
+            "webhook": cfg.get("dingtalk_webhook", "").strip(),
+            "secret":  cfg.get("dingtalk_secret",  "").strip(),
+            "label":   "默认机器人",
+        }
+    month_idx = datetime.now().month - 1   # 0~11
+    bot = pool[month_idx % len(pool)]
+    label = bot.get("label", f"机器人{month_idx % len(pool) + 1}")
+    return {
+        "webhook": bot.get("webhook", "").strip(),
+        "secret":  bot.get("secret",  "").strip(),
+        "label":   label,
+    }
+
+
 def send_dingtalk(text: str, cfg: Dict) -> Tuple[bool, str]:
     try:
         import requests
     except ImportError:
         return False, "requests 未安装"
 
-    webhook = cfg.get("dingtalk_webhook", "").strip()
-    secret  = cfg.get("dingtalk_secret",  "").strip()
+    bot     = _pick_dingtalk_bot(cfg)
+    webhook = bot["webhook"]
+    secret  = bot["secret"]
     if not webhook:
         return False, "webhook 未配置"
 

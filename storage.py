@@ -144,6 +144,7 @@ DEFAULT_CFG = {
     "twelvedata_key":   "",
     "dingtalk_webhook": "",
     "dingtalk_secret":  "",
+    "dingtalk_webhooks_pool": [],   # 多机器人轮换池，空则使用上方单一配置
     "telegram_token":   "",
     "telegram_chat_id": "",
     "scan_enabled":     False,

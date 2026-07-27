@@ -20,47 +20,145 @@ def render():
         st.markdown("#### 钉钉机器人配置")
         st.markdown("""
         <div class="n-info">
-        💡 在钉钉群 → 群设置 → 机器人 → 自定义机器人，获取 Webhook 地址和安全密钥。
+        💡 在钉钉群 → 群设置 → 机器人 → 自定义机器人，获取 Webhook 地址和安全密钥。<br>
+        🔄 <b>多机器人轮换</b>：配置多个机器人后，系统每月自动切换（1月→机器人1，2月→机器人2……），月额度单独计算，不再超限。
         </div>""", unsafe_allow_html=True)
 
-        with st.form("dingtalk_form"):
-            dt_en  = st.checkbox("启用钉钉告警", value=bool(cfg.get("dingtalk_enabled")))
-            dt_wh  = st.text_input("Webhook 地址",
-                                   value=cfg.get("dingtalk_webhook",""),
-                                   placeholder="https://oapi.dingtalk.com/robot/send?access_token=…",
-                                   type="password")
-            dt_sec = st.text_input("加签密钥（可选）",
-                                   value=cfg.get("dingtalk_secret",""),
-                                   placeholder="SEC…",
-                                   type="password")
-            col1, col2 = st.columns(2)
-            with col1:
-                save_dt = st.form_submit_button("💾 保存", width="stretch")
-            with col2:
-                test_dt = st.form_submit_button("🧪 测试发送", width="stretch")
-
-        if save_dt:
-            storage.save_config({
-                "dingtalk_enabled": dt_en,
-                "dingtalk_webhook": dt_wh,
-                "dingtalk_secret":  dt_sec,
-            })
-            st.success("✅ 钉钉配置已保存")
-
-        if test_dt:
-            test_cfg = dict(cfg)
-            test_cfg.update({
-                "dingtalk_enabled": True,
-                "dingtalk_webhook": dt_wh,
-                "dingtalk_secret":  dt_sec,
-            })
-            ok, msg = alt.send_dingtalk(
-                "🧪 STRX Fibo Scanner 测试消息 — 连接成功！", test_cfg
+        # ── 当前生效机器人状态 ─────────────────────────────────────────
+        pool = cfg.get("dingtalk_webhooks_pool", [])
+        pool = [b for b in pool if isinstance(b, dict) and b.get("webhook", "").strip()]
+        if pool:
+            month_idx   = __import__("datetime").datetime.now().month - 1
+            active_idx  = month_idx % len(pool)
+            active_bot  = pool[active_idx]
+            active_label = active_bot.get("label", f"机器人{active_idx + 1}")
+            st.success(
+                f"🟢 当前生效：**{active_label}**（共 {len(pool)} 个机器人，"
+                f"本月 {__import__('datetime').datetime.now().month} 月使用第 {active_idx + 1} 个）"
             )
-            if ok:
-                st.success("✅ 测试消息发送成功")
+        else:
+            single_wh = cfg.get("dingtalk_webhook", "").strip()
+            if single_wh:
+                st.info("🔵 当前使用：**单一机器人**（未配置轮换池）")
             else:
-                st.error(f"❌ 发送失败: {msg}")
+                st.warning("⚠️ 尚未配置任何钉钉机器人 Webhook")
+
+        st.markdown("---")
+
+        # ── 单一机器人（兼容旧配置，pool 为空时生效）─────────────────
+        with st.expander("🤖 单一机器人配置（未使用轮换池时生效）",
+                         expanded=not bool(pool)):
+            with st.form("dingtalk_form"):
+                dt_en  = st.checkbox("启用钉钉告警", value=bool(cfg.get("dingtalk_enabled")))
+                dt_wh  = st.text_input("Webhook 地址",
+                                       value=cfg.get("dingtalk_webhook",""),
+                                       placeholder="https://oapi.dingtalk.com/robot/send?access_token=…",
+                                       type="password")
+                dt_sec = st.text_input("加签密钥（可选）",
+                                       value=cfg.get("dingtalk_secret",""),
+                                       placeholder="SEC…",
+                                       type="password")
+                col1, col2 = st.columns(2)
+                with col1:
+                    save_dt = st.form_submit_button("💾 保存", use_container_width=True)
+                with col2:
+                    test_dt = st.form_submit_button("🧪 测试发送", use_container_width=True)
+
+            if save_dt:
+                storage.save_config({
+                    "dingtalk_enabled": dt_en,
+                    "dingtalk_webhook": dt_wh,
+                    "dingtalk_secret":  dt_sec,
+                })
+                st.success("✅ 钉钉配置已保存")
+
+            if test_dt:
+                test_cfg = dict(cfg)
+                test_cfg.update({
+                    "dingtalk_enabled":      True,
+                    "dingtalk_webhook":      dt_wh,
+                    "dingtalk_secret":       dt_sec,
+                    "dingtalk_webhooks_pool": [],   # 测试时强制用当前填写的 webhook
+                })
+                ok, msg = alt.send_dingtalk(
+                    "🧪 STRX Fibo Scanner 测试消息 — 连接成功！", test_cfg
+                )
+                if ok:
+                    st.success("✅ 测试消息发送成功")
+                else:
+                    st.error(f"❌ 发送失败: {msg}")
+
+        st.markdown("---")
+
+        # ── 多机器人轮换池管理 ─────────────────────────────────────────
+        st.markdown("#### 🔄 多机器人轮换池")
+        st.caption("填入后系统每月自动选用对应机器人；池为空时使用上方单一配置。")
+
+        # 显示现有机器人列表
+        raw_pool = cfg.get("dingtalk_webhooks_pool", [])
+        if not isinstance(raw_pool, list):
+            raw_pool = []
+
+        for i, bot in enumerate(raw_pool):
+            if not isinstance(bot, dict):
+                continue
+            month_active = ((__import__("datetime").datetime.now().month - 1) % len(raw_pool) == i) if raw_pool else False
+            tag = " 🟢 本月生效" if month_active else ""
+            with st.expander(f"机器人 {i+1}：{bot.get('label', f'机器人{i+1}')}{tag}",
+                             expanded=month_active):
+                bc1, bc2, bc3 = st.columns([2, 1, 1])
+                with bc1:
+                    st.code(bot.get("webhook","")[:60] + "…" if len(bot.get("webhook","")) > 60
+                            else bot.get("webhook",""), language=None)
+                with bc2:
+                    if st.button("🧪 测试", key=f"dt_pool_test_{i}", use_container_width=True):
+                        test_cfg2 = dict(cfg)
+                        test_cfg2.update({
+                            "dingtalk_enabled":      True,
+                            "dingtalk_webhooks_pool": [],
+                            "dingtalk_webhook":      bot.get("webhook",""),
+                            "dingtalk_secret":       bot.get("secret",""),
+                        })
+                        ok, msg = alt.send_dingtalk(
+                            f"🧪 测试消息 — 机器人{i+1} 连接成功！", test_cfg2
+                        )
+                        if ok:
+                            st.success("✅ 发送成功")
+                        else:
+                            st.error(f"❌ {msg}")
+                with bc3:
+                    if st.button("🗑 删除", key=f"dt_pool_del_{i}", use_container_width=True):
+                        new_pool = [b for j, b in enumerate(raw_pool) if j != i]
+                        storage.save_config({"dingtalk_webhooks_pool": new_pool})
+                        st.success(f"已删除机器人 {i+1}")
+                        st.rerun()
+
+        # 添加新机器人
+        st.markdown("##### ➕ 添加机器人到轮换池")
+        with st.form("dt_pool_add_form", clear_on_submit=True):
+            new_label = st.text_input("机器人名称（便于识别）",
+                                      placeholder="例：7月备用机器人")
+            new_wh    = st.text_input("Webhook 地址",
+                                      placeholder="https://oapi.dingtalk.com/robot/send?access_token=…",
+                                      type="password")
+            new_sec   = st.text_input("加签密钥（可选）",
+                                      placeholder="SEC…",
+                                      type="password")
+            if st.form_submit_button("➕ 添加到轮换池", use_container_width=True):
+                if not new_wh.strip():
+                    st.error("❌ Webhook 地址不能为空")
+                else:
+                    cur_pool = cfg.get("dingtalk_webhooks_pool", [])
+                    if not isinstance(cur_pool, list):
+                        cur_pool = []
+                    cur_pool.append({
+                        "label":   new_label.strip() or f"机器人{len(cur_pool)+1}",
+                        "webhook": new_wh.strip(),
+                        "secret":  new_sec.strip(),
+                    })
+                    storage.save_config({"dingtalk_webhooks_pool": cur_pool})
+                    st.success(f"✅ 已添加到轮换池（当前共 {len(cur_pool)} 个机器人）")
+                    st.rerun()
 
     # ── Telegram ─────────────────────────────────────────────────────
     with tab2:
