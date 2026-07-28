@@ -166,14 +166,14 @@ def render():
     )
     
     # ── 导入系统内置品种和分组 ──
-    with st.expander("📦 导入系统内置的 1985 个品种和 64 个分组"):
-        st.markdown(
-            "如果您是第一次使用，或者想对系统默认的 64 个分类分组进行**修改、删除、增加品种**，"
-            "可以点击下方按钮将它们一键导入到您的自定义库中。"
-        )
-        col_import_builtin, _ = st.columns([2, 2])
-        with col_import_builtin:
-            if st.button("📥 一键导入内置 64 组 / 1985 品种", key="import_builtin_btn", type="secondary", use_container_width=True):
+    col_exp1, col_exp2 = st.columns([1, 1])
+    with col_exp1:
+        with st.expander("📦 导入全球系统内置品种 (64组/1985品种)"):
+            st.markdown(
+                "如果您想对系统默认的 64 个分类分组进行**修改、删除、增加品种**，"
+                "可以点击下方按钮将它们一键导入到您的自定义库中。"
+            )
+            if st.button("📥 一键导入全球内置 64 组", key="import_builtin_btn", type="secondary", use_container_width=True):
                 import assets
                 import uuid
                 progress_text = st.empty()
@@ -231,6 +231,23 @@ def render():
                 progress_text.success(f"✅ 成功导入 {all_added} 个新内置品种，并同步了 {len(builtin_groups)} 个分组！")
                 time.sleep(1)
                 st.rerun()
+
+    with col_exp2:
+        with st.expander("🇨🇳 一键在线同步/更新全量 A 股分组"):
+            st.markdown(
+                "在线从东财数据中心自动同步 **全量 A 股 (5000+ 支)** 以及沪深300、上证50、创业板精选分组。"
+            )
+            if st.button("🚀 实时同步 A 股全量库与分组", key="import_ashares_btn", type="primary", use_container_width=True):
+                import init_ashare_groups
+                progress_text = st.empty()
+                progress_text.info("正在从线上数据源拉取最新 A 股全量代码，请稍候...")
+                try:
+                    init_ashare_groups.populate_ashare_groups()
+                    progress_text.success("✅ A 股全量品种与 5 大精选分组同步完成！")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    progress_text.error(f"❌ 同步失败: {e}")
 
     # ── 初始化分类/选择 Session State ──
     if "symbols_selected" not in st.session_state:
