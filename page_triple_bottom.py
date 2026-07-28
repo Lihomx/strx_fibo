@@ -257,55 +257,62 @@ def render_triple_bottom_page():
     st.markdown("<hr style='margin:15px 0; border-color:#e5e7eb'>", unsafe_allow_html=True)
 
 
-    # ── 1. 侧边栏及控制面板 ──
-    st.sidebar.markdown("### ⚙️ 三重底扫描配置")
-    
-    # 选择周期（可多选进行扫描，单选进行展示）
-    selected_periods = st.sidebar.multiselect(
-        "选择扫描周期",
-        options=list(TRIPLE_BOTTOM_TIMEFRAMES.keys()),
-        default=["4h", "1d"],
-        format_func=lambda x: TRIPLE_BOTTOM_TIMEFRAMES[x][2]
-    )
+    # ── 1. 顶部控制面板（扫描配置与控制） ──
+    with st.expander("⚙️ 三重底扫描配置与控制", expanded=True):
+        col_cfg1, col_cfg2 = st.columns([3, 2], gap="large")
+        
+        with col_cfg1:
+            st.markdown("#### ⚙️ 扫描参数配置")
+            c1, c2 = st.columns(2)
+            with c1:
+                selected_periods = st.multiselect(
+                    "选择扫描周期",
+                    options=list(TRIPLE_BOTTOM_TIMEFRAMES.keys()),
+                    default=["4h", "1d"],
+                    format_func=lambda x: TRIPLE_BOTTOM_TIMEFRAMES[x][2]
+                )
+                min_conf = st.slider("置信度阈值", 0.3, 1.0, 0.5, 0.05,
+                    help="置信度越低，筛选越宽松。建议先用 0.4~0.5 试扫")
+                swing_win = st.number_input("分形阶数 (Window)", 2, 10, 3,
+                    help="左右各看几根K线来确认局部低点，越小越灵敏")
+            
+            with c2:
+                max_sp = st.number_input("三点最大跨度 (K线数)", 20, 200, 80,
+                    help="三个探底低点最大允许间隔，越大形态跨度越长")
+                lookback = st.number_input("扫描回溯长度 (Bars)", 50, 500, 150,
+                    help="向前看多少根K线内的数据")
+                
+                with st.popover("📐 形态宽松度设置"):
+                    flat_tol_pct = st.slider("低点容差 (%)", 0.5, 10.0, 2.0, 0.5,
+                        help="三个低点之间允许的最大百分比差异。越大越容易匹配，建议 1.5~3%")
+                    break_tol_pct = st.slider("跌破容差 (%)", 0.2, 5.0, 1.0, 0.2,
+                        help="失败突破型：允许价格跌破支撑多少百分比后被视为'失败突破'")
+            
+            flat_tol = flat_tol_pct / 100.0
+            break_tol = break_tol_pct / 100.0
 
-    min_conf = st.sidebar.slider("置信度阈值", 0.3, 1.0, 0.5, 0.05,
-        help="置信度越低，筛选越宽松。建议先用 0.4~0.5 试扫")
-    swing_win = st.sidebar.number_input("分形阶数 (Window)", 2, 10, 3,
-        help="左右各看几根K线来确认局部低点，越小越灵敏")
-    max_sp = st.sidebar.number_input("三点最大跨度 (K线数)", 20, 200, 80,
-        help="三个探底低点最大允许间隔，越大形态跨度越长")
-    lookback = st.sidebar.number_input("扫描回溯长度 (Bars)", 50, 500, 150,
-        help="向前看多少根K线内的数据")
+        with col_cfg2:
+            st.markdown("#### ⚡ 扫描目标与控制")
+            scan_target = st.radio("扫描目标", ["品种库分组", "指定代码"], horizontal=True)
 
-    st.sidebar.markdown("**📐 形态宽松度**")
-    flat_tol_pct = st.sidebar.slider("低点容差 (%)", 0.5, 10.0, 2.0, 0.5,
-        help="三个低点之间允许的最大百分比差异。越大越容易匹配，建议 1.5~3%")
-    break_tol_pct = st.sidebar.slider("跌破容差 (%)", 0.2, 5.0, 1.0, 0.2,
-        help="失败突破型：允许价格跌破支撑多少百分比后被视为'失败突破'")
-    flat_tol = flat_tol_pct / 100.0
-    break_tol = break_tol_pct / 100.0
+            custom_ticker_input = ""
+            selected_group_id = None
+            if scan_target == "指定代码":
+                custom_ticker_input = st.text_input("输入代码 (多个用逗号隔开)", "AAPL,BTC-USD,000001.SS")
+            elif scan_target == "品种库分组":
+                groups = storage.load_symbol_groups()
+                if not groups:
+                    st.warning("⚠️ 暂无分组，请前往 品种库 页面创建。")
+                else:
+                    grp_map = {g["name"]: g["id"] for g in groups}
+                    selected_grp_name = st.selectbox("选择分组", list(grp_map.keys()))
+                    selected_group_id = grp_map[selected_grp_name]
 
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### ⚡ 扫描控制")
-    scan_target = st.sidebar.radio("扫描目标", ["品种库分组", "指定代码"])
-
-    custom_ticker_input = ""
-    selected_group_id = None
-    if scan_target == "指定代码":
-        custom_ticker_input = st.sidebar.text_input("输入代码 (多个用逗号隔开)", "AAPL,BTC-USD,000001.SS")
-    elif scan_target == "品种库分组":
-        groups = storage.load_symbol_groups()
-        if not groups:
-            st.sidebar.warning("⚠️ 暂无分组，请前往 品种库 页面创建。")
-        else:
-            grp_map = {g["name"]: g["id"] for g in groups}
-            selected_grp_name = st.sidebar.selectbox("选择分组", list(grp_map.keys()))
-            selected_group_id = grp_map[selected_grp_name]
-
-    is_running = bg_scan_manager.is_running()
-    run_scan = st.sidebar.button("🚀 开始分析扫描", type="primary", use_container_width=True, disabled=is_running)
-    if st.session_state.pop("_trigger_mobile_scan", False):
-        run_scan = True
+            st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
+            is_running = bg_scan_manager.is_running()
+            run_scan = st.button("🚀 开始分析扫描", type="primary", use_container_width=True, disabled=is_running)
+            if st.session_state.pop("_trigger_mobile_scan", False):
+                run_scan = True
 
     # ── 2. 扫描数据存取 ──
     results = storage.load_triple_bottom()
@@ -355,7 +362,7 @@ def render_triple_bottom_page():
 
     # ── 3. 主界面形态展示与过滤 ──
     if not results:
-        st.info("💡 尚未运行过扫描或没有匹配形态。请在左侧配置参数并点击「🚀 开始分析扫描」。")
+        st.info("💡 尚未运行过扫描或没有匹配形态。请在上方配置参数并点击「🚀 开始分析扫描」。")
         return
 
     # 按置信度降序排列
