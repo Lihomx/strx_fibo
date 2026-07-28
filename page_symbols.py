@@ -166,7 +166,7 @@ def render():
     )
     
     # ── 导入系统内置品种和分组 ──
-    col_exp1, col_exp2 = st.columns([1, 1])
+    col_exp1, col_exp2, col_exp3 = st.columns([1, 1, 1])
     with col_exp1:
         with st.expander("📦 导入全球系统内置品种 (64组/1985品种)"):
             st.markdown(
@@ -233,17 +233,34 @@ def render():
                 st.rerun()
 
     with col_exp2:
-        with st.expander("🇨🇳 一键在线同步/更新全量 A 股分组"):
+        with st.expander("🇨🇳 一键在线同步 A 股全量分组"):
             st.markdown(
-                "在线从东财数据中心自动同步 **全量 A 股 (5000+ 支)** 以及沪深300、上证50、创业板精选分组。"
+                "在线从东财数据中心同步 **全量 A 股 (5000+ 支)** 及沪深300、上证50、创业板精选分组。"
             )
-            if st.button("🚀 实时同步 A 股全量库与分组", key="import_ashares_btn", type="primary", use_container_width=True):
+            if st.button("🚀 实时同步 A 股全量分组", key="import_ashares_btn", type="primary", use_container_width=True):
                 import init_ashare_groups
                 progress_text = st.empty()
-                progress_text.info("正在从线上数据源拉取最新 A 股全量代码，请稍候...")
+                progress_text.info("正在拉取最新 A 股全量代码，请稍候...")
                 try:
                     init_ashare_groups.populate_ashare_groups()
                     progress_text.success("✅ A 股全量品种与 5 大精选分组同步完成！")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    progress_text.error(f"❌ 同步失败: {e}")
+
+    with col_exp3:
+        with st.expander("🇺🇸 一键在线同步美股全量分组"):
+            st.markdown(
+                "在线从 Nasdaq 官方 Screener 同步 **全量美股 (6000+ 支)** 跨 NASDAQ / NYSE / AMEX 交易所。"
+            )
+            if st.button("🚀 实时同步美股全量分组", key="import_usstocks_btn", type="primary", use_container_width=True):
+                import init_usstock_groups
+                progress_text = st.empty()
+                progress_text.info("正在从 Nasdaq API 拉取最新全量美股代码，请稍候...")
+                try:
+                    init_usstock_groups.populate_usstock_groups()
+                    progress_text.success("✅ 全量美股品种与分组同步完成！")
                     time.sleep(1)
                     st.rerun()
                 except Exception as e:
