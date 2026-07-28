@@ -268,7 +268,7 @@ def render_triple_bottom_page():
                 selected_periods = st.multiselect(
                     "选择扫描周期",
                     options=list(TRIPLE_BOTTOM_TIMEFRAMES.keys()),
-                    default=["4h", "1d"],
+                    default=["1d", "1w", "1mo"],
                     format_func=lambda x: TRIPLE_BOTTOM_TIMEFRAMES[x][2]
                 )
                 min_conf = st.slider("置信度阈值", 0.3, 1.0, 0.5, 0.05,
@@ -296,7 +296,7 @@ def render_triple_bottom_page():
             scan_target = st.radio("扫描目标", ["品种库分组", "指定代码"], horizontal=True)
 
             custom_ticker_input = ""
-            selected_group_id = None
+            selected_grp_names = []
             if scan_target == "指定代码":
                 custom_ticker_input = st.text_input("输入代码 (多个用逗号隔开)", "AAPL,BTC-USD,000001.SS")
             elif scan_target == "品种库分组":
@@ -304,9 +304,14 @@ def render_triple_bottom_page():
                 if not groups:
                     st.warning("⚠️ 暂无分组，请前往 品种库 页面创建。")
                 else:
-                    grp_map = {g["name"]: g["id"] for g in groups}
-                    selected_grp_name = st.selectbox("选择分组", list(grp_map.keys()))
-                    selected_group_id = grp_map[selected_grp_name]
+                    ALL_GROUPS_LABEL = "🔥 全部品种组 (一键合并)"
+                    group_options = [ALL_GROUPS_LABEL] + [g["name"] for g in groups]
+                    selected_grp_names = st.multiselect(
+                        "选择分组 (可多选/一键全选)",
+                        options=group_options,
+                        default=[ALL_GROUPS_LABEL],
+                        help="可以多选多个品种组，也可以选择全选合并扫描"
+                    )
 
             st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
             is_running = bg_scan_manager.is_running()
@@ -324,11 +329,19 @@ def render_triple_bottom_page():
 
         tickers_to_scan = []
         if scan_target == "品种库分组":
-            if selected_group_id:
-                groups = storage.load_symbol_groups()
-                target_grp = next((g for g in groups if g["id"] == selected_group_id), None)
-                if target_grp:
-                    tickers_to_scan = target_grp.get("tickers", [])
+            groups = storage.load_symbol_groups()
+            tickers_set = set()
+            if selected_grp_names:
+                ALL_GROUPS_LABEL = "🔥 全部品种组 (一键合并)"
+                if ALL_GROUPS_LABEL in selected_grp_names:
+                    for g in groups:
+                        tickers_set.update(g.get("tickers", []))
+                else:
+                    grp_map = {g["name"]: g for g in groups}
+                    for g_name in selected_grp_names:
+                        if g_name in grp_map:
+                            tickers_set.update(grp_map[g_name].get("tickers", []))
+            tickers_to_scan = [t.strip().upper() for t in tickers_set if t and isinstance(t, str)]
         else:
             tickers_to_scan = [t.strip().upper() for t in custom_ticker_input.split(",") if t.strip()]
 
