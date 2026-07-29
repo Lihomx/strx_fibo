@@ -1624,7 +1624,31 @@ def load_symbol_groups() -> List[Dict]:
     items = _load(F_SYMBOL_GROUPS, [])
     if not isinstance(items, list):
         items = []
-    return [i for i in items if isinstance(i, dict) and i.get("id") and i.get("name")]
+    res = [i for i in items if isinstance(i, dict) and i.get("id") and i.get("name")]
+    
+    # 冷启动检测：如果缺失全量美股或全量A股分组，自动异步在线补全
+    grp_names = {g["name"] for g in res}
+    need_us = "🇺🇸 美股 - 全量美股 (NASDAQ/NYSE/AMEX)" not in grp_names
+    need_a = "🇨🇳 A股 - 全量A股 (主板/创业/科创/北交)" not in grp_names
+    
+    if need_us or need_a:
+        def _auto_populate():
+            try:
+                if need_us:
+                    import init_usstock_groups
+                    init_usstock_groups.populate_usstock_groups()
+                if need_a:
+                    import init_ashare_groups
+                    init_ashare_groups.populate_ashare_groups()
+                import cloud_sync
+                if cloud_sync.is_configured():
+                    cloud_sync.push_symbols()
+                    cloud_sync.push_symbol_groups()
+            except Exception:
+                pass
+        _async_push(_auto_populate)
+
+    return res
 
 def save_symbol_groups(items: List[Dict]) -> bool:
     ok = _save(F_SYMBOL_GROUPS, items)

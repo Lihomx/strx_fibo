@@ -239,11 +239,15 @@ def render():
             )
             if st.button("🚀 实时同步 A 股全量分组", key="import_ashares_btn", type="primary", use_container_width=True):
                 import init_ashare_groups
+                import cloud_sync
                 progress_text = st.empty()
                 progress_text.info("正在拉取最新 A 股全量代码，请稍候...")
                 try:
                     init_ashare_groups.populate_ashare_groups()
-                    progress_text.success("✅ A 股全量品种与 5 大精选分组同步完成！")
+                    if cloud_sync.is_configured():
+                        cloud_sync.push_symbols()
+                        cloud_sync.push_symbol_groups()
+                    progress_text.success("✅ A 股全量品种与 5 大精选分组同步与云备份完成！")
                     time.sleep(1)
                     st.rerun()
                 except Exception as e:
@@ -256,11 +260,15 @@ def render():
             )
             if st.button("🚀 实时同步美股全量分组", key="import_usstocks_btn", type="primary", use_container_width=True):
                 import init_usstock_groups
+                import cloud_sync
                 progress_text = st.empty()
                 progress_text.info("正在从 Nasdaq API 拉取最新全量美股代码，请稍候...")
                 try:
                     init_usstock_groups.populate_usstock_groups()
-                    progress_text.success("✅ 全量美股品种与分组同步完成！")
+                    if cloud_sync.is_configured():
+                        cloud_sync.push_symbols()
+                        cloud_sync.push_symbol_groups()
+                    progress_text.success("✅ 全量美股品种与分组同步与云备份完成！")
                     time.sleep(1)
                     st.rerun()
                 except Exception as e:
