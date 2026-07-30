@@ -169,11 +169,14 @@ def triple_bottom_worker(params, update_progress, cancel_check):
     done_tickers = set()
     new_results = []
     
-    if is_resume:
-        ckpt = storage.load_scan_checkpoint("triple_bottom")
-        if ckpt:
-            done_tickers = set(ckpt.get("done_tickers", []))
-            new_results = ckpt.get("current_results", [])
+    if is_resume and hasattr(storage, "load_scan_checkpoint"):
+        try:
+            ckpt = storage.load_scan_checkpoint("triple_bottom")
+            if ckpt:
+                done_tickers = set(ckpt.get("done_tickers", []))
+                new_results = ckpt.get("current_results", [])
+        except Exception:
+            pass
     
     remaining_tickers = [t for t in tickers_to_scan if t not in done_tickers]
     total_steps = len(tickers_to_scan) * len(selected_periods)
@@ -482,7 +485,12 @@ def render_triple_bottom_page():
             is_running = bg_scan_manager.is_running()
             
             # 检测是否有中途中断的扫描断点
-            ckpt = storage.load_scan_checkpoint("triple_bottom")
+            ckpt = {}
+            if hasattr(storage, "load_scan_checkpoint"):
+                try:
+                    ckpt = storage.load_scan_checkpoint("triple_bottom")
+                except Exception:
+                    ckpt = {}
             has_ckpt = bool(ckpt and ckpt.get("total_tickers") and len(ckpt.get("done_tickers", [])) < len(ckpt.get("total_tickers", [])))
             
             run_scan = False
