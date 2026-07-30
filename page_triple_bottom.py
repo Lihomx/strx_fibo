@@ -243,22 +243,157 @@ def render_triple_bottom_page():
             bg_scan_manager.reset_to_idle()
             st.rerun()
 
-    st.markdown("### 📊 三重底多周期扫描")
+    # ── 0. 全局视觉样式注入 ──
     st.markdown(
-        "<div style='font-size:13px;color:#6b7280;margin-bottom:15px;'>"
-        "基于 Al Brooks 价格行为学设计，自动寻找支撑带附近的三次下探尝试，"
-        "识别完美三重底、头肩底、双底回调以及失败突破跌破等 7 种细分形态。"
-        "</div>",
+        """
+        <style>
+        /* Hero Banner Container */
+        .tb-hero-banner {
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.8) 100%);
+            border: 1px solid rgba(245, 158, 11, 0.25);
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .tb-hero-title {
+            font-size: 24px;
+            font-weight: 800;
+            background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 50%, #d97706 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin: 0 0 6px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .tb-hero-sub {
+            font-size: 13px;
+            color: #94a3b8;
+            margin: 0;
+            max-width: 650px;
+            line-height: 1.5;
+        }
+        .tb-stat-box {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            padding: 8px 16px;
+            text-align: center;
+            min-width: 100px;
+        }
+        .tb-stat-val {
+            font-size: 20px;
+            font-weight: 700;
+            color: #f59e0b;
+            font-family: 'JetBrains Mono', monospace, sans-serif;
+        }
+        .tb-stat-lbl {
+            font-size: 11px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        /* 空状态玻璃图层 */
+        .tb-empty-card {
+            background: rgba(15, 23, 42, 0.4);
+            border: 1px dashed rgba(245, 158, 11, 0.3);
+            border-radius: 12px;
+            padding: 45px 20px;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .tb-empty-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+            display: inline-block;
+            filter: drop-shadow(0 0 10px rgba(245, 158, 11, 0.4));
+        }
+        .tb-empty-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #e2e8f0;
+            margin-bottom: 8px;
+        }
+        .tb-empty-desc {
+            font-size: 13px;
+            color: #64748b;
+            max-width: 450px;
+            margin: 0 auto;
+        }
+        /* 数据行对比度盒子 */
+        .tb-metrics-row {
+            display: flex;
+            gap: 12px;
+            margin-top: 10px;
+            margin-bottom: 6px;
+            flex-wrap: wrap;
+        }
+        .tb-metric-chip {
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 12px;
+            color: #cbd5e1;
+            flex: 1;
+            min-width: 120px;
+        }
+        .tb-metric-chip b {
+            color: #f59e0b;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # ── 1. 顶部 Hero Banner ──
+    results_all = storage.load_triple_bottom()
+    active_count = sum(1 for r in results_all if r.get("status") == "active")
+    confirmed_count = sum(1 for r in results_all if r.get("status") == "confirmed")
+    latest_time = results_all[0].get("scan_time", "无记录")[:16] if results_all else "暂未扫描"
+
+    st.markdown(
+        f"""
+        <div class="tb-hero-banner">
+            <div>
+                <div class="tb-hero-title">
+                    <span>📐 三重底多周期智能扫描</span>
+                </div>
+                <div class="tb-hero-sub">
+                    基于 Al Brooks 价格行为学模型，自动定位支撑带附近的三次下探尝试。识别完美三重底、头肩底、双底回调及失败跌破突破等 7 种核心变体形态。
+                </div>
+            </div>
+            <div style="display:flex; gap:12px;">
+                <div class="tb-stat-box">
+                    <div class="tb-stat-val">{len(results_all)}</div>
+                    <div class="tb-stat-lbl">匹配形态</div>
+                </div>
+                <div class="tb-stat-box">
+                    <div class="tb-stat-val" style="color:#38bdf8;">{active_count}</div>
+                    <div class="tb-stat-lbl">观望中</div>
+                </div>
+                <div class="tb-stat-box">
+                    <div class="tb-stat-val" style="color:#4ade80;">{confirmed_count}</div>
+                    <div class="tb-stat-lbl">已突破</div>
+                </div>
+            </div>
+        </div>
+        """,
         unsafe_allow_html=True
     )
 
     # ── 恢复/清空扫描结果控件 ──
     _render_tb_restore_session_controls()
-    st.markdown("<hr style='margin:15px 0; border-color:#e5e7eb'>", unsafe_allow_html=True)
+    st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
 
-
-    # ── 1. 顶部控制面板（扫描配置与控制） ──
-    with st.expander("⚙️ 三重底扫描配置与控制", expanded=True):
+    # ── 2. 顶部控制面板（扫描配置与控制） ──
+    with st.expander("⚙️ 扫描参数与目标配置", expanded=True):
         col_cfg1, col_cfg2 = st.columns([3, 2], gap="large")
         
         with col_cfg1:
@@ -319,7 +454,7 @@ def render_triple_bottom_page():
             if st.session_state.pop("_trigger_mobile_scan", False):
                 run_scan = True
 
-    # ── 2. 扫描数据存取 ──
+    # ── 3. 扫描数据逻辑处理 ──
     results = storage.load_triple_bottom()
 
     if run_scan:
@@ -373,9 +508,21 @@ def render_triple_bottom_page():
         else:
             st.error(msg)
 
-    # ── 3. 主界面形态展示与过滤 ──
+    # ── 4. 主界面形态展示与过滤 ──
     if not results:
-        st.info("💡 尚未运行过扫描或没有匹配形态。请在上方配置参数并点击「🚀 开始分析扫描」。")
+        st.markdown(
+            """
+            <div class="tb-empty-card">
+                <div class="tb-empty-icon">🔍</div>
+                <div class="tb-empty-title">暂无三重底匹配形态</div>
+                <div class="tb-empty-desc">
+                    尚未运行扫描或在设定参数下未检出匹配形态。<br>
+                    请在上方选择目标品种组与周期，然后点击「🚀 开始分析扫描」。
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
         return
 
     # 按置信度降序排列
@@ -436,10 +583,14 @@ def render_triple_bottom_page():
             continue
         filtered.append(r)
 
-    st.markdown(f"**符合当前筛选条件的形态：{len(filtered)} / {len(results)} 个**")
-    st.markdown("<hr style='margin:10px 0; border-color:#e5e7eb'>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div style='font-size:13px; color:#94a3b8; margin: 8px 0 16px 0; font-weight: 500;'>"
+        f"📊 符合当前筛选条件的形态：<b style='color:#f59e0b;'>{len(filtered)}</b> / {len(results)} 个"
+        f"</div>",
+        unsafe_allow_html=True
+    )
 
-    # 循环渲染每一项
+    # 循环渲染每一项结果卡片
     for i, r in enumerate(filtered):
         ticker = r["symbol"]
         period = r["period"]
@@ -454,25 +605,28 @@ def render_triple_bottom_page():
         anchor = _row_anchor_id(ticker, period)
         st.markdown(f"<div id='{anchor}'></div>", unsafe_allow_html=True)
 
-        # 构造状态徽章
+        # 构造状态徽章与颜色指示
         if status_val == "active":
-            status_badge = f"<span style='font-size:12px;background-color:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>观望中</span>"
+            status_badge = "<span style='font-size:12px;background-color:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>观望中</span>"
         elif status_val == "confirmed":
-            status_badge = f"<span style='font-size:12px;background-color:rgba(34,197,94,0.15);color:#86efac;border:1px solid rgba(34,197,94,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>已突破 🚀</span>"
+            status_badge = "<span style='font-size:12px;background-color:rgba(34,197,94,0.15);color:#86efac;border:1px solid rgba(34,197,94,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>已突破 🚀</span>"
         elif status_val == "invalidated":
-            status_badge = f"<span style='font-size:12px;background-color:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>已失效 ❌</span>"
+            status_badge = "<span style='font-size:12px;background-color:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>已失效 ❌</span>"
         else: # expired
-            status_badge = f"<span style='font-size:12px;background-color:rgba(100,116,139,0.15);color:#94a3b8;border:1px solid rgba(100,116,139,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>已过期 ⏰</span>"
+            status_badge = "<span style='font-size:12px;background-color:rgba(100,116,139,0.15);color:#94a3b8;border:1px solid rgba(100,116,139,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>已过期 ⏰</span>"
 
         with st.container(border=True):
-            # 卡片标题栏
+            # 卡片标题栏与控制按钮
             col_t1, col_t2 = st.columns([5, 3])
             with col_t1:
                 st.markdown(
-                    f"#### **{ticker}** · {name} "
+                    f"<div style='margin-bottom:6px;'>"
+                    f"<span style='font-size:18px;font-weight:800;color:#f8fafc;'>{ticker}</span> "
+                    f"<span style='font-size:14px;color:#94a3b8;margin-right:8px;'>· {name}</span> "
                     f"<span style='font-size:12px;background-color:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>{period_desc}</span> "
                     f"<span style='font-size:12px;background-color:rgba(245,158,11,0.15);color:#fde047;border:1px solid rgba(245,158,11,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>置信度: {conf:.0%}</span> "
-                    f"{status_badge}",
+                    f"{status_badge}"
+                    f"</div>",
                     unsafe_allow_html=True
                 )
             with col_t2:
@@ -507,7 +661,6 @@ def render_triple_bottom_page():
                                 note=f"三重底自动扫描导入：{patt_desc}"
                             )
                             if ok:
-                                # 追加 TripleBottom 标签（add_to_watchlist 不含 tags 字段）
                                 wl2 = storage.load_watchlist()
                                 for wl_item in wl2:
                                     if wl_item["ticker"].upper() == ticker.upper():
@@ -545,18 +698,23 @@ def render_triple_bottom_page():
                             st.toast(f"已成功为 {ticker} 追加三重底识别标签", icon="🏷️")
                             st.rerun()
 
-            # 卡片详细内容
+            # 卡片结构化详情展示
             st.markdown(
-                f"<div style='font-size:13px;line-height:1.6;color:#374151;'>"
-                f"🏷️ <b>识别形态</b>：{patt_desc}<br>"
-                f"🔍 <b>状态跟踪</b>：{status_reason if status_reason else '运行于支撑与颈线之间'}<br>"
-                f"📝 <b>形态判定说明</b>：{note}<br>"
-                f"📐 <b>低值详情</b>：Low1: {r['low1']:.3f} | Low2: {r['low2']:.3f} | Low3: {r['low3']:.3f} (中间高点: {r['mid_high']:.3f})"
-                f"</div>",
+                f"""
+                <div style="font-size:13px; line-height:1.7; color:#cbd5e1; margin-top: 4px;">
+                    <div>🏷️ <b>形态分类</b>：<span style="color:#f59e0b; font-weight:600;">{patt_desc}</span></div>
+                    <div>🔍 <b>跟踪观察</b>：{status_reason if status_reason else '处于支撑位与突破颈线之间动态运行'}</div>
+                    <div style="color:#94a3b8; font-size:12px; margin-top:2px;">📝 <b>特征说明</b>：{note}</div>
+                </div>
+                <div class="tb-metrics-row">
+                    <div class="tb-metric-chip">探底① <b>Low1</b>: {r['low1']:.3f}</div>
+                    <div class="tb-metric-chip">探底② <b>Low2</b>: {r['low2']:.3f}</div>
+                    <div class="tb-metric-chip">探底③ <b>Low3</b>: {r['low3']:.3f}</div>
+                    <div class="tb-metric-chip" style="border-color:rgba(245,158,11,0.2);">颈线高点 <b>MidHigh</b>: {r['mid_high']:.3f}</div>
+                </div>
+                """,
                 unsafe_allow_html=True
             )
-
-
 
             # ── 展开 K 线图展示（核心高光） ──
             if st.session_state.get(chart_key):
@@ -567,19 +725,16 @@ def render_triple_bottom_page():
                             interval, yf_period, _ = TRIPLE_BOTTOM_TIMEFRAMES[period]
                             df = fetch_data(ticker, interval=interval, period=yf_period)
                             if df is not None and not df.empty:
-                                # 获得最尾部的数据
                                 df_slice = df.tail(lookback).copy()
                                 if isinstance(df_slice.columns, pd.MultiIndex):
                                     df_slice.columns = [c[0].lower() for c in df_slice.columns]
                                 else:
                                     df_slice.columns = [c.lower() for c in df_slice.columns]
                                 
-                                # 将 index 重置为递增自然序号方便用 idx1, idx2, idx3 精准描绘
                                 df_slice = df_slice.reset_index()
                                 date_col = df_slice.columns[0]
                                 
                                 fig = go.Figure()
-                                # 绘制 K 线
                                 fig.add_trace(go.Candlestick(
                                     x=df_slice[date_col],
                                     open=df_slice['open'],
@@ -591,9 +746,6 @@ def render_triple_bottom_page():
                                     decreasing_line_color='#10b981'
                                 ))
 
-                                # 标记三个低点 (idx1, idx2, idx3)
-                                # 注意：如果 df_slice 的长度与扫描时的 lookback 不同，需映射索引位置。
-                                # 由于我们 reset 并且重设长度为 lookback，因此索引位置 idx1, idx2, idx3 应该完美对应
                                 pts_idx = [r["idx1"], r["idx2"], r["idx3"]]
                                 pts_idx = [p for p in pts_idx if 0 <= p < len(df_slice)]
                                 
@@ -601,7 +753,6 @@ def render_triple_bottom_page():
                                     dates = df_slice.loc[pts_idx, date_col]
                                     lows = df_slice.loc[pts_idx, 'low']
                                     
-                                    # 用 Scatter 突出小圆点
                                     fig.add_trace(go.Scatter(
                                         x=dates,
                                         y=lows,
@@ -613,7 +764,6 @@ def render_triple_bottom_page():
                                         name='探底支撑点'
                                     ))
 
-                                    # 绘制最低的支撑线
                                     min_low = min(r["low1"], r["low2"])
                                     fig.add_hline(
                                         y=min_low,
@@ -625,7 +775,7 @@ def render_triple_bottom_page():
 
                                 fig.update_layout(
                                     xaxis_rangeslider_visible=False,
-                                    height=300,
+                                    height=320,
                                     margin=dict(l=10, r=10, t=20, b=10),
                                     template="plotly_dark",
                                     plot_bgcolor="rgba(0,0,0,0)"
