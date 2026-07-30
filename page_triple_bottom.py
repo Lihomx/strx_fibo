@@ -237,16 +237,16 @@ def triple_bottom_worker(params, update_progress, cancel_check):
             
         done_tickers.add(ticker)
         
-        # 定期写断点
-        if ticker_count % 5 == 0 or ticker_count == len(remaining_tickers):
+        # 定期写断点（中间过程只刷新数据文件，不创建历史备份文件，避免线程爆炸）
+        if ticker_count % 10 == 0 or ticker_count == len(remaining_tickers):
             storage.save_scan_checkpoint("triple_bottom", list(done_tickers), tickers_to_scan, new_results)
-            storage.save_triple_bottom(new_results)
+            storage.save_triple_bottom(new_results, with_backup=False)
             
         # 批次间休眠冷却
         if ticker_count % BATCH_SIZE == 0:
             time.sleep(2.0)
                 
-    storage.save_triple_bottom(new_results)
+    storage.save_triple_bottom(new_results, with_backup=True)
     storage.clear_scan_checkpoint()
 
 

@@ -128,9 +128,16 @@ def _save_with_backup(path: str, data) -> bool:
 # ── 异步推送工具 ────────────────────────────────────────────────────
 
 def _async_push(fn, *args, **kwargs):
-    """在后台守护线程中执行推送，不阻塞主线程。"""
-    t = threading.Thread(target=fn, args=args, kwargs=kwargs, daemon=True)
-    t.start()
+    """在后台守护线程中执行推送，不阻塞主线程。若系统线程数爆满则安全降级为同步/忽略。"""
+    try:
+        t = threading.Thread(target=fn, args=args, kwargs=kwargs, daemon=True)
+        t.start()
+    except Exception:
+        # 当操作系统/容器无法创建新线程时，捕获异常防止崩溃
+        try:
+            fn(*args, **kwargs)
+        except Exception:
+            pass
 
 
 # ── 配置 ─────────────────────────────────────────────────────────────
@@ -1470,9 +1477,12 @@ def load_triple_bottom() -> List[Dict]:
         return []
     return res
 
-def save_triple_bottom(items: List[Dict]) -> bool:
+def save_triple_bottom(items: List[Dict], with_backup: bool = True) -> bool:
     """保存三重底扫描结果"""
-    ok = _save_with_backup(F_TRIPLE_BOTTOM, items)
+    if with_backup:
+        ok = _save_with_backup(F_TRIPLE_BOTTOM, items)
+    else:
+        ok = _save(F_TRIPLE_BOTTOM, items)
     if ok:
         try:
             import cloud_sync
