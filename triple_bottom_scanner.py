@@ -66,7 +66,7 @@ def find_swing_points(df: pd.DataFrame, window: int = 3) -> pd.DataFrame:
 # 2. 形态定义与判定结果结构
 # ----------------------------------------------------------------------
 
-@dataclass
+@dataclass(kw_only=False)
 class PatternMatch:
     symbol: str
     pattern: str                 # 形态名称（中文）
