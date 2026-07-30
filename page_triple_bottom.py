@@ -484,6 +484,14 @@ def render_triple_bottom_page():
             st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
             is_running = bg_scan_manager.is_running()
             
+            # 优先拉取 Supabase 云端最新的扫描断点（确保跨端/重新部署后能恢复）
+            try:
+                import cloud_sync
+                if cloud_sync.is_configured():
+                    cloud_sync.pull_scan_checkpoint()
+            except Exception:
+                pass
+
             # 检测是否有中途中断的扫描断点
             ckpt = {}
             if hasattr(storage, "load_scan_checkpoint"):

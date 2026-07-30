@@ -45,6 +45,7 @@ _LATEST_FILES = {
     "symbols":             "symbols.json",
     "symbol_groups":       "symbol_groups.json",
     "triple_bottom":       "data_triple_bottom.json",
+    "scan_checkpoint":     "scan_checkpoint.json",
     "alerts":              "data_alerts.json",
     "starred":             "data_starred.json",
     "ticker_notes":        "data_ticker_notes.json",
@@ -1037,6 +1038,28 @@ def get_sync_status() -> Dict[str, Any]:
     _status_cache    = result
     _status_cache_ts = now
     return result
+
+def push_scan_checkpoint() -> Tuple[bool, str]:
+    """同步本地扫描断点到 Supabase"""
+    try:
+        import storage as loc
+        ckpt = loc.load_scan_checkpoint()
+        return _upload_latest("scan_checkpoint", ckpt)
+    except Exception as e:
+        return False, f"push_scan_checkpoint 异常: {e}"
+
+def pull_scan_checkpoint() -> Tuple[bool, str]:
+    """从 Supabase 拉取最新扫描断点到本地"""
+    try:
+        import storage as loc
+        cloud_ckpt = _download_latest("scan_checkpoint")
+        if isinstance(cloud_ckpt, dict) and cloud_ckpt.get("total_tickers"):
+            loc._save(loc.F_SCAN_CHECKPOINT, cloud_ckpt)
+            return True, "扫描断点已从 Supabase 成功同步到本地"
+        return False, "云端无有效的扫描断点"
+    except Exception as e:
+        return False, f"pull_scan_checkpoint 异常: {e}"
+
 
 def time_to_next_sync_str() -> str:
     if not is_configured():

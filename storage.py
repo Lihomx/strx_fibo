@@ -1817,7 +1817,7 @@ def reset_scan_failure(ticker: str) -> None:
 F_SCAN_CHECKPOINT = os.path.join(_BASE, "scan_checkpoint.json")
 
 def save_scan_checkpoint(job_type: str, done_tickers: List[str], total_tickers: List[str], current_results: List[Dict]) -> bool:
-    """保存当前扫描任务断点"""
+    """保存当前扫描任务断点，并同步到 Supabase 云端"""
     data = {
         "job_type": job_type,
         "done_tickers": list(set(done_tickers)),
@@ -1825,7 +1825,15 @@ def save_scan_checkpoint(job_type: str, done_tickers: List[str], total_tickers: 
         "current_results": current_results,
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
-    return _save(F_SCAN_CHECKPOINT, data)
+    ok = _save(F_SCAN_CHECKPOINT, data)
+    if ok:
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                _async_push(cloud_sync.push_scan_checkpoint)
+        except Exception:
+            pass
+    return ok
 
 def load_scan_checkpoint(job_type: str = "") -> Dict:
     """读取扫描任务断点"""
@@ -1837,8 +1845,16 @@ def load_scan_checkpoint(job_type: str = "") -> Dict:
     return data
 
 def clear_scan_checkpoint() -> bool:
-    """清空扫描任务断点"""
-    return _save(F_SCAN_CHECKPOINT, {})
+    """清空扫描任务断点，并同步清空云端断点"""
+    ok = _save(F_SCAN_CHECKPOINT, {})
+    if ok:
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                _async_push(cloud_sync.push_scan_checkpoint)
+        except Exception:
+            pass
+    return ok
 
 
 
