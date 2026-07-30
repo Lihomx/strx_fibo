@@ -482,7 +482,7 @@ def render():
                 col_chk, col_tk, col_nm, col_src, col_time, col_act = st.columns([50, 140, 300, 100, 140, 80], gap="small")
                 
                 with col_chk:
-                    new_chk = st.checkbox("", value=is_checked, key=f"sym_chk_{tk}_{i}", label_visibility="collapsed")
+                    new_chk = st.checkbox("选择品种", value=is_checked, key=f"sym_chk_{tk}_{i}", label_visibility="collapsed")
                     if new_chk != is_checked:
                         if new_chk:
                             selected_set.add(tk)
