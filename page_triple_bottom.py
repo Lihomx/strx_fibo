@@ -164,20 +164,35 @@ def triple_bottom_worker(params, update_progress, cancel_check):
     min_conf = params["min_conf"]
     flat_tol = params.get("flat_tol", 0.02)
     break_tol = params.get("break_tol", 0.01)
+    is_resume = params.get("is_resume", False)
     
-    total_steps = len(tickers_to_scan) * len(selected_periods)
-    step = 0
+    done_tickers = set()
     new_results = []
     
-    for ticker in tickers_to_scan:
+    if is_resume:
+        ckpt = storage.load_scan_checkpoint("triple_bottom")
+        if ckpt:
+            done_tickers = set(ckpt.get("done_tickers", []))
+            new_results = ckpt.get("current_results", [])
+    
+    remaining_tickers = [t for t in tickers_to_scan if t not in done_tickers]
+    total_steps = len(tickers_to_scan) * len(selected_periods)
+    step = (len(tickers_to_scan) - len(remaining_tickers)) * len(selected_periods)
+    
+    BATCH_SIZE = 100
+    ticker_count = 0
+    
+    for ticker in remaining_tickers:
         if cancel_check():
             break
+            
+        ticker_count += 1
         for period_key in selected_periods:
             if cancel_check():
                 break
             step += 1
             interval, yf_period, period_desc = TRIPLE_BOTTOM_TIMEFRAMES[period_key]
-            update_progress(step, total_steps, f"{ticker} ({period_desc})")
+            update_progress(step, total_steps, f"{ticker} ({period_desc}) [{step}/{total_steps}]")
             try:
                 df = fetch_data(ticker, interval=interval, period=yf_period)
                 if df is not None and not df.empty:
@@ -213,8 +228,23 @@ def triple_bottom_worker(params, update_progress, cancel_check):
                             })
             except Exception:
                 pass
+            
+            # 微小休眠，防止网络IO高频挂起
+            time.sleep(0.05)
+            
+        done_tickers.add(ticker)
+        
+        # 定期写断点
+        if ticker_count % 5 == 0 or ticker_count == len(remaining_tickers):
+            storage.save_scan_checkpoint("triple_bottom", list(done_tickers), tickers_to_scan, new_results)
+            storage.save_triple_bottom(new_results)
+            
+        # 批次间休眠冷却
+        if ticker_count % BATCH_SIZE == 0:
+            time.sleep(2.0)
                 
     storage.save_triple_bottom(new_results)
+    storage.clear_scan_checkpoint()
 
 
 def render_triple_bottom_page():
@@ -450,35 +480,61 @@ def render_triple_bottom_page():
 
             st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
             is_running = bg_scan_manager.is_running()
-            run_scan = st.button("🚀 开始分析扫描", type="primary", use_container_width=True, disabled=is_running)
+            
+            # 检测是否有中途中断的扫描断点
+            ckpt = storage.load_scan_checkpoint("triple_bottom")
+            has_ckpt = bool(ckpt and ckpt.get("total_tickers") and len(ckpt.get("done_tickers", [])) < len(ckpt.get("total_tickers", [])))
+            
+            run_scan = False
+            resume_scan = False
+            
+            if has_ckpt:
+                done_num = len(ckpt.get("done_tickers", []))
+                tot_num = len(ckpt.get("total_tickers", []))
+                updated_at = ckpt.get("updated_at", "未知时间")
+                st.info(f"💡 **检出上次未完成任务**：已完成 {done_num}/{tot_num} 个品种 ({updated_at})")
+                btn_col1, btn_col2 = st.columns(2)
+                with btn_col1:
+                    resume_scan = st.button(f"⏯️ 续扫未完成任务 ({done_num}/{tot_num})", type="primary", use_container_width=True, disabled=is_running)
+                with btn_col2:
+                    run_scan = st.button("🚀 重新开始全新扫描", type="secondary", use_container_width=True, disabled=is_running)
+            else:
+                run_scan = st.button("🚀 开始分析扫描", type="primary", use_container_width=True, disabled=is_running)
+
             if st.session_state.pop("_trigger_mobile_scan", False):
                 run_scan = True
 
     # ── 3. 扫描数据逻辑处理 ──
     results = storage.load_triple_bottom()
 
-    if run_scan:
+    if run_scan or resume_scan:
         if not selected_periods:
             st.error("请至少选择一个扫描周期！")
             return
 
         tickers_to_scan = []
-        if scan_target == "品种库分组":
-            groups = storage.load_symbol_groups()
-            tickers_set = set()
-            if selected_grp_names:
-                ALL_GROUPS_LABEL = "🔥 全部品种组 (一键合并)"
-                if ALL_GROUPS_LABEL in selected_grp_names:
-                    for g in groups:
-                        tickers_set.update(g.get("tickers", []))
-                else:
-                    grp_map = {g["name"]: g for g in groups}
-                    for g_name in selected_grp_names:
-                        if g_name in grp_map:
-                            tickers_set.update(grp_map[g_name].get("tickers", []))
-            tickers_to_scan = [t.strip().upper() for t in tickers_set if t and isinstance(t, str)]
+        is_resume = False
+        
+        if resume_scan and has_ckpt:
+            tickers_to_scan = ckpt.get("total_tickers", [])
+            is_resume = True
         else:
-            tickers_to_scan = [t.strip().upper() for t in custom_ticker_input.split(",") if t.strip()]
+            if scan_target == "品种库分组":
+                groups = storage.load_symbol_groups()
+                tickers_set = set()
+                if selected_grp_names:
+                    ALL_GROUPS_LABEL = "🔥 全部品种组 (一键合并)"
+                    if ALL_GROUPS_LABEL in selected_grp_names:
+                        for g in groups:
+                            tickers_set.update(g.get("tickers", []))
+                    else:
+                        grp_map = {g["name"]: g for g in groups}
+                        for g_name in selected_grp_names:
+                            if g_name in grp_map:
+                                tickers_set.update(grp_map[g_name].get("tickers", []))
+                tickers_to_scan = [t.strip().upper() for t in tickers_set if t and isinstance(t, str)]
+            else:
+                tickers_to_scan = [t.strip().upper() for t in custom_ticker_input.split(",") if t.strip()]
 
         if not tickers_to_scan:
             st.warning("扫描队列为空，未找到任何代码。")
@@ -493,11 +549,12 @@ def render_triple_bottom_page():
             "min_conf": min_conf,
             "flat_tol": flat_tol,
             "break_tol": break_tol,
+            "is_resume": is_resume,
         }
         
         ok, msg = bg_scan_manager.submit_job(
             job_type="triple_bottom",
-            label=f"三重底扫描 ({scan_target})",
+            label=f"三重底扫描 ({'断点续扫' if is_resume else scan_target})",
             params=params,
             worker_fn=triple_bottom_worker
         )

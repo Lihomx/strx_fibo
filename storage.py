@@ -1803,4 +1803,33 @@ def reset_scan_failure(ticker: str) -> None:
         _save(F_FAILURES, failures)
 
 
+# ── 大批量扫描断点续扫支持 ───────────────────────────────────
+F_SCAN_CHECKPOINT = os.path.join(_BASE, "scan_checkpoint.json")
+
+def save_scan_checkpoint(job_type: str, done_tickers: List[str], total_tickers: List[str], current_results: List[Dict]) -> bool:
+    """保存当前扫描任务断点"""
+    data = {
+        "job_type": job_type,
+        "done_tickers": list(set(done_tickers)),
+        "total_tickers": total_tickers,
+        "current_results": current_results,
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    return _save(F_SCAN_CHECKPOINT, data)
+
+def load_scan_checkpoint(job_type: str = "") -> Dict:
+    """读取扫描任务断点"""
+    data = _load(F_SCAN_CHECKPOINT, {})
+    if not isinstance(data, dict):
+        return {}
+    if job_type and data.get("job_type") != job_type:
+        return {}
+    return data
+
+def clear_scan_checkpoint() -> bool:
+    """清空扫描任务断点"""
+    return _save(F_SCAN_CHECKPOINT, {})
+
+
+
 
