@@ -432,7 +432,16 @@ def render():
         clear_btn = st.button("🗑️ 清空结果", type="secondary", use_container_width=True, key="chartink_clear", disabled=is_running)
 
     if clear_btn:
-        storage.clear_chartink_results()
+        cache = storage.load_chartink()
+        if cache and isinstance(cache, dict) and (cache.get("passed") or cache.get("total")):
+            storage._save_with_backup(storage.F_CHARTINK, cache)
+            try:
+                import cloud_sync
+                if cloud_sync.is_configured():
+                    cloud_sync._upload_snapshot("chartink", cache)
+            except Exception:
+                pass
+        storage.save_chartink({})
         st.toast("🗑️ 已自动备份当前扫描结果并成功清空！", icon="✅")
         time.sleep(0.5)
         st.rerun()
