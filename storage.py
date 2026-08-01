@@ -1691,6 +1691,20 @@ def save_chartink(data: Dict) -> bool:
     return ok
 
 
+def clear_chartink_results() -> bool:
+    """清空当前 Chartink 扫描结果（清空前会自动进行备份快照并同步至云端）"""
+    data = load_chartink()
+    if data and isinstance(data, dict) and (data.get("passed") or data.get("total")):
+        _save_with_backup(F_CHARTINK, data)
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                cloud_sync._upload_snapshot("chartink", data)
+        except Exception:
+            pass
+    return save_chartink({})
+
+
 # ── 自定义品种库与分组 ─────────────────────────────────────────
 F_SYMBOLS = os.path.join(_BASE, "data_symbols.json")
 F_SYMBOL_GROUPS = os.path.join(_BASE, "data_symbol_groups.json")

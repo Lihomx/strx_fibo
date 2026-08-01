@@ -432,12 +432,9 @@ def render():
         clear_btn = st.button("🗑️ 清空结果", type="secondary", use_container_width=True, key="chartink_clear", disabled=is_running)
 
     if clear_btn:
-        import os
-        if os.path.exists(storage.F_CHARTINK):
-            try:
-                os.remove(storage.F_CHARTINK)
-            except Exception:
-                pass
+        storage.clear_chartink_results()
+        st.toast("🗑️ 已自动备份当前扫描结果并成功清空！", icon="✅")
+        time.sleep(0.5)
         st.rerun()
 
     tickers = [t.strip().upper() for t in ticker_input.replace("\n", " ").split() if t.strip()]
