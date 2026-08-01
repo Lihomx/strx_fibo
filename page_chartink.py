@@ -524,6 +524,9 @@ def render():
         wl_items = storage.load_watchlist()
         wl_set = {item["ticker"].upper() for item in wl_items if isinstance(item, dict)}
         
+        _t_val = st.query_params.get("_t", "")
+        _t_param = f"&_t={_t_val}" if _t_val else ""
+
         # 汇总表
         rows_html = []
         for r in passed:
@@ -546,9 +549,9 @@ def render():
             
             is_fav = ticker.upper() in wl_set
             if is_fav:
-                fav_html = f'<a href="/?_page=chartink&_fav=del|{ticker}|{ticker}" target="_self" style="color:#f59e0b;text-decoration:none;font-weight:600;font-size:12px;background:rgba(245,158,11,0.15);padding:4px 10px;border-radius:4px;border:1px solid rgba(245,158,11,0.3);">★ 已收藏</a>'
+                fav_html = f'<a href="/?_page=chartink&_fav=del|{ticker}|{ticker}{_t_param}" target="_self" style="color:#f59e0b;text-decoration:none;font-weight:600;font-size:12px;background:rgba(245,158,11,0.15);padding:4px 10px;border-radius:4px;border:1px solid rgba(245,158,11,0.3);">★ 已收藏</a>'
             else:
-                fav_html = f'<a href="/?_page=chartink&_fav=add|{ticker}|{ticker}" target="_self" style="color:#eab308;text-decoration:none;font-weight:600;font-size:12px;background:rgba(234,179,8,0.1);padding:4px 10px;border-radius:4px;border:1px solid rgba(234,179,8,0.2);">⭐ 收藏</a>'
+                fav_html = f'<a href="/?_page=chartink&_fav=add|{ticker}|{ticker}{_t_param}" target="_self" style="color:#eab308;text-decoration:none;font-weight:600;font-size:12px;background:rgba(234,179,8,0.1);padding:4px 10px;border-radius:4px;border:1px solid rgba(234,179,8,0.2);">⭐ 收藏</a>'
             
             rows_html.append(
                 f"<tr>"
