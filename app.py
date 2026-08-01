@@ -972,6 +972,18 @@ def _check_password() -> bool:
 
 # ── 路由 ──────────────────────────────────────────────────────────
 def main():
+    # ── 行情链接点击计数中继 ──────────────────────────────────
+    tv_click = st.query_params.get("_tv_click", "")
+    tv_dest  = st.query_params.get("_tv_dest", "")
+    if tv_click and tv_dest:
+        import urllib.parse
+        ticker = str(tv_click).strip().upper()
+        dest_url = urllib.parse.unquote(tv_dest)
+        storage.increment_link_click(ticker, "tv")
+        st.markdown(f'<meta http-equiv="refresh" content="0;url={dest_url}">', unsafe_allow_html=True)
+        st.stop()
+        return
+
     # ── 处理 _trigger 定时扫描指令 (放在密码检查之前，避免被登录阻拦) ──
     _trigger_val = st.query_params.get("_trigger", "")
     if _trigger_val:

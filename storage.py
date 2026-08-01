@@ -540,6 +540,54 @@ def clear_alert_log() -> bool:
     return clear_alerts()
 
 
+F_LINK_CLICKS = os.path.join(_BASE, "data_link_clicks.json")
+
+def increment_link_click(ticker: str, link_type: str = "tv") -> None:
+    """记录一次行情链接点击，ticker维度，按日期分组"""
+    if not ticker:
+        return
+    from datetime import datetime
+    today = datetime.now().strftime("%Y-%m-%d")
+    data = _load(F_LINK_CLICKS, {})
+    if not isinstance(data, dict):
+        data = {}
+    key = f"{str(ticker).upper()}:{link_type}"
+    if key not in data or not isinstance(data[key], dict):
+        data[key] = {"total": 0, "by_date": {}}
+    data[key]["total"] = data[key].get("total", 0) + 1
+    by_date = data[key].get("by_date", {})
+    if not isinstance(by_date, dict):
+        by_date = {}
+    by_date[today] = by_date.get(today, 0) + 1
+    data[key]["by_date"] = by_date
+    _save(F_LINK_CLICKS, data)
+
+def get_link_clicks(ticker: str, link_type: str = "tv") -> dict:
+    """获取某 ticker 的点击统计 {total, today}"""
+    if not ticker:
+        return {"total": 0, "today": 0}
+    from datetime import datetime
+    today = datetime.now().strftime("%Y-%m-%d")
+    data = _load(F_LINK_CLICKS, {})
+    if not isinstance(data, dict):
+        return {"total": 0, "today": 0}
+    key = f"{str(ticker).upper()}:{link_type}"
+    entry = data.get(key, {})
+    if not isinstance(entry, dict):
+        return {"total": 0, "today": 0}
+    by_date = entry.get("by_date", {})
+    today_count = by_date.get(today, 0) if isinstance(by_date, dict) else 0
+    return {
+        "total": entry.get("total", 0),
+        "today": today_count
+    }
+
+def get_all_link_clicks() -> dict:
+    """返回全量点击数据"""
+    res = _load(F_LINK_CLICKS, {})
+    return res if isinstance(res, dict) else {}
+
+
 F_STARRED = os.path.join(_BASE, "data_starred.json")
 F_TICKER_NOTES = os.path.join(_BASE, "data_ticker_notes.json")
 

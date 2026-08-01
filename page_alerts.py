@@ -558,7 +558,7 @@ def render_alert_log_table(full_page=False):
             df["time"] = df["time"].apply(convert_tz)
             
         # ── 筛选器面板 ────────────────────────────────────────────────
-        with st.expander("🔍 筛选过滤条件", expanded=True):
+        with st.expander("🔍 筛选与自定义显示列", expanded=True):
             f_col1, f_col2, f_col3, f_col4 = st.columns(4)
             with f_col1:
                 import datetime
@@ -597,7 +597,32 @@ def render_alert_log_table(full_page=False):
                     help="多选过滤时间框架",
                     key=f"alert_log_tf_{'full' if full_page else 'tab'}"
                 )
-        
+
+            # 所有可选的列表字段映射 (key -> 中文名 & 默认显示)
+            ALL_COLS_MAP = [
+                ("time", "时间", True),
+                ("ticker", "代码", True),
+                ("name", "名称", True),
+                ("scanner_name", "扫描器", True),
+                ("timeframe", "周期", True),
+                ("tradingview", "行情链接", True),
+                ("clicks", "点击统计", True),
+                ("channel", "通知通道", False),  # 默认隐藏
+                ("status", "发送状态", True),
+                ("message", "返回消息", False), # 默认隐藏
+            ]
+            col_label_to_key = {label: k for k, label, _ in ALL_COLS_MAP}
+            default_selected_labels = [label for _, label, is_def in ALL_COLS_MAP if is_def]
+
+            selected_col_labels = st.multiselect(
+                "⚙️ 选择并调整列的显示顺序（选项顺序即表格从左到右显示顺序）：",
+                options=[label for _, label, _ in ALL_COLS_MAP],
+                default=default_selected_labels,
+                help="可勾选/取消勾选任意列，并按需选定其排列顺序",
+                key=f"alert_log_cols_{'full' if full_page else 'tab'}"
+            )
+            selected_col_keys = [col_label_to_key[lbl] for lbl in selected_col_labels if lbl in col_label_to_key]
+
         # ── 应用筛选逻辑 ─────────────────────────────────────────────
         # 1. 日期筛选
         if selected_dates:
@@ -683,6 +708,7 @@ def render_alert_log_table(full_page=False):
             st.warning("⚠️ 没有找到符合筛选条件的告警记录")
         else:
             from assets import tv_url
+            import urllib.parse
             
             # 转换扫描器标签
             def get_scanner_label(s):
@@ -694,30 +720,19 @@ def render_alert_log_table(full_page=False):
                 
             df["scanner_name"] = df["scanner"].apply(get_scanner_label)
             df["tradingview"] = df["ticker"].apply(lambda t: tv_url(t, "15m"))
+            df["clicks"] = ""  # 占位列
             
-            show_cols = ["time", "ticker", "name", "scanner_name", "timeframe", "tradingview", "channel", "status", "message"]
-            show_df = df[[c for c in show_cols if c in df.columns]]
-            
-            # 重命名表头以提升视觉体验
-            show_df = show_df.rename(columns={
-                "time": "时间",
-                "ticker": "代码",
-                "name": "名称",
-                "scanner_name": "扫描器",
-                "timeframe": "周期",
-                "tradingview": "行情链接",
-                "channel": "通知通道",
-                "status": "发送状态",
-                "message": "返回消息"
-            })
-            
+            # 预加载全量点击数据
+            all_clicks_data = storage.get_all_link_clicks()
+            today_str_val = datetime.date.today().strftime("%Y-%m-%d")
+
             # 💡 用 HTML 渲染美观、大字体的表格，支持悬停高亮和批次底色交替，自适应深浅色主题
             try:
                 # 获取展示数据中所有唯一时间戳并排序
-                unique_times = sorted(show_df["时间"].dropna().unique())
+                unique_times = sorted(df["time"].dropna().unique())
                 time_to_group = {t: idx for idx, t in enumerate(unique_times)}
                 
-                # 开始构建 HTML 结构 (使用列表拼接，避免出现 4 个空格以上的缩进导致 Markdown 渲染为代码块)
+                # 开始构建 HTML 结构
                 html_parts = []
                 html_parts.append("<style>")
                 html_parts.append(".alert-log-container { max-height: 850px; overflow-y: auto; border: 1px solid rgba(128, 128, 128, 0.2); border-radius: 8px; margin-top: 15px; margin-bottom: 20px; }")
@@ -740,20 +755,30 @@ def render_alert_log_table(full_page=False):
                 html_parts.append(".star-inactive { filter: grayscale(100%); opacity: 0.25; }")
                 html_parts.append(".star-inactive:hover { filter: none; opacity: 0.8; }")
                 html_parts.append(".alert-log-row-starred { background-color: rgba(245, 158, 11, 0.08) !important; font-weight: 500; }")
+                html_parts.append(".click-count-badge { font-weight: 600; font-size: 12px; }")
                 html_parts.append("</style>")
                 html_parts.append("<div class=\"alert-log-container\">")
                 html_parts.append("<table class=\"alert-log-table\">")
-                html_parts.append("<thead><tr><th>时间</th><th>代码</th><th>名称</th><th>扫描器</th><th>周期</th><th>行情链接</th><th>通知通道</th><th>发送状态</th><th>返回消息</th></tr></thead>")
+                
+                # 动态生成表头
+                header_th_list = []
+                for k in selected_col_keys:
+                    lbl = next((l for key, l, _ in ALL_COLS_MAP if key == k), k)
+                    if k == "clicks":
+                        lbl = "📊 点击(今日/总)"
+                    header_th_list.append(f"<th>{lbl}</th>")
+                
+                html_parts.append(f"<thead><tr>{''.join(header_th_list)}</tr></thead>")
                 html_parts.append("<tbody>")
                 
                 t_token = st.query_params.get("_t", "")
-                curr_page = st.query_params.get("_page", "alerts")
+                curr_page = st.query_params.get("_page", "alert_logs")
                 
-                for idx, row in show_df.iterrows():
-                    status = row.get("发送状态", "")
-                    t_val = row.get("时间", "")
-                    ticker = row.get("代码", "")
-                    name = row.get("名称", "")
+                for idx, row in df.iterrows():
+                    status = row.get("status", "")
+                    t_val = row.get("time", "")
+                    ticker = row.get("ticker", "")
+                    name = row.get("name", "")
                     
                     is_starred = storage.is_ticker_starred(ticker)
                     
@@ -778,14 +803,32 @@ def render_alert_log_table(full_page=False):
                     else:
                         status_html = f'<span>{status}</span>'
                         
-                    # 格式化 TradingView / 新浪 链接为按钮
-                    tv_url_val = row.get("行情链接", "")
-                    tv_html = f'<a href="{tv_url_val}" target="_blank" class="tv-btn">📈 图表</a>' if tv_url_val else "—"
+                    # 格式化 TradingView / 新浪 链接为中继按钮
+                    tv_url_val = row.get("tradingview", "")
+                    if tv_url_val:
+                        dest_enc = urllib.parse.quote(tv_url_val, safe="")
+                        relay_tv_url = f"/?_page={curr_page}&_t={t_token}&_tv_click={ticker}&_tv_dest={dest_enc}"
+                        tv_html = f'<a href="{relay_tv_url}" target="_blank" class="tv-btn">📈 图表</a>'
+                    else:
+                        tv_html = "—"
                     
                     from assets import sina_url
                     sina_url_val = sina_url(ticker)
                     if sina_url_val:
-                        tv_html += f'<a href="{sina_url_val}" target="_blank" class="sina-btn">🏦 新浪</a>'
+                        dest_sina_enc = urllib.parse.quote(sina_url_val, safe="")
+                        relay_sina_url = f"/?_page={curr_page}&_t={t_token}&_tv_click={ticker}&_tv_dest={dest_sina_enc}"
+                        tv_html += f'<a href="{relay_sina_url}" target="_blank" class="sina-btn">🏦 新浪</a>'
+                    
+                    # 点击统计 HTML
+                    click_entry = all_clicks_data.get(f"{ticker.upper()}:tv", {}) if isinstance(all_clicks_data, dict) else {}
+                    total_c = click_entry.get("total", 0) if isinstance(click_entry, dict) else 0
+                    by_date_map = click_entry.get("by_date", {}) if isinstance(click_entry, dict) else {}
+                    today_c = by_date_map.get(today_str_val, 0) if isinstance(by_date_map, dict) else 0
+                    
+                    if total_c > 0:
+                        clicks_html = f'<span class="click-count-badge" style="color:#4ade80;">{today_c}</span> <span style="color:#94a3b8;font-size:11px;">/ {total_c}</span>'
+                    else:
+                        clicks_html = '<span style="color:#475569;">—</span>'
                     
                     star_class = "star-active" if is_starred else "star-inactive"
                     star_html = f'<a href="/?_page={curr_page}&_t={t_token}&_toggle_star={ticker}" class="star-btn {star_class}" title="标记重点关注">⭐</a>'
@@ -793,26 +836,28 @@ def render_alert_log_table(full_page=False):
                     code_html = f'{star_html}<a href="/?_page=ticker&_ticker={ticker}&_t={t_token}" style="color:#38bdf8; text-decoration:none; font-weight:bold;">{ticker}</a>'
                     name_html = f'<a href="/?_page=ticker&_ticker={ticker}&_t={t_token}" style="color:inherit; text-decoration:none;">{name}</a>'
                     
-                    row_html = (
-                        f"<tr {row_class}>"
-                        f"<td>{t_val}</td>"
-                        f"<td>{code_html}</td>"
-                        f"<td>{name_html}</td>"
-                        f"<td>{row.get('扫描器', '—')}</td>"
-                        f"<td><code>{row.get('周期', '—')}</code></td>"
-                        f"<td>{tv_html}</td>"
-                        f"<td>{row.get('通知通道', '—')}</td>"
-                        f"<td>{status_html}</td>"
-                        f"<td>{row.get('返回消息', '—')}</td>"
-                        f"</tr>"
-                    )
-                    html_parts.append(row_html)
+                    # 动态拼接每行的 td
+                    td_map = {
+                        "time": f"<td>{t_val}</td>",
+                        "ticker": f"<td>{code_html}</td>",
+                        "name": f"<td>{name_html}</td>",
+                        "scanner_name": f"<td>{row.get('scanner_name', '—')}</td>",
+                        "timeframe": f"<td><code>{row.get('timeframe', '—')}</code></td>",
+                        "tradingview": f"<td>{tv_html}</td>",
+                        "clicks": f"<td>{clicks_html}</td>",
+                        "channel": f"<td>{row.get('channel', '—')}</td>",
+                        "status": f"<td>{status_html}</td>",
+                        "message": f"<td>{row.get('message', '—')}</td>",
+                    }
+                    
+                    row_tds = "".join([td_map[k] for k in selected_col_keys if k in td_map])
+                    html_parts.append(f"<tr {row_class}>{row_tds}</tr>")
                 
                 html_parts.append("</tbody></table></div>")
                 html_table = "".join(html_parts)
                 st.markdown(html_table, unsafe_allow_html=True)
             except Exception as e:
-                st.dataframe(show_df, use_container_width=True, height=850)
+                st.dataframe(df, use_container_width=True, height=850)
 
 
 def render_log_page():
