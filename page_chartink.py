@@ -513,10 +513,10 @@ def render():
         (function() {
             try {
                 var pDoc = window.parent.document;
-                if (pDoc._tv_click_tracker_bound) return;
-                pDoc._tv_click_tracker_bound = true;
-                
-                pDoc.addEventListener('click', function(e) {
+                if (pDoc._tv_click_handler) {
+                    pDoc.removeEventListener('click', pDoc._tv_click_handler, true);
+                }
+                pDoc._tv_click_handler = function(e) {
                     var btn = e.target.closest('.tv-btn, .sina-btn');
                     if (btn) {
                         var tk = btn.getAttribute('data-ticker');
@@ -530,25 +530,32 @@ def render():
                                 try { f.remove(); } catch(err) {}
                             }, 6000);
 
-                            // 2. 前台 DOM 瞬间更新数值（无需等待页面刷新）
+                            // 2. 前台 DOM 瞬间更新数值（覆盖页面上该 ticker 所有对应按钮，秒级可见）
                             try {
-                                var spans = btn.getElementsByTagName('span');
-                                if (spans && spans.length > 0) {
-                                    var span = spans[spans.length - 1];
-                                    var txt = span.innerText || span.textContent || "";
-                                    var m = txt.match(/\((\d+)\/(\d+)\)/);
-                                    if (m) {
-                                        var today = parseInt(m[1], 10) + 1;
-                                        var total = parseInt(m[2], 10) + 1;
-                                        span.innerText = '(' + today + '/' + total + ')';
-                                        span.style.color = '#4ade80';
-                                        span.style.fontWeight = '600';
+                                var allBtns = pDoc.querySelectorAll('.tv-btn, .sina-btn');
+                                for (var i = 0; i < allBtns.length; i++) {
+                                    var b = allBtns[i];
+                                    if (b.getAttribute('data-ticker') === tk) {
+                                        var spans = b.getElementsByTagName('span');
+                                        if (spans && spans.length > 0) {
+                                            var span = spans[spans.length - 1];
+                                            var txt = span.innerText || span.textContent || "";
+                                            var m = txt.match(/\((\d+)\/(\d+)\)/);
+                                            if (m) {
+                                                var today = parseInt(m[1], 10) + 1;
+                                                var total = parseInt(m[2], 10) + 1;
+                                                span.innerText = '(' + today + '/' + total + ')';
+                                                span.style.color = '#4ade80';
+                                                span.style.fontWeight = '600';
+                                            }
+                                        }
                                     }
                                 }
                             } catch(err) {}
                         }
                     }
-                }, true);
+                };
+                pDoc.addEventListener('click', pDoc._tv_click_handler, true);
             } catch(err) {}
         })();
         </script>
