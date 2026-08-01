@@ -972,38 +972,14 @@ def _check_password() -> bool:
 
 # ── 路由 ──────────────────────────────────────────────────────────
 def main():
-    # ── 行情链接点击计数中继 ──────────────────────────────────
-    # 注意：st.markdown 的 meta refresh 不会执行（React 用 innerHTML 注入不执行 meta/script）
-    # 必须用 st.components.v1.html 创建真实 iframe，在其中用 JS 跳转 window.parent
+    # ── 行情链接点击计数（后台静音 fetch 计数）──────────────────
     tv_click = st.query_params.get("_tv_click", "")
-    tv_dest  = st.query_params.get("_tv_dest", "")
-    if tv_click and tv_dest:
-        import urllib.parse
-        import streamlit.components.v1 as _components
+    if tv_click:
         ticker = str(tv_click).strip().upper()
-        dest_url = urllib.parse.unquote(tv_dest)
         try:
             storage.increment_link_click(ticker, "tv")
         except Exception:
             pass
-        # 转义防止 JS 注入
-        safe_url = dest_url.replace('"', '%22').replace("'", '%27').replace('<', '%3C').replace('>', '%3E')
-        _components.html(f"""<!DOCTYPE html><html><body>
-        <p style="font-family:sans-serif;color:#666;padding:16px">
-            ✅ 点击已记录，正在跳转...<br>
-            <a href="{safe_url}" style="color:#38bdf8">如未自动跳转请点此</a>
-        </p>
-        <script>
-        (function() {{
-            var url = "{safe_url}";
-            try {{ window.parent.location.href = url; }} catch(e) {{
-                try {{ window.top.location.href = url; }} catch(e2) {{
-                    window.location.href = url;
-                }}
-            }}
-        }})();
-        </script>
-        </body></html>""", height=80)
         st.stop()
         return
 
