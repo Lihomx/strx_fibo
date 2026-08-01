@@ -60,38 +60,42 @@ def _ichimoku(high: pd.Series, low: pd.Series,
 
 def _supertrend(high: pd.Series, low: pd.Series, close: pd.Series,
                 period: int = 7, multiplier: float = 3.0) -> pd.Series:
-    """返回 Supertrend 线（上涨时为支撑线）"""
-    hl2  = (high + low) / 2
-    # ATR
-    tr   = pd.concat([
+    """返回 Supertrend 线（上涨时为支撑线，下跌时为阻力线）"""
+    hl2 = (high + low) / 2
+    tr = pd.concat([
         high - low,
-        (high - close.shift()).abs(),
-        (low  - close.shift()).abs(),
+        (high - close.shift(1)).abs(),
+        (low - close.shift(1)).abs(),
     ], axis=1).max(axis=1)
-    atr  = tr.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
-
-    upper = hl2 + multiplier * atr
-    lower = hl2 - multiplier * atr
-
-    st_line = pd.Series(np.nan, index=close.index)
-    trend   = pd.Series(1,      index=close.index)   # 1=up, -1=down
-
-    for i in range(1, len(close)):
-        # lower band
-        lower.iloc[i] = (lower.iloc[i]
-                         if lower.iloc[i] > lower.iloc[i-1] or close.iloc[i-1] < lower.iloc[i-1]
-                         else lower.iloc[i-1])
-        # upper band
-        upper.iloc[i] = (upper.iloc[i]
-                         if upper.iloc[i] < upper.iloc[i-1] or close.iloc[i-1] > upper.iloc[i-1]
-                         else upper.iloc[i-1])
-        if st_line.iloc[i-1] == upper.iloc[i-1]:
-            trend.iloc[i] = -1 if close.iloc[i] > upper.iloc[i] else -1
+    atr = tr.rolling(window=period).mean()
+    basic_upper = (hl2 + (multiplier * atr)).values
+    basic_lower = (hl2 - (multiplier * atr)).values
+    c = close.values
+    n = len(c)
+    final_upper = np.zeros(n)
+    final_lower = np.zeros(n)
+    st_line = np.zeros(n)
+    trend = np.ones(n, dtype=int)
+    for i in range(1, n):
+        if np.isnan(basic_upper[i]):
+            continue
+        final_upper[i] = basic_upper[i] if (basic_upper[i] < final_upper[i-1] or c[i-1] > final_upper[i-1]) else final_upper[i-1]
+        final_lower[i] = basic_lower[i] if (basic_lower[i] > final_lower[i-1] or c[i-1] < final_lower[i-1]) else final_lower[i-1]
+        if trend[i-1] == 1:
+            if c[i] < final_lower[i]:
+                trend[i] = -1
+                st_line[i] = final_upper[i]
+            else:
+                trend[i] = 1
+                st_line[i] = final_lower[i]
         else:
-            trend.iloc[i] =  1 if close.iloc[i] < lower.iloc[i] else  1
-        st_line.iloc[i] = lower.iloc[i] if trend.iloc[i] == 1 else upper.iloc[i]
-
-    return st_line
+            if c[i] > final_upper[i]:
+                trend[i] = 1
+                st_line[i] = final_lower[i]
+            else:
+                trend[i] = -1
+                st_line[i] = final_upper[i]
+    return pd.Series(st_line, index=close.index)
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -105,8 +109,15 @@ def _fetch(ticker: str, interval: str, period: str = "6mo") -> pd.DataFrame | No
                          progress=False, auto_adjust=True)
         if df is None or df.empty:
             return None
-        df.columns = [c[0].lower() if isinstance(c, tuple) else c.lower()
-                      for c in df.columns]
+        new_cols = []
+        for c in df.columns:
+            if isinstance(c, tuple):
+                new_cols.append(str(c[0]).lower())
+            else:
+                new_cols.append(str(c).lower())
+        df.columns = new_cols
+        if "close" not in df.columns:
+            return None
         return df.dropna(subset=["close"])
     except Exception:
         return None
@@ -126,16 +137,37 @@ def _check_ticker(ticker: str) -> dict:
         return result
 
     # ── 下载数据 ────────────────────────────────────────────────────
-    df_4h  = _fetch(ticker, "4h",  "6mo")
-    df_1d  = _fetch(ticker, "1d",  "1y")
-    df_2h  = _fetch(ticker, "2h",  "3mo")
+    df_1d = _fetch(ticker, "1d", "1y")
+    if df_1d is None or len(df_1d) < 60:
+        result["error"] = "日线数据不足"
+        return result
+
+    # 1H 数据（用于 2H/4H 的重采样与兜底）
+    df_1h = _fetch(ticker, "1h", "2mo")
+
+    # 4H 数据（优先使用原生 4h，若缺失或异常则通过 1h 重采样）
+    df_4h = _fetch(ticker, "4h", "6mo")
+    if (df_4h is None or len(df_4h) < 5) and (df_1h is not None and len(df_1h) >= 4):
+        try:
+            df_4h = df_1h.resample("4h").agg({
+                "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
+            }).dropna(subset=["close"])
+        except Exception:
+            pass
 
     if df_4h is None or len(df_4h) < 5:
         result["error"] = "4H 数据不足"
         return result
-    if df_1d is None or len(df_1d) < 60:
-        result["error"] = "日线数据不足"
-        return result
+
+    # 2H 数据（yfinance 原生不支持 2h，通过 1h 重采样获取）
+    df_2h = None
+    if df_1h is not None and len(df_1h) >= 2:
+        try:
+            df_2h = df_1h.resample("2h").agg({
+                "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
+            }).dropna(subset=["close"])
+        except Exception:
+            pass
 
     # ── 预计算指标 ──────────────────────────────────────────────────
     close_d = df_1d["close"]
@@ -158,6 +190,7 @@ def _check_ticker(ticker: str) -> dict:
     v0 = float(vol_4h.iloc[-1])   # [0]  当前
     v1 = float(vol_4h.iloc[-2])   # [-1] 前一根
     v2 = float(vol_4h.iloc[-3])   # [-2] 前两根
+    v3 = float(vol_4h.iloc[-4]) if len(vol_4h) >= 4 else v2
 
     # 2H 收盘（[-2] 前两根）
     c_2h_m2 = None
@@ -172,15 +205,15 @@ def _check_ticker(ticker: str) -> dict:
     rules = [
         {
             "id":   "[0]",
-            "desc": "4H Volume[0] > 4H Volume[-1] × 2",
-            "ok":   v0 > v1 * 2,
-            "val":  f"{v0:,.0f} vs {v1:,.0f}×2={v1*2:,.0f}",
+            "desc": "4H Volume[0] > 4H Volume[-1] × 2 (或已完成根 > ×2)",
+            "ok":   (v0 > v1 * 2) or (v1 > v2 * 2),
+            "val":  f"{v0:,.0f} vs {v1:,.0f}×2={v1*2:,.0f}" if (v0 > v1 * 2) else f"前根: {v1:,.0f} vs {v2:,.0f}×2={v2*2:,.0f}",
         },
         {
             "id":   "[1]",
-            "desc": "4H Volume[-1] > 4H Volume[-2] × 1.5",
-            "ok":   v1 > v2 * 1.5,
-            "val":  f"{v1:,.0f} vs {v2:,.0f}×1.5={v2*1.5:,.0f}",
+            "desc": "4H Volume[-1] > 4H Volume[-2] × 1.5 (或已完成根 > ×1.5)",
+            "ok":   (v1 > v2 * 1.5) or (v2 > v3 * 1.5),
+            "val":  f"{v1:,.0f} vs {v2:,.0f}×1.5={v2*1.5:,.0f}" if (v1 > v2 * 1.5) else f"前前根: {v2:,.0f} vs {v3:,.0f}×1.5={v3*1.5:,.0f}",
         },
         {
             "id":   "[2]",
