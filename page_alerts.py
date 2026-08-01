@@ -757,21 +757,6 @@ def render_alert_log_table(full_page=False):
                 html_parts.append(".alert-log-row-starred { background-color: rgba(245, 158, 11, 0.08) !important; font-weight: 500; }")
                 html_parts.append(".click-count-badge { font-weight: 600; font-size: 12px; }")
                 html_parts.append("</style>")
-                html_parts.append("""<script>
-                (function() {
-                    if (window._tv_click_listener_attached) return;
-                    window._tv_click_listener_attached = true;
-                    document.addEventListener('click', function(e) {
-                        var btn = e.target.closest('.tv-btn, .sina-btn');
-                        if (btn && btn.getAttribute('data-ticker')) {
-                            var tk = btn.getAttribute('data-ticker');
-                            try {
-                                fetch('/?_tv_click=' + encodeURIComponent(tk), {keepalive: true});
-                            } catch(err) {}
-                        }
-                    });
-                })();
-                </script>""")
                 html_parts.append("<div class=\"alert-log-container\">")
                 html_parts.append("<table class=\"alert-log-table\">")
                 
@@ -818,17 +803,17 @@ def render_alert_log_table(full_page=False):
                     else:
                         status_html = f'<span>{status}</span>'
                         
-                    # 格式化 TradingView / 新浪 链接为直接跳转按钮（带 data-ticker 供后台静音计数）
+                    # 格式化 TradingView / 新浪 链接为直接跳转按钮（带有 inline onclick 后台静音计数）
                     tv_url_val = row.get("tradingview", "")
                     if tv_url_val:
-                        tv_html = f'<a href="{tv_url_val}" target="_blank" class="tv-btn" data-ticker="{ticker}">📈 图表</a>'
+                        tv_html = f'<a href="{tv_url_val}" target="_blank" class="tv-btn" onclick="try{{fetch(\'/?_tv_click={ticker}\',{{keepalive:true}});}}catch(e){{}}">📈 图表</a>'
                     else:
                         tv_html = "—"
                     
                     from assets import sina_url
                     sina_url_val = sina_url(ticker)
                     if sina_url_val:
-                        tv_html += f'<a href="{sina_url_val}" target="_blank" class="sina-btn" data-ticker="{ticker}">🏦 新浪</a>'
+                        tv_html += f'<a href="{sina_url_val}" target="_blank" class="sina-btn" onclick="try{{fetch(\'/?_tv_click={ticker}\',{{keepalive:true}});}}catch(e){{}}">🏦 新浪</a>'
                     
                     # 点击统计 HTML
                     click_entry = all_clicks_data.get(f"{ticker.upper()}:tv", {}) if isinstance(all_clicks_data, dict) else {}
