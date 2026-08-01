@@ -387,14 +387,27 @@ def render():
     st.markdown("---")
 
     # ── 载入分组品种 ──
+    def _on_chartink_group_change():
+        sel = st.session_state.get("chartink_load_grp_sel")
+        if sel and sel != "— 选择载入分组 —":
+            grps = storage.load_symbol_groups()
+            target = next((g for g in grps if g["name"] == sel), None)
+            if target:
+                tickers = target.get("tickers", [])
+                st.session_state["chartink_tickers"] = " ".join(tickers)
+            st.session_state["chartink_load_grp_sel"] = "— 选择载入分组 —"
+
     groups = storage.load_symbol_groups()
     if groups:
         grp_names = ["— 选择载入分组 —"] + [g["name"] for g in groups]
-        sel_grp = st.selectbox("📥 从品种库分组载入股票池", grp_names, key="chartink_load_grp_sel")
-        if sel_grp != "— 选择载入分组 —":
-            target_grp = next(g for g in groups if g["name"] == sel_grp)
-            st.session_state["chartink_tickers"] = " ".join(target_grp.get("tickers", []))
-            st.rerun()
+        if "chartink_load_grp_sel" not in st.session_state:
+            st.session_state["chartink_load_grp_sel"] = "— 选择载入分组 —"
+        st.selectbox(
+            "📥 从品种库分组载入股票池",
+            grp_names,
+            key="chartink_load_grp_sel",
+            on_change=_on_chartink_group_change,
+        )
 
     # ── 股票池设置 ──────────────────────────────────────────────────
     col_left, col_right = st.columns([3, 1])
