@@ -442,6 +442,12 @@ def render():
             except Exception:
                 pass
         storage.save_chartink({})
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                cloud_sync.push_chartink()
+        except Exception:
+            pass
         st.toast("🗑️ 已自动备份当前扫描结果并成功清空！", icon="✅")
         time.sleep(0.5)
         st.rerun()

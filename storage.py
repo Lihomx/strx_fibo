@@ -1694,7 +1694,14 @@ def clear_chartink_results() -> bool:
                 cloud_sync._upload_snapshot("chartink", data)
         except Exception:
             pass
-    return save_chartink({})
+    ok = save_chartink({})
+    try:
+        import cloud_sync
+        if cloud_sync.is_configured():
+            cloud_sync.push_chartink()
+    except Exception:
+        pass
+    return ok
 
 
 # ── 自定义品种库与分组 ─────────────────────────────────────────
