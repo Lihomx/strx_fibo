@@ -473,7 +473,10 @@ def render():
             total_c = click_entry.get("total", 0) if isinstance(click_entry, dict) else 0
             by_date_map = click_entry.get("by_date", {}) if isinstance(click_entry, dict) else {}
             today_c = by_date_map.get(today_str_val, 0) if isinstance(by_date_map, dict) else 0
-            click_badge = f' <span style="font-size:11px;color:#4ade80;font-weight:600;">({today_c}/{total_c})</span>' if total_c > 0 else ''
+            if total_c > 0:
+                click_badge = f' <span style="font-size:11px;color:#4ade80;font-weight:600;">({today_c}/{total_c})</span>'
+            else:
+                click_badge = ' <span style="font-size:11px;color:#64748b;font-weight:500;">(0/0)</span>'
             
             tv_lnk = tv_url(ticker, "4h")
             tv_html = f'<a href="{tv_lnk}" target="_blank" class="tv-btn" data-ticker="{ticker}" style="color:#38bdf8;text-decoration:none;font-weight:600;font-size:12px;background:rgba(56,189,248,0.1);padding:4px 10px;border-radius:4px;border:1px solid rgba(56,189,248,0.2);">📈 TV{click_badge}</a>'

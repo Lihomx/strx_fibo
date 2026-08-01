@@ -848,7 +848,10 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
         total_c = click_entry.get("total", 0) if isinstance(click_entry, dict) else 0
         by_date_map = click_entry.get("by_date", {}) if isinstance(click_entry, dict) else {}
         today_c = by_date_map.get(today_str_val, 0) if isinstance(by_date_map, dict) else 0
-        click_badge_html = f' <span style="font-size:10px;color:#4ade80;">({today_c}/{total_c})</span>' if total_c > 0 else ''
+        if total_c > 0:
+            click_badge_html = f' <span style="font-size:10px;color:#4ade80;">({today_c}/{total_c})</span>'
+        else:
+            click_badge_html = ' <span style="font-size:10px;color:#64748b;">(0/0)</span>'
 
         # 收藏列：用 <a href> 触发 query_params
         from urllib.parse import quote as _qu
