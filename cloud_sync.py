@@ -49,9 +49,10 @@ _LATEST_FILES = {
     "alerts":              "data_alerts.json",
     "starred":             "data_starred.json",
     "ticker_notes":        "data_ticker_notes.json",
+    "link_clicks":         "data_link_clicks.json",
 }
 
-_SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "wl_categories", "config", "hotlist", "hotlist_archive", "hl_categories", "symbols", "symbol_groups", "triple_bottom", "alerts", "starred", "ticker_notes"]
+_SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "wl_categories", "config", "hotlist", "hotlist_archive", "hl_categories", "symbols", "symbol_groups", "triple_bottom", "alerts", "starred", "ticker_notes", "link_clicks"]
 _APP_BOOT_TS = time.time()
 _CLOUD_FILES   = _LATEST_FILES  # 兼容旧接口
 
@@ -349,6 +350,11 @@ def restore_from_snapshot(snapshot_path: str, file_key: str) -> Tuple[bool, str]
                 return False, "格式错误（期望列表）"
             loc._save(loc.F_ALERTS, data)
             return True, f"已从快照恢复告警日志，共 {len(data)} 条记录"
+        elif file_key == "link_clicks":
+            if not isinstance(data, dict):
+                return False, "格式错误（期望字典）"
+            loc._save(loc.F_LINK_CLICKS, data)
+            return True, "已从快照恢复点击统计数据"
         else:
             return False, f"不支持恢复类型：{file_key}"
     except Exception as e:
@@ -491,6 +497,48 @@ def pull_tb_snapshots() -> Tuple[bool, str]:
         return True, f"已从云端同步了 {count} 个历史快照到本地"
     except Exception as e:
         return False, f"pull_tb_snapshots 异常：{e}"
+
+
+def push_link_clicks() -> Tuple[bool, str]:
+    try:
+        import storage as loc
+        data = loc.get_all_link_clicks()
+        ok, msg = _upload_latest("link_clicks", data)
+        _upload_snapshot("link_clicks", data)
+        if ok:
+            return True, "行情点击统计已同步"
+        return False, f"link_clicks: {msg}"
+    except Exception as e:
+        return False, f"push_link_clicks 异常：{e}"
+
+
+def pull_link_clicks() -> Tuple[bool, str]:
+    try:
+        import storage as loc
+        from storage import F_LINK_CLICKS, _save
+        cloud_data = _download_latest("link_clicks")
+        if not isinstance(cloud_data, dict):
+            return False, "云端无点击统计数据"
+        local_data = loc.get_all_link_clicks()
+        if not isinstance(local_data, dict):
+            local_data = {}
+        for k, v in cloud_data.items():
+            if not isinstance(v, dict):
+                continue
+            if k not in local_data or not isinstance(local_data[k], dict):
+                local_data[k] = v
+            else:
+                local_data[k]["total"] = max(local_data[k].get("total", 0), v.get("total", 0))
+                c_by_date = v.get("by_date", {})
+                l_by_date = local_data[k].get("by_date", {})
+                if isinstance(c_by_date, dict) and isinstance(l_by_date, dict):
+                    for d_key, d_val in c_by_date.items():
+                        l_by_date[d_key] = max(l_by_date.get(d_key, 0), d_val)
+                    local_data[k]["by_date"] = l_by_date
+        _save(F_LINK_CLICKS, local_data)
+        return True, "行情点击统计已恢复"
+    except Exception as e:
+        return False, f"pull_link_clicks 异常：{e}"
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -732,13 +780,14 @@ def push_all(force: bool = False) -> Tuple[bool, str]:
         ("alerts",        lambda: loc._load(loc.F_ALERTS, [])),
         ("starred",       lambda: loc._load(loc.F_STARRED, [])),
         ("ticker_notes",  lambda: loc._load(loc.F_TICKER_NOTES, {})),
+        ("link_clicks",   lambda: loc.get_all_link_clicks()),
     ]:
         try:
             data      = loader()
             ok2, msg2 = _upload_latest(file_key, data)
             if not ok2:
                 errors.append(f"{file_key}: {msg2}")
-            if file_key in ("config", "wl_categories", "hl_categories", "symbols", "symbol_groups", "triple_bottom", "alerts", "starred", "ticker_notes"):
+            if file_key in ("config", "wl_categories", "hl_categories", "symbols", "symbol_groups", "triple_bottom", "alerts", "starred", "ticker_notes", "link_clicks"):
                 _upload_snapshot(file_key, data)
         except Exception as e:
             errors.append(f"{file_key}: {e}")
@@ -768,6 +817,9 @@ def pull_all() -> Dict[str, Any]:
 
     ok_hl, msg_hl = pull_hotlist()
     results["hotlist"] = (ok_hl, msg_hl)
+
+    ok_lc, msg_lc = pull_link_clicks()
+    results["link_clicks"] = (ok_lc, msg_lc)
 
     cloud_hist = _download_latest("scan_history")
     if isinstance(cloud_hist, list):

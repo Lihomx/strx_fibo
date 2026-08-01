@@ -561,6 +561,13 @@ def increment_link_click(ticker: str, link_type: str = "tv") -> None:
     by_date[today] = by_date.get(today, 0) + 1
     data[key]["by_date"] = by_date
     _save(F_LINK_CLICKS, data)
+    try:
+        import cloud_sync
+        if cloud_sync.is_configured():
+            import threading
+            threading.Thread(target=cloud_sync.push_link_clicks, daemon=True).start()
+    except Exception:
+        pass
 
 def get_link_clicks(ticker: str, link_type: str = "tv") -> dict:
     """获取某 ticker 的点击统计 {total, today}"""
