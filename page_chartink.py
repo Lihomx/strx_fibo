@@ -499,13 +499,30 @@ def render():
     )
 
     # ── 通过的品种 ──────────────────────────────────────────────────
-    st.markdown("### ✅ 通过筛选的品种")
+    col_pass_hdr1, col_pass_hdr2 = st.columns([3, 1])
+    with col_pass_hdr1:
+        st.markdown("### ✅ 通过筛选的品种")
+    with col_pass_hdr2:
+        if passed:
+            if st.button("⭐ 批量收藏全部通过品种", key="chartink_fav_all_passed", use_container_width=True):
+                added_cnt = 0
+                for r in passed:
+                    tk = r["ticker"]
+                    if storage.add_to_watchlist(ticker=tk, name=tk, note="Chartink 4H Breakout 扫描匹配"):
+                        added_cnt += 1
+                st.toast(f"✅ 成功将 {added_cnt} 个品种加入自选收藏夹！", icon="⭐")
+                time.sleep(1)
+                st.rerun()
+
     if not passed:
         st.markdown('<div class="n-warn">本次扫描无品种满足全部7个条件。</div>', unsafe_allow_html=True)
     else:
         all_clicks_data = storage.get_all_link_clicks()
         today_str_val = datetime.datetime.now().strftime("%Y-%m-%d")
         from assets import tv_url
+        
+        wl_items = storage.load_watchlist()
+        wl_set = {item["ticker"].upper() for item in wl_items if isinstance(item, dict)}
         
         # 汇总表
         rows_html = []
@@ -527,12 +544,19 @@ def render():
             tv_lnk = tv_url(ticker, "4h")
             tv_html = f'<a href="{tv_lnk}" target="_blank" class="tv-btn" data-ticker="{ticker}" style="color:#38bdf8;text-decoration:none;font-weight:600;font-size:12px;background:rgba(56,189,248,0.1);padding:4px 10px;border-radius:4px;border:1px solid rgba(56,189,248,0.2);">📈 TV{click_badge}</a>'
             
+            is_fav = ticker.upper() in wl_set
+            if is_fav:
+                fav_html = f'<a href="/?_page=chartink&_fav=del|{ticker}|{ticker}" target="_self" style="color:#f59e0b;text-decoration:none;font-weight:600;font-size:12px;background:rgba(245,158,11,0.15);padding:4px 10px;border-radius:4px;border:1px solid rgba(245,158,11,0.3);">★ 已收藏</a>'
+            else:
+                fav_html = f'<a href="/?_page=chartink&_fav=add|{ticker}|{ticker}" target="_self" style="color:#eab308;text-decoration:none;font-weight:600;font-size:12px;background:rgba(234,179,8,0.1);padding:4px 10px;border-radius:4px;border:1px solid rgba(234,179,8,0.2);">⭐ 收藏</a>'
+            
             rows_html.append(
                 f"<tr>"
                 f"<td style='padding:10px;font-weight:bold;'>{ticker}</td>"
                 f"<td style='padding:10px;font-family:monospace;'>{price_s}</td>"
                 f"<td style='padding:10px;'>{vol_s}</td>"
                 f"<td style='padding:10px;'>{rsi_s}</td>"
+                f"<td style='padding:10px;'>{fav_html}</td>"
                 f"<td style='padding:10px;'>{tv_html}</td>"
                 f"</tr>"
             )
@@ -543,6 +567,7 @@ def render():
             "<th style='padding:10px;'>收盘价</th>"
             "<th style='padding:10px;'>4H成交量</th>"
             "<th style='padding:10px;'>RSI(14)</th>"
+            "<th style='padding:10px;'>自选收藏</th>"
             "<th style='padding:10px;'>行情图表 (今日/总)</th>"
             "</tr>"
         )
@@ -622,7 +647,20 @@ def render():
         # 详细条件展开
         for r in passed:
             with st.expander(f"🔍 {r['ticker']} — 条件明细", expanded=False):
-                _render_details(r["details"])
+                col_d1, col_d2 = st.columns([4, 1])
+                with col_d1:
+                    _render_details(r["details"])
+                with col_d2:
+                    if r['ticker'].upper() in wl_set:
+                        if st.button(f"🗑️ 移除收藏", key=f"fav_det_del_{r['ticker']}", use_container_width=True):
+                            storage.remove_from_watchlist(r['ticker'])
+                            st.toast(f"已将 {r['ticker']} 从自选收藏夹移除", icon="🗑️")
+                            st.rerun()
+                    else:
+                        if st.button(f"⭐ 加入收藏", key=f"fav_det_add_{r['ticker']}", use_container_width=True):
+                            storage.add_to_watchlist(ticker=r['ticker'], name=r['ticker'], note="Chartink 4H Breakout 扫描匹配")
+                            st.toast(f"⭐ 已将 {r['ticker']} 加入自选收藏夹", icon="⭐")
+                            st.rerun()
 
     # ── 未通过（可折叠）────────────────────────────────────────────
     if failed:
