@@ -457,16 +457,80 @@ def render():
     if not passed:
         st.markdown('<div class="n-warn">本次扫描无品种满足全部7个条件。</div>', unsafe_allow_html=True)
     else:
+        all_clicks_data = storage.get_all_link_clicks()
+        today_str_val = datetime.datetime.now().strftime("%Y-%m-%d")
+        from assets import tv_url
+        
         # 汇总表
-        rows = []
+        rows_html = []
         for r in passed:
-            rows.append({
-                "品种":     r["ticker"],
-                "收盘价":   f"{r['close']:.4f}" if r["close"] else "—",
-                "4H成交量": f"{r['volume_4h']:,.0f}" if r["volume_4h"] else "—",
-                "RSI(14)":  f"{r['rsi']:.1f}" if r["rsi"] else "—",
-            })
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            ticker = r["ticker"]
+            price_s = f"{r['close']:.4f}" if r["close"] else "—"
+            vol_s = f"{r['volume_4h']:,.0f}" if r["volume_4h"] else "—"
+            rsi_s = f"{r['rsi']:.1f}" if r["rsi"] else "—"
+            
+            click_entry = all_clicks_data.get(f"{ticker.upper()}:tv", {}) if isinstance(all_clicks_data, dict) else {}
+            total_c = click_entry.get("total", 0) if isinstance(click_entry, dict) else 0
+            by_date_map = click_entry.get("by_date", {}) if isinstance(click_entry, dict) else {}
+            today_c = by_date_map.get(today_str_val, 0) if isinstance(by_date_map, dict) else 0
+            click_badge = f' <span style="font-size:11px;color:#4ade80;font-weight:600;">({today_c}/{total_c})</span>' if total_c > 0 else ''
+            
+            tv_lnk = tv_url(ticker, "4h")
+            tv_html = f'<a href="{tv_lnk}" target="_blank" class="tv-btn" data-ticker="{ticker}" style="color:#38bdf8;text-decoration:none;font-weight:600;font-size:12px;background:rgba(56,189,248,0.1);padding:4px 10px;border-radius:4px;border:1px solid rgba(56,189,248,0.2);">📈 TV{click_badge}</a>'
+            
+            rows_html.append(
+                f"<tr>"
+                f"<td style='padding:10px;font-weight:bold;'>{ticker}</td>"
+                f"<td style='padding:10px;font-family:monospace;'>{price_s}</td>"
+                f"<td style='padding:10px;'>{vol_s}</td>"
+                f"<td style='padding:10px;'>{rsi_s}</td>"
+                f"<td style='padding:10px;'>{tv_html}</td>"
+                f"</tr>"
+            )
+            
+        thead = (
+            "<tr style='background:rgba(255,255,255,0.05);text-align:left;border-bottom:2px solid rgba(255,255,255,0.1);'>"
+            "<th style='padding:10px;'>品种</th>"
+            "<th style='padding:10px;'>收盘价</th>"
+            "<th style='padding:10px;'>4H成交量</th>"
+            "<th style='padding:10px;'>RSI(14)</th>"
+            "<th style='padding:10px;'>行情图表 (今日/总)</th>"
+            "</tr>"
+        )
+        st.markdown(
+            f"<div style='width:100%;overflow-x:auto;'><table style='width:100%;border-collapse:collapse;font-size:13px;'><thead>{thead}</thead>"
+            f"<tbody>{''.join(rows_html)}</tbody></table></div>",
+            unsafe_allow_html=True,
+        )
+
+        import streamlit.components.v1 as _components
+        _components.html("""
+        <script>
+        (function() {
+            try {
+                var pDoc = window.parent.document;
+                if (pDoc._tv_click_tracker_bound) return;
+                pDoc._tv_click_tracker_bound = true;
+                
+                pDoc.addEventListener('click', function(e) {
+                    var btn = e.target.closest('.tv-btn, .sina-btn');
+                    if (btn) {
+                        var tk = btn.getAttribute('data-ticker');
+                        if (tk) {
+                            var f = pDoc.createElement('iframe');
+                            f.style.display = 'none';
+                            f.src = '/?_tv_click=' + encodeURIComponent(tk);
+                            pDoc.body.appendChild(f);
+                            setTimeout(function() {
+                                try { f.remove(); } catch(err) {}
+                            }, 6000);
+                        }
+                    }
+                }, true);
+            } catch(err) {}
+        })();
+        </script>
+        """, height=0)
 
         # 详细条件展开
         for r in passed:

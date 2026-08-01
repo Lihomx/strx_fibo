@@ -816,6 +816,9 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
     seen: set = set()
     rows_html = []
 
+    all_clicks_data = storage.get_all_link_clicks()
+    today_str_val = datetime.now().strftime("%Y-%m-%d")
+
     for _, r in df.iterrows():
         in_zone   = bool(r.get("in_zone", False))
         dist      = safe_float(r.get("dist_pct"))
@@ -839,6 +842,13 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
         is_first = ticker not in seen
         seen.add(ticker)
         is_fav   = ticker in watchlist_tickers
+
+        # 点击统计 HTML
+        click_entry = all_clicks_data.get(f"{ticker.upper()}:tv", {}) if isinstance(all_clicks_data, dict) else {}
+        total_c = click_entry.get("total", 0) if isinstance(click_entry, dict) else 0
+        by_date_map = click_entry.get("by_date", {}) if isinstance(click_entry, dict) else {}
+        today_c = by_date_map.get(today_str_val, 0) if isinstance(by_date_map, dict) else 0
+        click_badge_html = f' <span style="font-size:10px;color:#4ade80;">({today_c}/{total_c})</span>' if total_c > 0 else ''
 
         # 收藏列：用 <a href> 触发 query_params
         from urllib.parse import quote as _qu
@@ -875,8 +885,8 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
             f"<td style='width:8%;text-align:right'>{retrace_s}</td>"
             f"<td style='width:8%;text-align:right'>{dist_s}</td>"
             f"<td style='width:13%'>{_conf_badge(conf_l)}</td>"
-            f"<td style='width:7%'><a href='{tv_lnk}' target='_blank' "
-            f"style='color:#e85d04;font-size:12px'>📈 TV</a></td>"
+            f"<td style='width:9%'><a href='{tv_lnk}' target='_blank' class='tv-btn' data-ticker='{ticker_s}' "
+            f"style='color:#38bdf8;font-size:12px;text-decoration:none;font-weight:600;'>📈 TV{click_badge_html}</a></td>"
             f"<td style='width:5%;text-align:center'>{fav_html}</td>"
             f"</tr>"
         )
@@ -891,7 +901,7 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
         "<th style='width:8%;text-align:right'>回撤%</th>"
         "<th style='width:8%;text-align:right'>距区间</th>"
         "<th style='width:13%'>共振</th>"
-        "<th style='width:7%'>TV</th>"
+        "<th style='width:9%'>TV (今日/总)</th>"
         "<th style='width:5%;text-align:center'>收藏</th>"
         "</tr>"
     )
@@ -900,6 +910,35 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
         f"<tbody>{''.join(rows_html)}</tbody></table></div>",
         unsafe_allow_html=True,
     )
+
+    import streamlit.components.v1 as _components
+    _components.html("""
+    <script>
+    (function() {
+        try {
+            var pDoc = window.parent.document;
+            if (pDoc._tv_click_tracker_bound) return;
+            pDoc._tv_click_tracker_bound = true;
+            
+            pDoc.addEventListener('click', function(e) {
+                var btn = e.target.closest('.tv-btn, .sina-btn');
+                if (btn) {
+                    var tk = btn.getAttribute('data-ticker');
+                    if (tk) {
+                        var f = pDoc.createElement('iframe');
+                        f.style.display = 'none';
+                        f.src = '/?_tv_click=' + encodeURIComponent(tk);
+                        pDoc.body.appendChild(f);
+                        setTimeout(function() {
+                            try { f.remove(); } catch(err) {}
+                        }, 6000);
+                    }
+                }
+            }, true);
+        } catch(err) {}
+    })();
+    </script>
+    """, height=0)
 
     st.markdown(
         f'<div style="color:#9ca3af;font-size:11px;margin-top:6px">'

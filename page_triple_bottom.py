@@ -715,11 +715,21 @@ def render_triple_bottom_page():
                         st.rerun()
 
                 with btn_col2:
-                    st.link_button(
-                        "📈 TV",
-                        _tv_link(ticker, period),
-                        help=f"在 TradingView 中打开 {ticker} 的 {period_desc} 图表",
-                        use_container_width=True
+                    all_clicks_data = storage.get_all_link_clicks()
+                    today_str_val = datetime.now().strftime("%Y-%m-%d")
+                    click_entry = all_clicks_data.get(f"{ticker.upper()}:tv", {}) if isinstance(all_clicks_data, dict) else {}
+                    total_c = click_entry.get("total", 0) if isinstance(click_entry, dict) else 0
+                    by_date_map = click_entry.get("by_date", {}) if isinstance(click_entry, dict) else {}
+                    today_c = by_date_map.get(today_str_val, 0) if isinstance(by_date_map, dict) else 0
+
+                    click_badge_html = f' <span style="font-size:11px;color:#4ade80;font-weight:600;">({today_c}/{total_c})</span>' if total_c > 0 else ''
+                    tv_url_val = _tv_link(ticker, period)
+                    st.markdown(
+                        f'<a href="{tv_url_val}" target="_blank" class="tv-btn" data-ticker="{ticker}" '
+                        f'style="display:block;text-align:center;padding:6px 0;background:rgba(30,144,255,0.15);'
+                        f'color:#38bdf8;border-radius:4px;text-decoration:none;font-weight:600;font-size:13px;'
+                        f'border:1px solid rgba(30,144,255,0.3);">📈 TV{click_badge_html}</a>',
+                        unsafe_allow_html=True
                     )
 
                 with btn_col3:
@@ -858,3 +868,33 @@ def render_triple_bottom_page():
                                 st.warning("未找到足够长的历史 K 线数据，无法还原形态图。")
                         except Exception as ex:
                             st.error(f"渲染图形出错: {ex}")
+
+    # 💡 隐形事件监听组件：捕捉原链接点击，并在后台创建隐形 IFrame 唤醒 Streamlit 后台计数
+    import streamlit.components.v1 as _components
+    _components.html("""
+    <script>
+    (function() {
+        try {
+            var pDoc = window.parent.document;
+            if (pDoc._tv_click_tracker_bound) return;
+            pDoc._tv_click_tracker_bound = true;
+            
+            pDoc.addEventListener('click', function(e) {
+                var btn = e.target.closest('.tv-btn, .sina-btn');
+                if (btn) {
+                    var tk = btn.getAttribute('data-ticker');
+                    if (tk) {
+                        var f = pDoc.createElement('iframe');
+                        f.style.display = 'none';
+                        f.src = '/?_tv_click=' + encodeURIComponent(tk);
+                        pDoc.body.appendChild(f);
+                        setTimeout(function() {
+                            try { f.remove(); } catch(err) {}
+                        }, 6000);
+                    }
+                }
+            }, true);
+        } catch(err) {}
+    })();
+    </script>
+    """, height=0)
