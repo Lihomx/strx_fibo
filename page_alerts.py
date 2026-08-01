@@ -868,21 +868,33 @@ def render_alert_log_table(full_page=False):
                             if (btn) {
                                 var tk = btn.getAttribute('data-ticker');
                                 if (tk) {
-                                    // 1. 发送后台 IFrame 唤醒 Streamlit 进行落盘保存
-                                    var f = pDoc.createElement('iframe');
-                                    f.style.display = 'none';
-                                    f.src = '/?_tv_click=' + encodeURIComponent(tk);
-                                    pDoc.body.appendChild(f);
-                                    setTimeout(function() {
-                                        try { f.remove(); } catch(err) {}
-                                    }, 6000);
+                                    tk = tk.trim().toUpperCase();
+                                    var cbUrl = '/?_tv_click=' + encodeURIComponent(tk) + '&_cb=' + Date.now() + '_' + Math.floor(Math.random()*10000);
 
-                                    // 2. 前台 DOM 瞬间更新数值（覆盖页面上该 ticker 所有对应按钮，秒级可见）
+                                    // 1. fetch 强制 no-store 穿透所有浏览器/CDN 缓存
+                                    try { fetch(cbUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
+
+                                    // 2. sendBeacon 后台保障发送
+                                    try { if (navigator.sendBeacon) { navigator.sendBeacon(cbUrl); } } catch(err) {}
+
+                                    // 3. IFrame 静音发送
+                                    try {
+                                        var f = pDoc.createElement('iframe');
+                                        f.style.display = 'none';
+                                        f.src = cbUrl;
+                                        pDoc.body.appendChild(f);
+                                        setTimeout(function() {
+                                            try { f.remove(); } catch(err) {}
+                                        }, 6000);
+                                    } catch(err) {}
+
+                                    // 4. 前台 DOM 瞬间更新该 ticker 所有对应按钮数值 (秒级反馈)
                                     try {
                                         var allBtns = pDoc.querySelectorAll('.tv-btn, .sina-btn');
                                         for (var i = 0; i < allBtns.length; i++) {
                                             var b = allBtns[i];
-                                            if (b.getAttribute('data-ticker') === tk) {
+                                            var bTk = b.getAttribute('data-ticker');
+                                            if (bTk && bTk.trim().toUpperCase() === tk) {
                                                 var spans = b.getElementsByTagName('span');
                                                 if (spans && spans.length > 0) {
                                                     var span = spans[spans.length - 1];
