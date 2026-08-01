@@ -1666,14 +1666,6 @@ F_CHARTINK = os.path.join(_BASE, "data_chartink.json")
 def load_chartink() -> Dict:
     """返回上次 Chartink 扫描结果"""
     res = _load(F_CHARTINK, {})
-    if not res:
-        try:
-            import cloud_sync
-            if cloud_sync.is_configured():
-                cloud_sync.pull_chartink()
-                res = _load(F_CHARTINK, {})
-        except Exception:
-            pass
     if not isinstance(res, dict):
         return {}
     return res
