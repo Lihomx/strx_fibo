@@ -972,99 +972,14 @@ def _check_password() -> bool:
 
 # ── 路由 ──────────────────────────────────────────────────────────
 def main():
-    # ── 行情链接点击计数中继跳转页 ──────────────────────────────────
+    # ── 行情链接点击计数 (隐形 IFrame 后台接收器) ──────────────────
     tv_click = st.query_params.get("_tv_click", "")
-    tv_dest  = st.query_params.get("_tv_dest", "")
     if tv_click:
-        import urllib.parse
-        import streamlit.components.v1 as _components
         ticker = str(tv_click).strip().upper()
-        
-        # 1. 精准记录点击数
         try:
             storage.increment_link_click(ticker, "tv")
         except Exception:
             pass
-        
-        dest_url = urllib.parse.unquote(tv_dest) if tv_dest else f"https://cn.tradingview.com/chart/?symbol={ticker}"
-        safe_url = dest_url.replace('"', '%22').replace("'", '%27')
-        
-        # 获取最新累计点击数
-        clicks_info = storage.get_link_clicks(ticker, "tv")
-        total_clicks = clicks_info.get("total", 1) if isinstance(clicks_info, dict) else 1
-        
-        # 2. 渲染全屏高颜值中继过渡卡片 (自适应暗黑主题)
-        st.markdown(f"""
-        <style>
-        .stApp {{
-            background-color: #0e1117 !important;
-        }}
-        .relay-card {{
-            max-width: 520px;
-            margin: 80px auto;
-            padding: 40px 32px;
-            background: rgba(22, 27, 34, 0.95);
-            border: 1px solid rgba(56, 189, 248, 0.35);
-            border-radius: 16px;
-            text-align: center;
-            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        }}
-        .relay-title {{
-            font-size: 22px;
-            font-weight: 700;
-            color: #f8fafc;
-            margin-bottom: 14px;
-        }}
-        .relay-badge {{
-            display: inline-block;
-            background: rgba(34, 197, 94, 0.15);
-            color: #4ade80;
-            border: 1px solid rgba(34, 197, 94, 0.3);
-            padding: 6px 16px;
-            border-radius: 20px;
-            font-size: 13px;
-            font-weight: 600;
-            margin-bottom: 28px;
-        }}
-        .relay-btn {{
-            display: block;
-            width: 100%;
-            padding: 15px 0;
-            background: linear-gradient(135deg, #0284c7, #2563eb);
-            color: #ffffff !important;
-            font-size: 16px;
-            font-weight: 700;
-            text-decoration: none !important;
-            border-radius: 10px;
-            box-shadow: 0 4px 18px rgba(37, 99, 235, 0.45);
-            transition: all 0.2s ease;
-        }}
-        .relay-btn:hover {{
-            background: linear-gradient(135deg, #0369a1, #1d4ed8);
-            transform: translateY(-1px);
-        }}
-        </style>
-        <div class="relay-card">
-            <div class="relay-title">📈 正在前往 {ticker} 行情图表</div>
-            <div class="relay-badge">✅ 已成功记录！累计点击：{total_clicks} 次</div>
-            <a href="{safe_url}" target="_self" class="relay-btn">🚀 点击此处立即进入图表</a>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # 尝试自动跳转
-        _components.html(f"""
-        <script>
-        setTimeout(function() {{
-            try {{ window.top.location.href = "{safe_url}"; }} catch(e) {{
-                try {{ window.parent.location.href = "{safe_url}"; }} catch(e2) {{
-                    window.location.href = "{safe_url}";
-                }}
-            }}
-        }}, 300);
-        </script>
-        """, height=0)
-        
         st.stop()
         return
 

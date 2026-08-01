@@ -803,21 +803,17 @@ def render_alert_log_table(full_page=False):
                     else:
                         status_html = f'<span>{status}</span>'
                         
-                    # 格式化 TradingView / 新浪 链接为统计中继按钮
+                    # 格式化 TradingView / 新浪 链接为原始直通按钮（带 data-ticker 属性做后台事件计数）
                     tv_url_val = row.get("tradingview", "")
                     if tv_url_val:
-                        dest_enc = urllib.parse.quote(tv_url_val, safe="")
-                        relay_tv_url = f"/?_page={curr_page}&_t={t_token}&_tv_click={ticker}&_tv_dest={dest_enc}"
-                        tv_html = f'<a href="{relay_tv_url}" target="_blank" class="tv-btn">📈 图表</a>'
+                        tv_html = f'<a href="{tv_url_val}" target="_blank" class="tv-btn" data-ticker="{ticker}">📈 图表</a>'
                     else:
                         tv_html = "—"
                     
                     from assets import sina_url
                     sina_url_val = sina_url(ticker)
                     if sina_url_val:
-                        dest_sina_enc = urllib.parse.quote(sina_url_val, safe="")
-                        relay_sina_url = f"/?_page={curr_page}&_t={t_token}&_tv_click={ticker}&_tv_dest={dest_sina_enc}"
-                        tv_html += f'<a href="{relay_sina_url}" target="_blank" class="sina-btn">🏦 新浪</a>'
+                        tv_html += f'<a href="{sina_url_val}" target="_blank" class="sina-btn" data-ticker="{ticker}">🏦 新浪</a>'
                     
                     # 点击统计 HTML
                     click_entry = all_clicks_data.get(f"{ticker.upper()}:tv", {}) if isinstance(all_clicks_data, dict) else {}
@@ -856,6 +852,36 @@ def render_alert_log_table(full_page=False):
                 html_parts.append("</tbody></table></div>")
                 html_table = "".join(html_parts)
                 st.markdown(html_table, unsafe_allow_html=True)
+
+                # 💡 隐形事件监听组件：捕捉原链接点击，并在后台创建隐形 IFrame 唤醒 Streamlit 后台计数
+                import streamlit.components.v1 as _components
+                _components.html("""
+                <script>
+                (function() {
+                    try {
+                        var pDoc = window.parent.document;
+                        if (pDoc._tv_click_tracker_bound) return;
+                        pDoc._tv_click_tracker_bound = true;
+                        
+                        pDoc.addEventListener('click', function(e) {
+                            var btn = e.target.closest('.tv-btn, .sina-btn');
+                            if (btn) {
+                                var tk = btn.getAttribute('data-ticker');
+                                if (tk) {
+                                    var f = pDoc.createElement('iframe');
+                                    f.style.display = 'none';
+                                    f.src = '/?_tv_click=' + encodeURIComponent(tk);
+                                    pDoc.body.appendChild(f);
+                                    setTimeout(function() {
+                                        try { f.remove(); } catch(err) {}
+                                    }, 6000);
+                                }
+                            }
+                        }, true);
+                    } catch(err) {}
+                })();
+                </script>
+                """, height=0)
             except Exception as e:
                 st.dataframe(df, use_container_width=True, height=850)
 
