@@ -45,6 +45,7 @@ _LATEST_FILES = {
     "symbols":             "symbols.json",
     "symbol_groups":       "symbol_groups.json",
     "triple_bottom":       "data_triple_bottom.json",
+    "chartink":            "data_chartink.json",
     "scan_checkpoint":     "scan_checkpoint.json",
     "alerts":              "data_alerts.json",
     "starred":             "data_starred.json",
@@ -52,7 +53,7 @@ _LATEST_FILES = {
     "link_clicks":         "data_link_clicks.json",
 }
 
-_SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "wl_categories", "config", "hotlist", "hotlist_archive", "hl_categories", "symbols", "symbol_groups", "triple_bottom", "alerts", "starred", "ticker_notes", "link_clicks"]
+_SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "wl_categories", "config", "hotlist", "hotlist_archive", "hl_categories", "symbols", "symbol_groups", "triple_bottom", "chartink", "alerts", "starred", "ticker_notes", "link_clicks"]
 _APP_BOOT_TS = time.time()
 _CLOUD_FILES   = _LATEST_FILES  # 兼容旧接口
 
@@ -355,6 +356,11 @@ def restore_from_snapshot(snapshot_path: str, file_key: str) -> Tuple[bool, str]
                 return False, "格式错误（期望字典）"
             loc._save(loc.F_LINK_CLICKS, data)
             return True, "已从快照恢复点击统计数据"
+        elif file_key == "chartink":
+            if not isinstance(data, dict):
+                return False, "格式错误（期望字典）"
+            loc._save(loc.F_CHARTINK, data)
+            return True, "已从快照恢复 Chartink 扫描数据"
         else:
             return False, f"不支持恢复类型：{file_key}"
     except Exception as e:
@@ -462,6 +468,31 @@ def pull_triple_bottom() -> Tuple[bool, str]:
         return True, f"三重底已恢复 {len(cloud_items)} 个结果"
     except Exception as e:
         return False, f"pull_triple_bottom 异常：{e}"
+
+
+def push_chartink() -> Tuple[bool, str]:
+    try:
+        import storage as loc
+        data = loc.load_chartink()
+        ok, msg = _upload_latest("chartink", data)
+        _upload_snapshot("chartink", data)
+        if ok:
+            return True, "Chartink 突破扫描结果已同步"
+        return False, f"chartink: {msg}"
+    except Exception as e:
+        return False, f"push_chartink 异常：{e}"
+
+
+def pull_chartink() -> Tuple[bool, str]:
+    try:
+        from storage import F_CHARTINK, _save
+        cloud_data = _download_latest("chartink")
+        if not isinstance(cloud_data, dict):
+            return False, "云端无 Chartink 扫描数据"
+        _save(F_CHARTINK, cloud_data)
+        return True, "Chartink 扫描数据已从云端恢复"
+    except Exception as e:
+        return False, f"pull_chartink 异常：{e}"
 
 
 def push_tb_snapshot(session_id: str, payload: dict) -> bool:
@@ -777,6 +808,7 @@ def push_all(force: bool = False) -> Tuple[bool, str]:
         ("symbols",       lambda: loc.load_symbols()),
         ("symbol_groups", lambda: loc.load_symbol_groups()),
         ("triple_bottom", lambda: loc.load_triple_bottom()),
+        ("chartink",      lambda: loc.load_chartink()),
         ("alerts",        lambda: loc._load(loc.F_ALERTS, [])),
         ("starred",       lambda: loc._load(loc.F_STARRED, [])),
         ("ticker_notes",  lambda: loc._load(loc.F_TICKER_NOTES, {})),
@@ -787,7 +819,7 @@ def push_all(force: bool = False) -> Tuple[bool, str]:
             ok2, msg2 = _upload_latest(file_key, data)
             if not ok2:
                 errors.append(f"{file_key}: {msg2}")
-            if file_key in ("config", "wl_categories", "hl_categories", "symbols", "symbol_groups", "triple_bottom", "alerts", "starred", "ticker_notes", "link_clicks"):
+            if file_key in ("config", "wl_categories", "hl_categories", "symbols", "symbol_groups", "triple_bottom", "chartink", "alerts", "starred", "ticker_notes", "link_clicks"):
                 _upload_snapshot(file_key, data)
         except Exception as e:
             errors.append(f"{file_key}: {e}")
@@ -915,6 +947,9 @@ def pull_all() -> Dict[str, Any]:
 
     ok_tb, msg_tb = pull_triple_bottom()
     results["triple_bottom"] = (ok_tb, msg_tb)
+
+    ok_ci, msg_ci = pull_chartink()
+    results["chartink"] = (ok_ci, msg_ci)
 
     ok_tbsnap, msg_tbsnap = pull_tb_snapshots()
     results["tb_snapshots"] = (ok_tbsnap, msg_tbsnap)
