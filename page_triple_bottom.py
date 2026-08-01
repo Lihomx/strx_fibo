@@ -663,6 +663,11 @@ def render_triple_bottom_page():
         unsafe_allow_html=True
     )
 
+    # 准备共享数据提升循环渲染效率
+    all_clicks_data = storage.get_all_link_clicks()
+    wl = storage.load_watchlist()
+    today_str_val = datetime.now().strftime("%Y-%m-%d")
+
     # 循环渲染每一项结果卡片
     for i, r in enumerate(filtered):
         ticker = r["symbol"]
@@ -715,8 +720,6 @@ def render_triple_bottom_page():
                         st.rerun()
 
                 with btn_col2:
-                    all_clicks_data = storage.get_all_link_clicks()
-                    today_str_val = datetime.now().strftime("%Y-%m-%d")
                     click_entry = all_clicks_data.get(f"{ticker.upper()}:tv", {}) if isinstance(all_clicks_data, dict) else {}
                     total_c = click_entry.get("total", 0) if isinstance(click_entry, dict) else 0
                     by_date_map = click_entry.get("by_date", {}) if isinstance(click_entry, dict) else {}
@@ -736,7 +739,6 @@ def render_triple_bottom_page():
                     )
 
                 with btn_col3:
-                    wl = storage.load_watchlist()
                     is_in_wl = any(item["ticker"].upper() == ticker.upper() for item in wl)
                     
                     if not is_in_wl:

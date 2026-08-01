@@ -50,13 +50,21 @@ def _ensure_scan_snapshot_dir():
 
 IO_LOCK = threading.Lock()
 
+_IO_CACHE: Dict[str, Tuple[float, Any]] = {}
+
 # ── 通用 IO ──────────────────────────────────────────────────────────
 def _load(path: str, default):
     with IO_LOCK:
         try:
             if os.path.exists(path):
+                mtime = os.path.getmtime(path)
+                cached = _IO_CACHE.get(path)
+                if cached and cached[0] == mtime:
+                    return cached[1]
                 with open(path, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    data = json.load(f)
+                _IO_CACHE[path] = (mtime, data)
+                return data
         except Exception:
             pass
         return default
@@ -67,6 +75,11 @@ def _save(path: str, data) -> bool:
         try:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+            try:
+                mtime = os.path.getmtime(path)
+                _IO_CACHE[path] = (mtime, data)
+            except Exception:
+                _IO_CACHE.pop(path, None)
             return True
         except Exception:
             return False
