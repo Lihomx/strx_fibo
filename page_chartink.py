@@ -506,8 +506,9 @@ def render():
             unsafe_allow_html=True,
         )
 
+        # 💡 隐形事件监听组件：捕捉原链接点击，能在后台落盘计数，同时在前台秒级实时更新 (今日/总) 数字
         import streamlit.components.v1 as _components
-        _components.html("""
+        _components.html(r"""
         <script>
         (function() {
             try {
@@ -520,6 +521,7 @@ def render():
                     if (btn) {
                         var tk = btn.getAttribute('data-ticker');
                         if (tk) {
+                            // 1. 发送后台 IFrame 唤醒 Streamlit 进行落盘保存
                             var f = pDoc.createElement('iframe');
                             f.style.display = 'none';
                             f.src = '/?_tv_click=' + encodeURIComponent(tk);
@@ -527,6 +529,23 @@ def render():
                             setTimeout(function() {
                                 try { f.remove(); } catch(err) {}
                             }, 6000);
+
+                            // 2. 前台 DOM 瞬间更新数值（无需等待页面刷新）
+                            try {
+                                var spans = btn.getElementsByTagName('span');
+                                if (spans && spans.length > 0) {
+                                    var span = spans[spans.length - 1];
+                                    var txt = span.innerText || span.textContent || "";
+                                    var m = txt.match(/\((\d+)\/(\d+)\)/);
+                                    if (m) {
+                                        var today = parseInt(m[1], 10) + 1;
+                                        var total = parseInt(m[2], 10) + 1;
+                                        span.innerText = '(' + today + '/' + total + ')';
+                                        span.style.color = '#4ade80';
+                                        span.style.fontWeight = '600';
+                                    }
+                                }
+                            } catch(err) {}
                         }
                     }
                 }, true);
