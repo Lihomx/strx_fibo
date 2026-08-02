@@ -322,8 +322,34 @@ def render():
 def render_page_chartink():
     st.markdown("## 📈 Chartink · 4 Hour Breakout 7条规则突破扫描")
     
-    # 后台扫描任务实时交互通知
-    bg_scan_manager.render_status_banner("chartink_scan")
+    # ── 状态轮询与展示 ──
+    status = bg_scan_manager.get_status()
+    if status["status"] == "running":
+        try:
+            from streamlit_autorefresh import st_autorefresh
+            st_autorefresh(interval=3000, key="chartink_scan_auto_refresh")
+        except Exception:
+            pass
+        st.info(f"🔄 后台扫描正在进行中: **{status['job_label']}**")
+        st.progress(status["progress"])
+        st.caption(f"当前正在扫描: {status['current']} ({status['done_count']}/{status['total_count']})")
+        st.caption("💡 扫描会在后台持续运行，您可以安全关闭此页面。结果将自动保存。")
+        if st.button("⏹ 取消后台扫描", key="chartink_cancel_btn"):
+            bg_scan_manager.request_cancel()
+            st.warning("正在请求取消，请稍候...")
+            st.rerun()
+            
+    elif status["status"] in ("done", "error", "cancelled") and status.get("job_type") == "chartink_scan":
+        if status["status"] == "done":
+            st.success("✅ 后台扫描任务已完成!")
+        elif status["status"] == "error":
+            st.error(f"❌ 后台扫描任务出错! 错误信息: {status.get('error', '')}")
+        elif status["status"] == "cancelled":
+            st.warning("⚠️ 后台扫描任务已被取消。")
+            
+        if st.button("清除状态提示", key="chartink_clear_status_btn"):
+            bg_scan_manager.reset_to_idle()
+            st.rerun()
 
     with st.expander("ℹ️ Chartink 4H Breakout 筛选规则说明", expanded=False):
         st.markdown(
