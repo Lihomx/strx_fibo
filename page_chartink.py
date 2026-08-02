@@ -561,9 +561,9 @@ def render():
             
             is_fav = ticker.upper() in wl_set
             if is_fav:
-                fav_html = f'<a href="/?_page=chartink&_fav=del|{ticker}|{ticker}{_t_param}" target="_self" style="color:#f59e0b;text-decoration:none;font-weight:600;font-size:12px;background:rgba(245,158,11,0.15);padding:4px 10px;border-radius:4px;border:1px solid rgba(245,158,11,0.3);">★ 已收藏</a>'
+                fav_html = f'<a href="/?_page=chartink&_fav=del|{ticker}|{ticker}{_t_param}" target="_blank" class="chartink-fav-btn fav-active" data-ticker="{ticker}" data-name="{ticker}" style="color:#f59e0b;text-decoration:none;font-weight:600;font-size:12px;background:rgba(245,158,11,0.15);padding:4px 10px;border-radius:4px;border:1px solid rgba(245,158,11,0.3);">★ 已收藏</a>'
             else:
-                fav_html = f'<a href="/?_page=chartink&_fav=add|{ticker}|{ticker}{_t_param}" target="_self" style="color:#eab308;text-decoration:none;font-weight:600;font-size:12px;background:rgba(234,179,8,0.1);padding:4px 10px;border-radius:4px;border:1px solid rgba(234,179,8,0.2);">⭐ 收藏</a>'
+                fav_html = f'<a href="/?_page=chartink&_fav=add|{ticker}|{ticker}{_t_param}" target="_blank" class="chartink-fav-btn fav-inactive" data-ticker="{ticker}" data-name="{ticker}" style="color:#eab308;text-decoration:none;font-weight:600;font-size:12px;background:rgba(234,179,8,0.1);padding:4px 10px;border-radius:4px;border:1px solid rgba(234,179,8,0.2);">⭐ 收藏</a>'
             
             rows_html.append(
                 f"<tr>"
@@ -654,6 +654,55 @@ def render():
                     }
                 };
                 pDoc.addEventListener('click', pDoc._tv_click_handler, true);
+
+                // 5. 收藏按钮无刷新/静音背景发送监听
+                if (pDoc._chartink_fav_handler) {
+                    pDoc.removeEventListener('click', pDoc._chartink_fav_handler, true);
+                }
+                pDoc._chartink_fav_handler = function(e) {
+                    var btn = e.target.closest('.chartink-fav-btn');
+                    if (btn) {
+                        e.preventDefault();
+                        e.stopPropagation();
+
+                        var tk = btn.getAttribute('data-ticker');
+                        var nm = btn.getAttribute('data-name') || tk;
+                        var isFav = btn.classList.contains('fav-active');
+                        var op = isFav ? 'del' : 'add';
+
+                        var favUrl = '/?_fav=' + encodeURIComponent(op + '|' + tk + '|' + nm) + '&_cb=' + Date.now() + '_' + Math.floor(Math.random()*10000);
+
+                        try { fetch(favUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
+                        try { if (navigator.sendBeacon) { navigator.sendBeacon(favUrl); } } catch(err) {}
+                        try {
+                            var f = pDoc.createElement('iframe');
+                            f.style.display = 'none';
+                            f.src = favUrl;
+                            pDoc.body.appendChild(f);
+                            setTimeout(function() {
+                                try { f.remove(); } catch(err) {}
+                            }, 5000);
+                        } catch(err) {}
+
+                        // 瞬间更新前台 DOM（零滚动跳动，零页面重载）
+                        if (isFav) {
+                            btn.classList.remove('fav-active');
+                            btn.classList.add('fav-inactive');
+                            btn.innerHTML = '⭐ 收藏';
+                            btn.style.color = '#eab308';
+                            btn.style.backgroundColor = 'rgba(234,179,8,0.1)';
+                            btn.style.borderColor = 'rgba(234,179,8,0.2)';
+                        } else {
+                            btn.classList.remove('fav-inactive');
+                            btn.classList.add('fav-active');
+                            btn.innerHTML = '★ 已收藏';
+                            btn.style.color = '#f59e0b';
+                            btn.style.backgroundColor = 'rgba(245,158,11,0.15)';
+                            btn.style.borderColor = 'rgba(245,158,11,0.3)';
+                        }
+                    }
+                };
+                pDoc.addEventListener('click', pDoc._chartink_fav_handler, true);
             } catch(err) {}
         })();
         </script>
