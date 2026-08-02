@@ -301,75 +301,31 @@ def chartink_worker(params, update_progress, cancel_check):
 # 来源：S&P 500 官方成分股（约503只），适合作为美股基础扫描池。
 # 用户可在页面文本框中自行增删，此处仅作默认值。
 # ────────────────────────────────────────────────────────────────────
-_DEFAULT_TICKERS = """
-MMM AOS ABT ABBV ACN ATVI ADM ADP ADBE AES AFL A APD AKAM ALK ALB
-ARE ALGN ALLE LNT ALL GOOGL GOOG MO AMZN AMCR AMD AEE AAL AEP AXP
-AIG AMGN APH ADI ANSS AON APA AIV APH AAPL AMAT APTV ACGL ANET AJG
-AWK AMP ABC AME AMTM AXON APA APTV ARES APA APO APD ARNC ATMUS ARW
-T ATO ADSK AZO AVB AVY AXON BKR BALL BAC BK BBWI BAX BDX WRB BRK.B
-BBY BIO TECH BLK BX BK BMY AVGO BR BSX BLDR BXP COF CDNS CZR CPB
-COO COP CSCO C CFG CLX CME CMS KO CTLT CMCS COG CL CTSH ED CNC CF
-CINF CTAS CSCO CPAY CRL CVS CVX CDAY CHD CI CINF CTRA CMG CB CCL
-CPRT CAH KMX CCL CAT CBOE CBRE CDW CE CF CHTR CMI CMS CNP COF COO
-COP CRM COST CPRT CSX CTAS CTLT CTSH CVS CVX CDAY DHR DHI XRAY DVN
-DXCM DE DAL DDOG DFS DAY DLR DLTR DOV DOW DTE ECL ED EIX EMN ETN EA
-EMR ENPH EFX EPAM EL ELV EXC EXPE EXPD EXR XOM EXR FFIV FDS FICO
-FAST FDX FIS FITB FMC F FTV FOXA FOX BEN FCX GRMN IT GEHC GE GEV
-GEN GNRC GIS GPC GPN GPS GL GLW GM GS HIG HAL HAS HCA PEAK HSIC HSY
-HES HPE HIG HPQ HRL HST HD HON HWM HUM HBAN HII IBM ICE IEX ILMN
-INCY IR INTC INTU ISRG IVZ INVH IQV IRM JBHT J JKHY JCI JNJ JPM JNPR
-K KDP KEY KEYS KMB KIM KMI KLAC KHC KR LHX LH LRCX LW LVS LDOS LEN
-LLY LIN LYV LKQ LMT LOW LULU LYB MTB MRO MPC MKTX MAR MMC MLM MAS MA
-MKC MELI MCK MDT MET MDB MGM MCK MDLZ MOH HPE META MOS MSI MSFT MU
-MUR MRK MCO MS MSCI NDAQ NEE NKE NEM NTRS NWS NWSA NOC NVR NFLX
-NVDA NRG NUE NXPI ODFL OMC ON OKE ORCL OXY ORTX OTIS PCAR PKG PANW
-PYPL PAYX PNR ABBV PBCT PFE PCG PM PSA PGR PTC PTR PEG PSX PXD PFG
-PPG PPL PRU PEG PEP QRVO QCOM RL RTX O REG REGN RF RSG RMD ROK ROL
-ROP ROST RCL SPGI CRM SBAC SLB STE STX SRE NOW SHW SIRI SWKS SJM
-SNA SOLV SO LUV SPG SBUX STT STLD STE STZ SWK SYF SYK SYY TMUS TROW
-TGT TDY TFC GOOGL TJX TSCO TT TMO TDG TRV TRMB TFC TYL TSN UDR ULTA
-USB UPS URI UNH UNP VLO VTR VRSN VRSK VZ VRTX VLTO VST V WBA WMT WBD
-WM WAT WEC WST WFC WYNN WDC WHR WMB WTW GWW WRK XEL XYL YUM ZBRA ZBH
-ZION ZTS
-""".split()
+_DEFAULT_TICKERS = "AAPL MSFT NVDA AMZN GOOGL META TSLA BRK-B AVGO JPM"
 
+# ────────────────────────────────────────────────────────────────────
+US_SP500_TICKERS = [
+    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "BRK-B", "AVGO", "JPM",
+    "ELI", "UNH", "V", "MA", "XOM", "HD", "PG", "COST", "JNJ", "ABBV",
+    "ORCL", "BAC", "HD", "CVX", "MRK", "WMT", "KO", "NFLX", "AMD", "PEP",
+    "TMO", "PFE", "ADBE", "LIN", "MCD", "ACN", "CSCO", "ABT", "DIS", "PM",
+    "INTC", "TXN", "DHR", "INTU", "QCOM", "CAT", "VZ", "AMAT", "IBM", "AMGN",
+    "GE", "ISRG", "NOW", "LOW", "SPGI", "BKNG", "GS", "HON", "COP", "RTX",
+    "AXP", "SYK", "PLTR", "REGN", "LRCX", "PNC", "DE", "MU", "T", "PANW",
+    "SCHW", "UPS", "TJX", "CB", "MMC", "VRTX", "BMY", "BSX", "ADI", "MS",
+    "ETN", "MDLZ", "CI", "LMT", "KLAC", "SNPS", "CDNS", "WM", "NKE", "SBUX"
+]
 
-def render():
-    # ── 状态轮询与展示 ──
-    status = bg_scan_manager.get_status()
-    if status["status"] == "running":
-        st_autorefresh(interval=3000, key="chartink_scan_auto_refresh")
-        st.info(f"🔄 后台扫描正在进行中: **{status['job_label']}**")
-        st.progress(status["progress"])
-        st.caption(f"当前正在扫描: {status['current']} ({status['done_count']}/{status['total_count']})")
-        st.caption("💡 扫描会在后台持续运行，您可以安全关闭此页面。结果将自动保存。")
-        if st.button("⏹ 取消后台扫描", key="chartink_cancel_btn"):
-            bg_scan_manager.request_cancel()
-            st.warning("正在请求取消，请稍候...")
-            st.rerun()
-            
-    elif status["status"] in ("done", "error", "cancelled") and status["job_type"] == "chartink_scan":
-        if status["status"] == "done":
-            st.success(f"✅ 后台扫描任务已完成!")
-        elif status["status"] == "error":
-            st.error(f"❌ 后台扫描任务出错! 错误信息: {status.get('error', '')}")
-        elif status["status"] == "cancelled":
-            st.warning("⚠️ 后台扫描任务已被取消。")
-            
-        if st.button("清除状态提示", key="chartink_clear_status_btn"):
-            bg_scan_manager.reset_to_idle()
-            st.rerun()
+def render_page_chartink():
+    st.markdown("## 📈 Chartink · 4 Hour Breakout 7条规则突破扫描")
+    
+    # 后台扫描任务实时交互通知
+    bg_scan_manager.render_status_banner("chartink_scan")
 
-    st.markdown("## 📈 Chartink · 4 Hour Breakout")
-    st.markdown(
-        '<p style="color:#6b7280;font-size:13px;margin-top:-8px">'
-        '扫描满足全部 7 个条件的品种：4H 量能爆发 + 日线趋势多头（一云 / RSI / Supertrend）'
-        '</p>',
-        unsafe_allow_html=True,
-    )
-
-    # ── 条件说明卡片 ────────────────────────────────────────────────
-    with st.expander("📋 扫描条件说明", expanded=False):
+    with st.expander("ℹ️ Chartink 4H Breakout 筛选规则说明", expanded=False):
+        st.markdown(
+            "本扫描器严格依据 Chartink 4 Hour Breakout 策略的 **7 条技术指标逻辑** 对目标股票池进行全量检索："
+        )
         conditions = [
             ("[0]", "4H Volume[0] > 4H Volume[-1] × 2",         "当前4H成交量 > 前一根4H成交量的2倍"),
             ("[1]", "4H Volume[-1] > 4H Volume[-2] × 1.5",       "前一根4H成交量 > 再前一根4H成交量的1.5倍"),
@@ -432,25 +388,46 @@ def render():
         clear_btn = st.button("🗑️ 清空结果", type="secondary", use_container_width=True, key="chartink_clear", disabled=is_running)
 
     if clear_btn:
-        cache = storage.load_chartink()
-        if cache and isinstance(cache, dict) and (cache.get("passed") or cache.get("total")):
-            storage._save_with_backup(storage.F_CHARTINK, cache)
-            try:
-                import cloud_sync
-                if cloud_sync.is_configured():
-                    cloud_sync._upload_snapshot("chartink", cache)
-            except Exception:
-                pass
-        storage.save_chartink({})
-        try:
-            import cloud_sync
-            if cloud_sync.is_configured():
-                cloud_sync.push_chartink()
-        except Exception:
-            pass
-        st.toast("🗑️ 已自动备份当前扫描结果并成功清空！", icon="✅")
+        storage.clear_chartink_results()
+        st.toast("🗑️ 已自动创建备份快照并成功清空！", icon="✅")
         time.sleep(0.5)
         st.rerun()
+
+    # ── 📦 扫描批次历史与恢复 ───────────────────────────────────────
+    snapshots = storage.load_chartink_snapshots()
+    options = []
+    sid_map = {}
+    for s in snapshots:
+        sid = s.get("session_id", "")
+        scan_time = s.get("scan_time", "—")
+        tot = s.get("total", 0)
+        pas = s.get("passed_count", 0)
+        label = f"{scan_time} | 扫描 {tot} 支 | 通过 {pas} 支 | {sid[:18]}"
+        options.append(label)
+        sid_map[label] = sid
+
+    with st.expander("📦 选择历史扫描批次（备份与恢复）", expanded=True if not storage.load_chartink() else False):
+        if not options:
+            st.caption("💡 暂无可恢复批次（无快照）。每次扫描或清空时都会自动创建快照备份。")
+        else:
+            col_snap1, col_snap2 = st.columns([3, 1])
+            with col_snap1:
+                selected_label = st.selectbox(
+                    "恢复批次",
+                    options,
+                    key="chartink_restore_picker",
+                    label_visibility="collapsed",
+                )
+            with col_snap2:
+                selected_sid = sid_map.get(selected_label, "")
+                if st.button("♻️ 恢复所选批次", key="chartink_restore_btn", use_container_width=True, disabled=not selected_sid or is_running):
+                    ok, msg, n = storage.restore_chartink_snapshot(selected_sid)
+                    if ok:
+                        st.toast(f"✅ 成功恢复批次：通过 {n} 个品种！", icon="♻️")
+                        time.sleep(0.5)
+                        st.rerun()
+                    else:
+                        st.error(f"❌ 恢复失败：{msg}")
 
     tickers = [t.strip().upper() for t in ticker_input.replace("\n", " ").split() if t.strip()]
 
@@ -594,70 +571,61 @@ def render():
 
         # 💡 隐形事件监听组件：捕捉原链接点击，能在后台落盘计数，同时在前台秒级实时更新 (今日/总) 数字
         import streamlit.components.v1 as _components
-        _components.html(r"""
-        <script>
-        (function() {
-            try {
-                var pDoc = window.parent.document;
-                if (pDoc._tv_click_handler) {
-                    pDoc.removeEventListener('click', pDoc._tv_click_handler, true);
-                }
-                pDoc._tv_click_handler = function(e) {
-                    var btn = e.target.closest('.tv-btn, .sina-btn');
-                    if (btn) {
-                        var tk = btn.getAttribute('data-ticker');
-                        if (tk) {
-                            tk = tk.trim().toUpperCase();
-                            var cbUrl = '/?_tv_click=' + encodeURIComponent(tk) + '&_cb=' + Date.now() + '_' + Math.floor(Math.random()*10000);
-
-                            // 1. fetch 强制 no-store 穿透所有浏览器/CDN 缓存
-                            try { fetch(cbUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
-
-                            // 2. sendBeacon 后台保障发送
-                            try { if (navigator.sendBeacon) { navigator.sendBeacon(cbUrl); } } catch(err) {}
-
-                            // 3. IFrame 静音发送
-                            try {
-                                var f = pDoc.createElement('iframe');
-                                f.style.display = 'none';
-                                f.src = cbUrl;
-                                pDoc.body.appendChild(f);
-                                setTimeout(function() {
-                                    try { f.remove(); } catch(err) {}
-                                }, 6000);
-                            } catch(err) {}
-
-                            // 4. 前台 DOM 瞬间更新该 ticker 所有对应按钮数值 (秒级反馈)
-                            try {
-                                var allBtns = pDoc.querySelectorAll('.tv-btn, .sina-btn');
-                                for (var i = 0; i < allBtns.length; i++) {
-                                    var b = allBtns[i];
-                                    var bTk = b.getAttribute('data-ticker');
-                                    if (bTk && bTk.trim().toUpperCase() === tk) {
-                                        var spans = b.getElementsByTagName('span');
-                                        if (spans && spans.length > 0) {
-                                            var span = spans[spans.length - 1];
-                                            var txt = span.innerText || span.textContent || "";
-                                            var m = txt.match(/\((\d+)\/(\d+)\)/);
-                                            if (m) {
-                                                var today = parseInt(m[1], 10) + 1;
-                                                var total = parseInt(m[2], 10) + 1;
-                                                span.innerText = '(' + today + '/' + total + ')';
-                                                span.style.color = '#4ade80';
-                                                span.style.fontWeight = '600';
-                                            }
-                                        }
-                                    }
-                                }
-                            } catch(err) {}
-                        }
-                    }
-                };
-                pDoc.addEventListener('click', pDoc._tv_click_handler, true);
-            } catch(err) {}
-        })();
-        </script>
-        """, height=0)
+        _js_code = (
+            "<script>\n"
+            "(function() {\n"
+            "    try {\n"
+            "        var pDoc = window.parent.document;\n"
+            "        if (pDoc._tv_click_handler) {\n"
+            "            pDoc.removeEventListener('click', pDoc._tv_click_handler, true);\n"
+            "        }\n"
+            "        pDoc._tv_click_handler = function(e) {\n"
+            "            var btn = e.target.closest('.tv-btn, .sina-btn');\n"
+            "            if (btn) {\n"
+            "                var tk = btn.getAttribute('data-ticker');\n"
+            "                if (tk) {\n"
+            "                    tk = tk.trim().toUpperCase();\n"
+            "                    var cbUrl = '/?_tv_click=' + encodeURIComponent(tk) + '&_cb=' + Date.now() + '_' + Math.floor(Math.random()*10000);\n"
+            "                    try { fetch(cbUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}\n"
+            "                    try { if (navigator.sendBeacon) { navigator.sendBeacon(cbUrl); } } catch(err) {}\n"
+            "                    try {\n"
+            "                        var f = pDoc.createElement('iframe');\n"
+            "                        f.style.display = 'none';\n"
+            "                        f.src = cbUrl;\n"
+            "                        pDoc.body.appendChild(f);\n"
+            "                        setTimeout(function() { try { f.remove(); } catch(err) {} }, 6000);\n"
+            "                    } catch(err) {}\n"
+            "                    try {\n"
+            "                        var allBtns = pDoc.querySelectorAll('.tv-btn, .sina-btn');\n"
+            "                        for (var i = 0; i < allBtns.length; i++) {\n"
+            "                            var b = allBtns[i];\n"
+            "                            var bTk = b.getAttribute('data-ticker');\n"
+            "                            if (bTk && bTk.trim().toUpperCase() === tk) {\n"
+            "                                var spans = b.getElementsByTagName('span');\n"
+            "                                if (spans && spans.length > 0) {\n"
+            "                                    var span = spans[spans.length - 1];\n"
+            "                                    var txt = span.innerText || span.textContent || '';\n"
+            "                                    var m = txt.match(/\\((\\d+)\\/(\\d+)\\)/);\n"
+            "                                    if (m) {\n"
+            "                                        var today = parseInt(m[1], 10) + 1;\n"
+            "                                        var total = parseInt(m[2], 10) + 1;\n"
+            "                                        span.innerText = '(' + today + '/' + total + ')';\n"
+            "                                        span.style.color = '#4ade80';\n"
+            "                                        span.style.fontWeight = '600';\n"
+            "                                    }\n"
+            "                                }\n"
+            "                            }\n"
+            "                        }\n"
+            "                    } catch(err) {}\n"
+            "                }\n"
+            "            }\n"
+            "        };\n"
+            "        pDoc.addEventListener('click', pDoc._tv_click_handler, true);\n"
+            "    } catch(err) {}\n"
+            "})();\n"
+            "</script>"
+        )
+        _components.html(_js_code, height=0)
 
         # 详细条件展开
         for r in passed:
@@ -721,7 +689,6 @@ def _stat_card(label: str, value: str, color: str) -> str:
 
 
 def _render_details(details: list):
-    """渲染7条规则的逐条状态表格"""
     html = (
         '<table style="width:100%;border-collapse:collapse;font-size:12px;color:var(--text-color, #111)">'
         '<thead><tr>'
