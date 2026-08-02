@@ -817,7 +817,7 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
     rows_html = []
 
     all_clicks_data = storage.get_all_link_clicks()
-    today_str_val = datetime.now().strftime("%Y-%m-%d")
+    today_str_val = storage.get_today_str()
 
     for _, r in df.iterrows():
         in_zone   = bool(r.get("in_zone", False))

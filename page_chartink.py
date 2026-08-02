@@ -530,7 +530,7 @@ def render():
         st.markdown('<div class="n-warn">本次扫描无品种满足全部7个条件。</div>', unsafe_allow_html=True)
     else:
         all_clicks_data = storage.get_all_link_clicks()
-        today_str_val = datetime.datetime.now().strftime("%Y-%m-%d")
+        today_str_val = storage.get_today_str()
         from assets import tv_url
         
         wl_items = storage.load_watchlist()

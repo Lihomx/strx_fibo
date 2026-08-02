@@ -46,6 +46,7 @@ def start_scheduler_if_needed() -> bool:
         hour   = int(cfg.get("scan_hour",   9))
         minute = int(cfg.get("scan_minute", 0))
         interval_min = int(cfg.get("scan_interval_minutes", 17))
+        chartink_interval_min = int(cfg.get("chartink_scan_interval_minutes", 60))
 
         _scheduler = BackgroundScheduler(
             timezone="Asia/Shanghai",
@@ -68,6 +69,14 @@ def start_scheduler_if_needed() -> bool:
                 replace_existing=True,
             )
             added_jobs.append(f"periodic every {interval_min}m")
+        if cfg.get("chartink_scan_enabled", True):
+            _scheduler.add_job(
+                _run_periodic_chartink_scan,
+                IntervalTrigger(minutes=chartink_interval_min, timezone="Asia/Shanghai"),
+                id="periodic_chartink_scan",
+                replace_existing=True,
+            )
+            added_jobs.append(f"chartink periodic every {chartink_interval_min}m")
 
         if not added_jobs:
             logging.info("Scheduler has no jobs enabled, not starting.")
@@ -216,4 +225,76 @@ def _run_periodic_watchlist_scan() -> None:
                 
     except Exception as e:
         logging.exception(f"[Scheduler] 周期自选扫描异常: {e}")
+
+
+def _run_periodic_chartink_scan() -> None:
+    """每隔指定分钟扫描一次已收藏的品种，使用 Chartink 4 Hour Breakout 策略"""
+    logging.info(f"[Scheduler] Chartink 4H 突破周期自选扫描启动: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    try:
+        import time
+        import storage
+        from page_chartink import _check_ticker
+        from alerts import dispatch_alerts_chartink
+
+        cfg = storage.load_config()
+        if not cfg.get("scan_enabled"):
+            logging.info("[Scheduler] 扫描开关未开启，跳过 Chartink 周期扫描")
+            return
+
+        wl_items = storage.load_watchlist()
+        if not wl_items:
+            logging.info("[Scheduler] 自选列表为空，跳过 Chartink 周期扫描")
+            return
+
+        passed_list = []
+        failed_list = []
+        error_list = []
+
+        total = len(wl_items)
+        for item in wl_items:
+            ticker = item.get("ticker")
+            if not ticker:
+                continue
+            ticker = ticker.upper()
+            name = item.get("name", ticker)
+
+            try:
+                res = _check_ticker(ticker)
+                res["ticker"] = ticker
+                if res.get("error"):
+                    error_list.append(res)
+                elif res.get("passed"):
+                    passed_list.append(res)
+                    try:
+                        dispatch_alerts_chartink(
+                            ticker=ticker,
+                            name=name,
+                            timeframe="4h",
+                            price=float(res.get("close", 0.0) or 0.0),
+                            volume_4h=float(res.get("volume_4h", 0.0) or 0.0),
+                            rsi=float(res.get("rsi", 0.0) or 0.0),
+                            label="4H 突破",
+                            cfg=cfg
+                        )
+                    except Exception as ex_a:
+                        logging.warning(f"[Scheduler] 派发 Chartink 告警 {ticker} 失败: {ex_a}")
+                else:
+                    failed_list.append(res)
+            except Exception as e:
+                error_list.append({"ticker": ticker, "passed": False, "details": [], "error": str(e)})
+
+            time.sleep(0.15)
+
+        results = {
+            "passed": passed_list,
+            "failed": failed_list,
+            "errors": error_list,
+            "scanned_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "total": total,
+        }
+        storage.save_chartink(results)
+        logging.info(f"[Scheduler] Chartink 周期扫描完成，共 {total} 个品种，其中通过 {len(passed_list)} 个")
+    except Exception as e:
+        logging.exception(f"[Scheduler] Chartink 周期自选扫描异常: {e}")
+
 

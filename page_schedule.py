@@ -24,8 +24,14 @@ def render():
     if status["running"]:
         jobs = status.get("jobs", [])
         st.markdown('<div class="notice-ok">✅ 后台定时器运行中</div>', unsafe_allow_html=True)
+        job_name_map = {
+            "daily_fibo_scan": "每日全量 Fibonacci 扫描",
+            "periodic_watchlist_scan": "自选周期扫描 (EMA20 + Pivot 15m)",
+            "periodic_chartink_scan": "Chartink · 4 Hour Breakout 周期扫描 (自选品种)",
+        }
         for job in jobs:
-            st.markdown(f"- 任务 **{job['id']}**: 下次执行时间 `{job['next_run']}`")
+            j_name = job_name_map.get(job['id'], job['id'])
+            st.markdown(f"- 任务 **{j_name}** (`{job['id']}`): 下次执行时间 `{job['next_run']}`")
     else:
         st.markdown('<div class="notice-warn">⏸ 定时器未启动（已停用或 APScheduler 未安装）</div>',
                     unsafe_allow_html=True)
@@ -53,17 +59,26 @@ def render():
         interval_min = st.number_input("自选扫描间隔（分钟）", min_value=1, max_value=1440,
                                        value=int(cfg.get("scan_interval_minutes", 17)),
                                        help="开启后，每隔指定分钟对收藏夹内品种进行 15分钟 EMA20 + 日内 Pivot 多头条件扫描。")
+
+        st.markdown("---")
+        st.markdown("**3. Chartink · 4 Hour Breakout 定时扫描 (自选品种)**")
+        chartink_enabled = st.checkbox("启用 Chartink 4H Breakout 周期扫描", value=bool(cfg.get("chartink_scan_enabled", True)))
+        chartink_interval_min = st.number_input("Chartink 扫描间隔（分钟）", min_value=1, max_value=1440,
+                                               value=int(cfg.get("chartink_scan_interval_minutes", 60)),
+                                               help="开启后，每隔指定分钟对收藏夹（自选品种）进行 Chartink 4 Hour Breakout 7条规则突破条件扫描。")
                                       
         submit = st.form_submit_button("💾 保存并重启定时器", type="primary", use_container_width=True)
 
     if submit:
         cfg.update({
-            "scan_enabled":          enabled,
-            "daily_scan_enabled":    daily_enabled,
-            "periodic_scan_enabled": periodic_enabled,
-            "scan_hour":             hour,
-            "scan_minute":           minute,
-            "scan_interval_minutes": interval_min,
+            "scan_enabled":                   enabled,
+            "daily_scan_enabled":             daily_enabled,
+            "periodic_scan_enabled":          periodic_enabled,
+            "chartink_scan_enabled":          chartink_enabled,
+            "scan_hour":                      hour,
+            "scan_minute":                    minute,
+            "scan_interval_minutes":          interval_min,
+            "chartink_scan_interval_minutes": chartink_interval_min,
         })
         ok = storage.save_config(cfg)
         if ok:
@@ -74,6 +89,8 @@ def render():
                     msg_parts.append(f"1. 每日全量扫描：每天 {hour:02d}:{minute:02d} CST")
                 if periodic_enabled:
                     msg_parts.append(f"2. 自选周期扫描：每 {interval_min} 分钟一次")
+                if chartink_enabled:
+                    msg_parts.append(f"3. Chartink 4H Breakout 周期扫描：每 {chartink_interval_min} 分钟一次")
                 if not msg_parts:
                     msg_parts.append("（注意：未勾选任何具体扫描任务，定时器处于空载状态）")
                 st.success(f"✅ 已保存并重启定时器！\n" + "\n".join(msg_parts))

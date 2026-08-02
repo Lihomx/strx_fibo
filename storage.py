@@ -173,10 +173,14 @@ DEFAULT_CFG = {
     "scan_interval_minutes": 17,
     "daily_scan_enabled": True,
     "periodic_scan_enabled": True,
+    "chartink_scan_enabled": True,
+    "chartink_scan_interval_minutes": 60,
+    "alert_cooldown_chartink": 240,
     "filter_4h_ema20": False,
     "homepage": "watchlist",
     "alert_template": "📐 STRX Fibo 信号 {label}\n━━━━━━━━━━━━━━━━━━━━\n🏷 {name} ({ticker})\n📅 框架: {tf}\n💰 价格: {price}\n📏 黄金区: {zone_bot} – {zone_top}\n📉 回撤: {retrace_pct}%\n🔗 {url}\n🕐 {time}",
     "alert_template_ema_pivot": "🚀 EMA20 + Daily Pivot 信号 {label}\n━━━━━━━━━━━━━━━━━━━━\n🏷 {name} ({ticker})\n📅 框架: {tf}\n💰 价格: {price}\n📈 EMA20: {ema}\n🎯 Pivot: {pivot}\n🔗 {url}\n🕐 {time}",
+    "alert_template_chartink": "📈 Chartink 4H Breakout 突破信号 {label}\n━━━━━━━━━━━━━━━━━━━━\n🏷 {name} ({ticker})\n📅 框架: {tf}\n💰 价格: {price}\n📊 4H成交量: {volume_4h}\n📈 RSI: {rsi}\n🔗 {url}\n🕐 {time}",
 }
 
 
@@ -555,12 +559,23 @@ def clear_alert_log() -> bool:
 
 F_LINK_CLICKS = os.path.join(_BASE, "data_link_clicks.json")
 
+def get_today_str() -> str:
+    """按用户配置时区返回当前日期字符串 YYYY-MM-DD"""
+    try:
+        cfg = load_config()
+        tz_name = cfg.get("display_timezone") or "Asia/Shanghai"
+        import pytz
+        from datetime import datetime
+        return datetime.now(pytz.timezone(tz_name)).strftime("%Y-%m-%d")
+    except Exception:
+        from datetime import datetime
+        return datetime.now().strftime("%Y-%m-%d")
+
 def increment_link_click(ticker: str, link_type: str = "tv") -> None:
-    """记录一次行情链接点击，ticker维度，按日期分组"""
+    """记录一次行情链接点击，ticker维度，按日期分组并推送云端"""
     if not ticker:
         return
-    from datetime import datetime
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = get_today_str()
     data = _load(F_LINK_CLICKS, {})
     if not isinstance(data, dict):
         data = {}
@@ -573,12 +588,11 @@ def increment_link_click(ticker: str, link_type: str = "tv") -> None:
         by_date = {}
     by_date[today] = by_date.get(today, 0) + 1
     data[key]["by_date"] = by_date
-    _save(F_LINK_CLICKS, data)
+    _save_with_backup(F_LINK_CLICKS, data)
     try:
         import cloud_sync
         if cloud_sync.is_configured():
-            import threading
-            threading.Thread(target=cloud_sync.push_link_clicks, daemon=True).start()
+            cloud_sync.push_link_clicks()
     except Exception:
         pass
 
@@ -586,9 +600,8 @@ def get_link_clicks(ticker: str, link_type: str = "tv") -> dict:
     """获取某 ticker 的点击统计 {total, today}"""
     if not ticker:
         return {"total": 0, "today": 0}
-    from datetime import datetime
-    today = datetime.now().strftime("%Y-%m-%d")
-    data = _load(F_LINK_CLICKS, {})
+    today = get_today_str()
+    data = get_all_link_clicks()
     if not isinstance(data, dict):
         return {"total": 0, "today": 0}
     key = f"{str(ticker).upper()}:{link_type}"
@@ -603,8 +616,16 @@ def get_link_clicks(ticker: str, link_type: str = "tv") -> dict:
     }
 
 def get_all_link_clicks() -> dict:
-    """返回全量点击数据"""
+    """返回全量点击数据（如本地为空，尝试从云端恢复）"""
     res = _load(F_LINK_CLICKS, {})
+    if not res:
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                cloud_sync.pull_link_clicks()
+                res = _load(F_LINK_CLICKS, {})
+        except Exception:
+            pass
     return res if isinstance(res, dict) else {}
 
 

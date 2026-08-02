@@ -1006,6 +1006,16 @@ def main():
                 st.error(f"❌ 扫描异常: {e}")
             st.stop()
             return
+        elif _trigger_val == "chartink":
+            import scheduler
+            st.write("🔄 收到外部触发：正在执行 Chartink 4H Breakout 周期扫描...")
+            try:
+                scheduler._run_periodic_chartink_scan()
+                st.success("✅ Chartink 4H Breakout 周期扫描已执行！")
+            except Exception as e:
+                st.error(f"❌ 扫描异常: {e}")
+            st.stop()
+            return
 
     if not _check_password():
         st.stop()

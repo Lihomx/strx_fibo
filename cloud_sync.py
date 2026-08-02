@@ -550,7 +550,7 @@ def pull_link_clicks() -> Tuple[bool, str]:
         cloud_data = _download_latest("link_clicks")
         if not isinstance(cloud_data, dict):
             return False, "云端无点击统计数据"
-        local_data = loc.get_all_link_clicks()
+        local_data = loc._load(loc.F_LINK_CLICKS, {})
         if not isinstance(local_data, dict):
             local_data = {}
         for k, v in cloud_data.items():
@@ -980,6 +980,10 @@ def pull_all() -> Dict[str, Any]:
             results["ticker_notes"] = (False, "无云端数据")
     except Exception as e:
         results["ticker_notes"] = (False, str(e))
+
+    # 链接点击统计
+    ok_lc, msg_lc = pull_link_clicks()
+    results["link_clicks"] = (ok_lc, msg_lc)
 
     return results
 

@@ -210,7 +210,7 @@ def render():
     st.markdown("---")
     st.markdown("#### 💬 自定义告警消息模版")
     
-    tmpl_tab1, tmpl_tab2 = st.tabs(["📐 Fibonacci 扫描模版", "🚀 EMA20 + Daily Pivot 模版"])
+    tmpl_tab1, tmpl_tab2, tmpl_tab3 = st.tabs(["📐 Fibonacci 扫描模版", "🚀 EMA20 + Daily Pivot 模版", "📈 Chartink 4H Breakout 模版"])
     
     with tmpl_tab1:
         st.markdown("""
@@ -293,6 +293,45 @@ def render():
             st.info("📢 模版渲染预览效果：")
             st.code(rendered, language="text")
 
+    with tmpl_tab3:
+        st.markdown("""
+        <div class="n-info">
+        💡 <b>Chartink 4H Breakout 模版支持占位符：</b><br>
+        <code>{label}</code> - 信号类型 (4H 突破)<br>
+        <code>{name}</code> - 品种中文名<br>
+        <code>{ticker}</code> - 品种代码 (如 AAPL)<br>
+        <code>{tf}</code> - 时间框架 (4h)<br>
+        <code>{price}</code> - 当前收盘价格<br>
+        <code>{volume_4h}</code> - 4H 成交量<br>
+        <code>{rsi}</code> - Daily RSI 值<br>
+        <code>{url}</code> - TradingView 图表链接<br>
+        <code>{time}</code> - 触发时间
+        </div>""", unsafe_allow_html=True)
+
+        default_tmpl_ci = "📈 Chartink 4H Breakout 突破信号 {label}\n━━━━━━━━━━━━━━━━━━━━\n🏷 {name} ({ticker})\n📅 框架: {tf}\n💰 价格: {price}\n📊 4H成交量: {volume_4h}\n📈 RSI: {rsi}\n🔗 {url}\n🕐 {time}"
+        
+        with st.form("template_form_chartink"):
+            tmpl_ci = st.text_area("消息模版",
+                                   value=cfg.get("alert_template_chartink", default_tmpl_ci),
+                                   height=220,
+                                   help="自定义推送的消息格式，支持换行和纯文本占位符")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                save_tmpl_ci = st.form_submit_button("💾 保存模版", width="stretch")
+            with col2:
+                test_tmpl_ci = st.form_submit_button("🧪 测试模版效果", width="stretch")
+                
+        if save_tmpl_ci:
+            storage.save_config({"alert_template_chartink": tmpl_ci})
+            st.success("✅ Chartink 告警消息模版已保存")
+            st.rerun()
+            
+        if test_tmpl_ci:
+            rendered = alt.build_message_chartink("AAPL", "苹果公司", "4h", 100.5, 1250000, 62.5, "4H 突破", template=tmpl_ci)
+            st.info("📢 模版渲染预览效果：")
+            st.code(rendered, language="text")
+
     # ── 告警过滤与冷却设置（全局）────────────────────────────────────────
     st.markdown("---")
     st.markdown("#### ⚙️ 告警触发与冷却设置")
@@ -309,7 +348,7 @@ def render():
             
         st.markdown("<div style='margin: 10px 0;'></div>", unsafe_allow_html=True)
         
-        col_cd1, col_cd2 = st.columns(2)
+        col_cd1, col_cd2, col_cd3 = st.columns(3)
         with col_cd1:
             cd_fibo = st.slider("📐 Fibonacci 扫描冷却时间（分钟）",
                                 min_value=15, max_value=1440,
@@ -322,6 +361,12 @@ def render():
                                value=int(cfg.get("alert_cooldown_ema_pivot", cfg.get("alert_cooldown", 240))),
                                step=15,
                                help="同一资产在 EMA + Daily Pivot 扫描中的告警最小间隔（分钟）")
+        with col_cd3:
+            cd_chartink = st.slider("📈 Chartink 4H Breakout 冷却时间（分钟）",
+                                   min_value=15, max_value=1440,
+                                   value=int(cfg.get("alert_cooldown_chartink", cfg.get("alert_cooldown", 240))),
+                                   step=15,
+                                   help="同一资产在 Chartink 扫描中的告警最小间隔（分钟）")
                                
         if st.form_submit_button("💾 保存设置", width="stretch"):
             storage.save_config({
@@ -329,6 +374,7 @@ def render():
                 "filter_4h_ema20": filter_4h,
                 "alert_cooldown_fibo": cd_fibo,
                 "alert_cooldown_ema_pivot": cd_ema,
+                "alert_cooldown_chartink": cd_chartink,
             })
             st.success("✅ 告警过滤与冷却时间配置已保存")
             st.rerun()
@@ -724,7 +770,7 @@ def render_alert_log_table(full_page=False):
             
             # 预加载全量点击数据
             all_clicks_data = storage.get_all_link_clicks()
-            today_str_val = datetime.date.today().strftime("%Y-%m-%d")
+            today_str_val = storage.get_today_str()
 
             # 💡 用 HTML 渲染美观、大字体的表格，支持悬停高亮和批次底色交替，自适应深浅色主题
             try:

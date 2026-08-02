@@ -140,6 +140,41 @@ def build_message_ema_pivot(ticker: str, name: str, tf: str,
     )
 
 
+def build_message_chartink(ticker: str, name: str, timeframe: str,
+                            price: float, volume_4h: float, rsi: float,
+                            label: str = "4H 突破", template: str = None) -> str:
+    from assets import tv_url
+    import storage
+    is_starred = storage.is_ticker_starred(ticker)
+    starred_prefix = "⭐[重点关注] " if is_starred else ""
+    now = _get_tz_now_str()
+    if template:
+        res = template
+        res = res.replace("{label}", str(label))
+        res = res.replace("{name}", str(name))
+        res = res.replace("{ticker}", str(ticker))
+        res = res.replace("{tf}", str(timeframe))
+        res = res.replace("{price}", f"{price:,.4f}")
+        res = res.replace("{volume_4h}", f"{volume_4h:,.0f}")
+        res = res.replace("{rsi}", f"{rsi:.2f}")
+        res = res.replace("{url}", tv_url(ticker, timeframe))
+        res = res.replace("{time}", now)
+        if starred_prefix:
+            res = starred_prefix + "\n" + res
+        return res
+    return (
+        f"{starred_prefix}📈 Chartink 4H Breakout 突破信号 {label}\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"🏷  {name} ({ticker})\n"
+        f"📅 框架: {timeframe}\n"
+        f"💰 价格: {price:,.4f}\n"
+        f"📊 4H成交量: {volume_4h:,.0f}\n"
+        f"📈 RSI: {rsi:.2f}\n"
+        f"🔗 {tv_url(ticker, timeframe)}\n"
+        f"🕐 {now}"
+    )
+
+
 # ── DingTalk ────────────────────────────────────────────────────────
 
 def _pick_dingtalk_bot(cfg: Dict) -> Dict:
@@ -403,3 +438,39 @@ def dispatch_alerts_ema_pivot(ticker: str, name: str, timeframe: str,
 
     if sent:
         _mark("ema_pivot", ticker, timeframe, sig_hash)
+
+
+def dispatch_alerts_chartink(ticker: str, name: str, timeframe: str,
+                            price: float, volume_4h: float, rsi: float,
+                            label: str, cfg: Dict) -> None:
+    cooldown = int(cfg.get("alert_cooldown_chartink", cfg.get("alert_cooldown", 240)))
+    sig_hash = _calc_signal_hash(price, label)
+    if _is_cooldown("chartink", ticker, timeframe, cooldown, sig_hash):
+        return
+
+    tmpl = cfg.get("alert_template_chartink", "").strip()
+    text = build_message_chartink(ticker, name, timeframe, price, volume_4h, rsi, label=label, template=tmpl if tmpl else None)
+    sent = False
+
+    if cfg.get("dingtalk_enabled"):
+        ok, msg = send_dingtalk(text, cfg)
+        storage.log_alert(ticker, name, timeframe, "dingtalk",
+                          "ok" if ok else "fail", msg, scanner="chartink")
+        sent = sent or ok
+
+    if cfg.get("telegram_enabled"):
+        ok, msg = send_telegram(text, cfg)
+        storage.log_alert(ticker, name, timeframe, "telegram",
+                          "ok" if ok else "fail", msg, scanner="chartink")
+        sent = sent or ok
+
+    try:
+        title = f"📈 Chartink 突破: {label}"
+        body = f"{name} ({ticker}) [{timeframe}] - 价格: {price:,.4f}"
+        send_browser_notification(title, body, timeout_seconds=15)
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Failed to send browser notification: {e}")
+
+    if sent:
+        _mark("chartink", ticker, timeframe, sig_hash)
+

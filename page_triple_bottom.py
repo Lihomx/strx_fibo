@@ -666,7 +666,7 @@ def render_triple_bottom_page():
     # 准备共享数据提升循环渲染效率
     all_clicks_data = storage.get_all_link_clicks()
     wl = storage.load_watchlist()
-    today_str_val = datetime.now().strftime("%Y-%m-%d")
+    today_str_val = storage.get_today_str()
 
     # 循环渲染每一项结果卡片
     for i, r in enumerate(filtered):
