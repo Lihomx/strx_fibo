@@ -103,24 +103,30 @@ def _supertrend(high: pd.Series, low: pd.Series, close: pd.Series,
 # ════════════════════════════════════════════════════════════════════
 
 def _fetch(ticker: str, interval: str, period: str = "6mo") -> pd.DataFrame | None:
-    """下载 OHLCV，失败返回 None"""
-    try:
-        df = yf.download(ticker, period=period, interval=interval,
-                         progress=False, auto_adjust=True)
-        if df is None or df.empty:
+    """下载 OHLCV，具备 Rate-Limit 重试机制，失败返回 None"""
+    for attempt in range(3):
+        try:
+            df = yf.download(ticker, period=period, interval=interval,
+                             progress=False, auto_adjust=True)
+            if df is None or df.empty:
+                return None
+            new_cols = []
+            for c in df.columns:
+                if isinstance(c, tuple):
+                    new_cols.append(str(c[0]).lower())
+                else:
+                    new_cols.append(str(c).lower())
+            df.columns = new_cols
+            if "close" not in df.columns:
+                return None
+            return df.dropna(subset=["close"])
+        except Exception as e:
+            err_str = str(e).lower()
+            if "rate" in err_str or "too many requests" in err_str or "429" in err_str:
+                time.sleep(2.5 * (attempt + 1))
+                continue
             return None
-        new_cols = []
-        for c in df.columns:
-            if isinstance(c, tuple):
-                new_cols.append(str(c[0]).lower())
-            else:
-                new_cols.append(str(c).lower())
-        df.columns = new_cols
-        if "close" not in df.columns:
-            return None
-        return df.dropna(subset=["close"])
-    except Exception:
-        return None
+    return None
 
 
 def _check_ticker(ticker: str) -> dict:
@@ -136,6 +142,10 @@ def _check_ticker(ticker: str) -> dict:
         result["error"] = "yfinance 未安装"
         return result
 
+    if storage.is_ticker_delisted(ticker):
+        result["error"] = "已退市/无效代码"
+        return result
+
     # ── 下载数据 ────────────────────────────────────────────────────
     df_1d = _fetch(ticker, "1d", "1y")
     if df_1d is None or len(df_1d) < 60:
@@ -145,15 +155,18 @@ def _check_ticker(ticker: str) -> dict:
     # 1H 数据（用于 2H/4H 的重采样与兜底）
     df_1h = _fetch(ticker, "1h", "2mo")
 
-    # 4H 数据（优先使用原生 4h，若缺失或异常则通过 1h 重采样）
-    df_4h = _fetch(ticker, "4h", "6mo")
-    if (df_4h is None or len(df_4h) < 5) and (df_1h is not None and len(df_1h) >= 4):
+    # 4H 数据（优先通过 1h 重采样获取，大幅削减 HTTP 请求数；仅在 1h 缺失时降级从 yfinance 获取）
+    df_4h = None
+    if df_1h is not None and len(df_1h) >= 4:
         try:
             df_4h = df_1h.resample("4h").agg({
                 "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
             }).dropna(subset=["close"])
         except Exception:
             pass
+
+    if df_4h is None or len(df_4h) < 5:
+        df_4h = _fetch(ticker, "4h", "6mo")
 
     if df_4h is None or len(df_4h) < 5:
         result["error"] = "4H 数据不足"
@@ -256,6 +269,7 @@ def _check_ticker(ticker: str) -> dict:
 # 后台扫描 Worker
 # ════════════════════════════════════════════════════════════════════
 def chartink_worker(params, update_progress, cancel_check):
+    import gc
     tickers = params["tickers"]
     passed_list = []
     failed_list = []
@@ -264,32 +278,53 @@ def chartink_worker(params, update_progress, cancel_check):
     total = len(tickers)
     for i, tk in enumerate(tickers):
         if cancel_check():
-            raise bg_scan_manager.CancelException("Scan cancelled by user")
+            break
             
         update_progress(i, total, f"扫描中 {i}/{total}: {tk}")
         
         try:
             res = _check_ticker(tk)
             res["ticker"] = tk
-            if res["error"]:
+            if res.get("error"):
                 error_list.append(res)
-            elif res["passed"]:
+            elif res.get("passed"):
                 passed_list.append(res)
             else:
                 failed_list.append(res)
         except Exception as e:
             error_list.append({"ticker": tk, "passed": False, "details": [], "error": str(e)})
+
+        # 每 25 个品种增量保存一次，防止 6000+ 大批量扫描中途崩溃导致数据全丢
+        if (i + 1) % 25 == 0 or (i + 1) == total:
+            partial_results = {
+                "passed": passed_list,
+                "failed": failed_list,
+                "errors": error_list,
+                "scanned_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "total": total,
+                "done_count": i + 1,
+            }
+            storage.save_chartink(partial_results)
             
-        time.sleep(0.15)   # 避免 yfinance 限流
+        # 每 50 个品种强制回收垃圾，防止内存爆炸触发 Streamlit Cloud 容器 OOM
+        if (i + 1) % 50 == 0:
+            gc.collect()
+            
+        time.sleep(0.08)   # 防限流微调
         
-    results = {
+    final_results = {
         "passed": passed_list,
         "failed": failed_list,
         "errors": error_list,
         "scanned_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "total": total,
+        "done_count": total if not cancel_check() else i + 1,
     }
-    storage.save_chartink(results)
+    storage.save_chartink(final_results)
+    try:
+        storage.backup_chartink(final_results)
+    except Exception:
+        pass
 
 
 # ════════════════════════════════════════════════════════════════════
