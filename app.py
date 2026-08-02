@@ -1172,7 +1172,7 @@ def main():
         "scanner":       page_scanner.render,
         "confluence":    page_confluence.render,
         "triple_bottom": page_triple_bottom.render_triple_bottom_page,
-        "chartink":      page_chartink.render,
+        "chartink":      getattr(page_chartink, "render_page_chartink", getattr(page_chartink, "render", None)),
         "universe":      page_universe.render,
         "watchlist":     page_watchlist.render,
         "hotlist":       page_hotlist.render,

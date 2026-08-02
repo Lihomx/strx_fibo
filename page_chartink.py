@@ -316,6 +316,9 @@ US_SP500_TICKERS = [
     "ETN", "MDLZ", "CI", "LMT", "KLAC", "SNPS", "CDNS", "WM", "NKE", "SBUX"
 ]
 
+def render():
+    render_page_chartink()
+
 def render_page_chartink():
     st.markdown("## 📈 Chartink · 4 Hour Breakout 7条规则突破扫描")
     
