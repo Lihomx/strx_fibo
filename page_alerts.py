@@ -977,19 +977,21 @@ def render_alert_log_table(full_page=False):
                                 return;
                             }
 
-                            // 处理⭐重点关注 / 🗑️取消自选 / ➕加入自选 按钮在 Streamlit 沙盒下的全局跳转
+                            // 处理⭐重点关注 / 🗑️取消自选 / ➕加入自选 按钮在 Streamlit 下的跨域与沙盒全局跳转
                             var actionBtn = e.target.closest('.star-btn, .unfav-btn, .fav-btn');
                             if (actionBtn) {
                                 var href = actionBtn.getAttribute('href');
                                 if (href) {
                                     e.preventDefault();
                                     e.stopPropagation();
-                                    // 1. 静音向后台发送指令 URL 穿透缓存并处理数据
-                                    try { fetch(href, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
-                                    try { if (navigator.sendBeacon) { navigator.sendBeacon(href); } } catch(err) {}
-                                    // 2. 直接触发父窗口 location.href 跳转
                                     try {
-                                        window.parent.location.assign(href);
+                                        if (window.top && window.top.location) {
+                                            window.top.location.href = href;
+                                        } else if (window.parent && window.parent.location) {
+                                            window.parent.location.href = href;
+                                        } else {
+                                            window.location.href = href;
+                                        }
                                     } catch(err) {
                                         try { window.parent.location.href = href; } catch(e2) { window.location.href = href; }
                                     }
