@@ -985,9 +985,9 @@ def render_alert_log_table(full_page=False):
                                     e.preventDefault();
                                     e.stopPropagation();
 
-                                    // 1. 静音向 Streamlit 后端发送操作指令 URL
-                                    var requestUrl = href + '&_cb=' + Date.now();
-                                    try { fetch(requestUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
+                                    // 1. 静音向 Streamlit 后端发送操作指令 URL (确保路径有效)
+                                    var requestUrl = href + (href.indexOf('?') >= 0 ? '&' : '?') + '_cb=' + Date.now();
+                                    try { fetch(requestUrl, { method: 'GET', cache: 'no-store', credentials: 'omit' }); } catch(err) {}
                                     try { if (navigator.sendBeacon) { navigator.sendBeacon(requestUrl); } } catch(err) {}
 
                                     // 2. 尝试全窗口导航，若浏览器沙盒拦截则进行秒级 DOM 界面实时联动反转
