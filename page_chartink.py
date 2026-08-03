@@ -471,27 +471,47 @@ def render_page_chartink():
         sid_map[label] = sid
 
     with st.expander("📦 选择历史扫描批次（备份与恢复）", expanded=True if not storage.load_chartink() else False):
-        if not options:
-            st.caption("💡 暂无可恢复批次（无快照）。每次扫描或清空时都会自动创建快照备份。")
-        else:
-            col_snap1, col_snap2 = st.columns([3, 1])
-            with col_snap1:
+        if not storage.load_chartink():
+            st.warning("⚠️ 检测到当前无本地扫描结果。可能由于服务器容器重启/登录失效重置导致。您可以尝试从下方历史批次恢复，或点击右侧从 Supabase 云端拉取最新结果。")
+            
+        col_snap1, col_snap2, col_snap3 = st.columns([2.5, 1, 1])
+        with col_snap1:
+            if not options:
+                st.caption("💡 暂无可恢复批次（无本地快照）。每次扫描或清空时都会自动创建快照备份。")
+                selected_label = None
+            else:
                 selected_label = st.selectbox(
                     "恢复批次",
                     options,
                     key="chartink_restore_picker",
                     label_visibility="collapsed",
                 )
-            with col_snap2:
-                selected_sid = sid_map.get(selected_label, "")
-                if st.button("♻️ 恢复所选批次", key="chartink_restore_btn", use_container_width=True, disabled=not selected_sid or is_running):
-                    ok, msg, n = storage.restore_chartink_snapshot(selected_sid)
-                    if ok:
-                        st.toast(f"✅ 成功恢复批次：通过 {n} 个品种！", icon="♻️")
-                        time.sleep(0.5)
-                        st.rerun()
+        with col_snap2:
+            selected_sid = sid_map.get(selected_label, "") if selected_label else ""
+            if st.button("♻️ 恢复批次", key="chartink_restore_btn", use_container_width=True, disabled=not selected_sid or is_running):
+                ok, msg, n = storage.restore_chartink_snapshot(selected_sid)
+                if ok:
+                    st.toast(f"✅ 成功恢复批次：通过 {n} 个品种！", icon="♻️")
+                    time.sleep(0.5)
+                    st.rerun()
+                else:
+                    st.error(f"❌ 恢复失败：{msg}")
+        with col_snap3:
+            if st.button("☁️ 从云端拉取", key="chartink_cloud_pull_btn", use_container_width=True, disabled=is_running):
+                try:
+                    import cloud_sync
+                    if not cloud_sync.is_configured():
+                        st.warning("⚠️ 未配置 Supabase 云端同步")
                     else:
-                        st.error(f"❌ 恢复失败：{msg}")
+                        ok, msg = cloud_sync.pull_chartink()
+                        if ok:
+                            st.toast(f"✅ {msg}", icon="☁️")
+                            time.sleep(0.5)
+                            st.rerun()
+                        else:
+                            st.error(f"❌ 云端拉取失败: {msg}")
+                except Exception as ex:
+                    st.error(f"❌ 云端拉取异常: {ex}")
 
     tickers = [t.strip().upper() for t in ticker_input.replace("\n", " ").split() if t.strip()]
 

@@ -1795,15 +1795,15 @@ def load_chartink() -> Dict:
     return res
 
 def save_chartink(data: Dict) -> bool:
-    """保存 Chartink 扫描结果并异步推送到云端"""
+    """保存 Chartink 扫描结果并实时同步推送到云端"""
     ok = _save_with_backup(F_CHARTINK, data)
     if ok:
         try:
             import cloud_sync
             if cloud_sync.is_configured():
-                _async_push(cloud_sync.push_chartink)
-        except Exception:
-            pass
+                cloud_sync.push_chartink()
+        except Exception as e:
+            logging.error(f"save_chartink push_chartink error: {e}")
     return ok
 
 
