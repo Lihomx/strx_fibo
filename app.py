@@ -983,6 +983,35 @@ def main():
         st.stop()
         return
 
+    # ── 静音后台指令接收器（支持 fetch / sendBeacon 请求静音落盘） ─────
+    from urllib.parse import unquote as _uq
+    import re as _re
+    _fav_quiet = st.query_params.get("_fav", "")
+    _star_quiet = st.query_params.get("_toggle_star", "")
+    
+    # 如果该请求是从 Iframe JS 静音 fetch/sendBeacon 发送来的（包含 _cb 参数或者不是主页面渲染）
+    if (_fav_quiet or _star_quiet) and st.query_params.get("_cb"):
+        if _fav_quiet:
+            try:
+                _fav_act = _uq(_fav_quiet)
+                _fav_parts = _fav_act.split("|", 2)
+                if len(_fav_parts) == 3:
+                    _fav_op, _fav_tk, _fav_nm = _fav_parts
+                    if _fav_op in ("add", "del") and _re.match(r"^[\w.\-\^=]+$", _fav_tk):
+                        if _fav_op == "add":
+                            storage.add_to_watchlist(ticker=_fav_tk, name=_fav_nm[:60])
+                        else:
+                            storage.remove_from_watchlist(_fav_tk)
+            except Exception:
+                pass
+        if _star_quiet:
+            try:
+                storage.toggle_starred_ticker(_star_quiet)
+            except Exception:
+                pass
+        st.stop()
+        return
+
     # ── 处理 _trigger 定时扫描指令 (放在密码检查之前，避免被登录阻拦) ──
     _trigger_val = st.query_params.get("_trigger", "")
     if _trigger_val:
