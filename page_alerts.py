@@ -871,14 +871,14 @@ def render_alert_log_table(full_page=False):
                         tv_html += f'<a href="{sina_url_val}" target="_blank" class="sina-btn" data-ticker="{ticker}">🏦 新浪</a>'
                     
                     star_class = "star-active" if is_starred else "star-inactive"
-                    star_html = f'<a href="/?_page={curr_page}&_t={t_token}&_toggle_star={ticker}" target="_parent" class="star-btn {star_class}" title="标记重点关注">⭐</a>'
+                    star_html = f'<a href="/?_page={curr_page}&_t={t_token}&_toggle_star={ticker}" target="_top" class="star-btn {star_class}" title="标记重点关注">⭐</a>'
 
                     import urllib.parse
                     encoded_name = urllib.parse.quote(name)
                     if is_in_watchlist:
-                        tv_html += f'<a href="/?_page={curr_page}&_t={t_token}&_fav=del%7C{ticker}%7C{encoded_name}" target="_parent" class="unfav-btn" title="从自选表移除并取消重点关注">🗑️ 取消自选</a>'
+                        tv_html += f'<a href="/?_page={curr_page}&_t={t_token}&_fav=del%7C{ticker}%7C{encoded_name}" target="_top" class="unfav-btn" title="从自选表移除并取消重点关注">🗑️ 取消自选</a>'
                     else:
-                        tv_html += f'<a href="/?_page={curr_page}&_t={t_token}&_fav=add%7C{ticker}%7C{encoded_name}" target="_parent" class="fav-btn" title="添加到自选表">➕ 加入自选</a>'
+                        tv_html += f'<a href="/?_page={curr_page}&_t={t_token}&_fav=add%7C{ticker}%7C{encoded_name}" target="_top" class="fav-btn" title="添加到自选表">➕ 加入自选</a>'
 
                     # 点击统计 HTML
                     click_entry = all_clicks_data.get(f"{ticker.upper()}:tv", {}) if isinstance(all_clicks_data, dict) else {}
@@ -977,74 +977,25 @@ def render_alert_log_table(full_page=False):
                                 return;
                             }
 
-                            // 处理⭐重点关注 / 🗑️取消自选 / ➕加入自选 按钮在 Streamlit 沙盒下的即时反馈与后台静音发送
+                            // ⭐/🗑️/➕ 按钮：不拦截点击，让 target="_top" 自然导航（根本修复）
+                            // 只在导航前做瞬间 DOM 视觉反馈，不 preventDefault
                             var actionBtn = e.target.closest('.star-btn, .unfav-btn, .fav-btn');
                             if (actionBtn) {
-                                var href = actionBtn.getAttribute('href');
-                                if (href) {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-
-                                    // 1. 静音向 Streamlit 后端发送操作指令 URL (确保路径有效)
-                                    var requestUrl = href + (href.indexOf('?') >= 0 ? '&' : '?') + '_cb=' + Date.now();
-                                    try { fetch(requestUrl, { method: 'GET', cache: 'no-store', credentials: 'omit' }); } catch(err) {}
-                                    try { if (navigator.sendBeacon) { navigator.sendBeacon(requestUrl); } } catch(err) {}
-
-                                    // 2. 尝试全窗口导航，若浏览器沙盒拦截则进行秒级 DOM 界面实时联动反转
-                                    var navigated = false;
-                                    try {
-                                        if (window.top && window.top.location) {
-                                            window.top.location.href = href;
-                                            navigated = true;
-                                        }
-                                    } catch(err) {}
-
-                                    if (!navigated) {
-                                        try {
-                                            if (window.parent && window.parent.location) {
-                                                window.parent.location.href = href;
-                                                navigated = true;
-                                            }
-                                        } catch(err) {}
+                                // 仅做秒级 DOM 前台视觉反馈，不阻止默认导航行为
+                                try {
+                                    var tr = actionBtn.closest('tr');
+                                    if (actionBtn.classList.contains('unfav-btn')) {
+                                        actionBtn.style.opacity = '0.5';
+                                        actionBtn.innerHTML = '⏳ 处理中…';
+                                        if (tr) tr.classList.remove('alert-log-row-starred');
+                                    } else if (actionBtn.classList.contains('fav-btn')) {
+                                        actionBtn.style.opacity = '0.5';
+                                        actionBtn.innerHTML = '⏳ 处理中…';
+                                    } else if (actionBtn.classList.contains('star-btn')) {
+                                        actionBtn.style.opacity = '0.5';
                                     }
-
-                                    // 3. 沙盒环境下的秒级 DOM 前台反馈
-                                    try {
-                                        var tr = actionBtn.closest('tr');
-                                        if (actionBtn.classList.contains('unfav-btn')) {
-                                            // 切换为加入自选
-                                            actionBtn.className = 'fav-btn';
-                                            actionBtn.innerHTML = '➕ 加入自选';
-                                            actionBtn.title = '添加到自选表';
-                                            // 原 href 中的 _fav=del 替换为 _fav=add
-                                            actionBtn.setAttribute('href', href.replace('_fav=del', '_fav=add'));
-
-                                            // 联动取消星标
-                                            if (tr) {
-                                                var starBtn = tr.querySelector('.star-btn');
-                                                if (starBtn) {
-                                                    starBtn.className = 'star-btn star-inactive';
-                                                }
-                                                tr.classList.remove('alert-log-row-starred');
-                                            }
-                                        } else if (actionBtn.classList.contains('fav-btn')) {
-                                            // 切换为取消自选
-                                            actionBtn.className = 'unfav-btn';
-                                            actionBtn.innerHTML = '🗑️ 取消自选';
-                                            actionBtn.title = '从自选表移除并取消重点关注';
-                                            actionBtn.setAttribute('href', href.replace('_fav=add', '_fav=del'));
-                                        } else if (actionBtn.classList.contains('star-btn')) {
-                                            // ⭐ 按钮手动切星
-                                            if (actionBtn.classList.contains('star-active')) {
-                                                actionBtn.className = 'star-btn star-inactive';
-                                                if (tr) tr.classList.remove('alert-log-row-starred');
-                                            } else {
-                                                actionBtn.className = 'star-btn star-active';
-                                                if (tr) tr.classList.add('alert-log-row-starred');
-                                            }
-                                        }
-                                    } catch(err) {}
-                                }
+                                } catch(err) {}
+                                // 不 return, 不 preventDefault —— 让 <a target="_top"> 自然完成导航
                             }
                         };
                         pDoc.addEventListener('click', pDoc._tv_click_handler, true);
