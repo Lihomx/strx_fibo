@@ -640,7 +640,16 @@ def load_starred_tickers() -> List[str]:
 
 def save_starred_tickers(tickers: List[str]) -> bool:
     clean = list(set(str(x).strip().upper() for x in tickers if x))
-    return _save(F_STARRED, clean)
+    ok = _save(F_STARRED, clean)
+    if ok:
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                cloud_sync._upload_latest("starred", clean)
+                cloud_sync._upload_snapshot("starred", clean)
+        except Exception:
+            pass
+    return ok
 
 def toggle_starred_ticker(ticker: str) -> bool:
     ticker = ticker.strip().upper()

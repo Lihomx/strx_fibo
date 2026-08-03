@@ -958,9 +958,8 @@ def pull_all() -> Dict[str, Any]:
     try:
         cloud_starred = _download_latest("starred")
         if isinstance(cloud_starred, list):
-            merged = list(set(loc.load_starred_tickers()) | set(cloud_starred))
-            loc.save_starred_tickers(merged)
-            results["starred"] = (True, f"合并后共 {len(merged)} 个")
+            loc.save_starred_tickers(cloud_starred)
+            results["starred"] = (True, f"恢复共 {len(cloud_starred)} 个")
         else:
             results["starred"] = (False, "无云端数据")
     except Exception as e:
