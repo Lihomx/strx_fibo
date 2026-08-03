@@ -974,6 +974,22 @@ def render_alert_log_table(full_page=False):
                                         }
                                     } catch(err) {}
                                 }
+                                return;
+                            }
+
+                            // 处理⭐重点关注 / 🗑️取消自选 / ➕加入自选 按钮在 Streamlit 沙盒下的全局跳转
+                            var actionBtn = e.target.closest('.star-btn, .unfav-btn, .fav-btn');
+                            if (actionBtn) {
+                                var href = actionBtn.getAttribute('href');
+                                if (href) {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    try {
+                                        window.parent.location.href = href;
+                                    } catch(err) {
+                                        window.location.href = href;
+                                    }
+                                }
                             }
                         };
                         pDoc.addEventListener('click', pDoc._tv_click_handler, true);
