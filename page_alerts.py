@@ -977,24 +977,73 @@ def render_alert_log_table(full_page=False):
                                 return;
                             }
 
-                            // 处理⭐重点关注 / 🗑️取消自选 / ➕加入自选 按钮在 Streamlit 下的跨域与沙盒全局跳转
+                            // 处理⭐重点关注 / 🗑️取消自选 / ➕加入自选 按钮在 Streamlit 沙盒下的即时反馈与后台静音发送
                             var actionBtn = e.target.closest('.star-btn, .unfav-btn, .fav-btn');
                             if (actionBtn) {
                                 var href = actionBtn.getAttribute('href');
                                 if (href) {
                                     e.preventDefault();
                                     e.stopPropagation();
+
+                                    // 1. 静音向 Streamlit 后端发送操作指令 URL
+                                    var requestUrl = href + '&_cb=' + Date.now();
+                                    try { fetch(requestUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
+                                    try { if (navigator.sendBeacon) { navigator.sendBeacon(requestUrl); } } catch(err) {}
+
+                                    // 2. 尝试全窗口导航，若浏览器沙盒拦截则进行秒级 DOM 界面实时联动反转
+                                    var navigated = false;
                                     try {
                                         if (window.top && window.top.location) {
                                             window.top.location.href = href;
-                                        } else if (window.parent && window.parent.location) {
-                                            window.parent.location.href = href;
-                                        } else {
-                                            window.location.href = href;
+                                            navigated = true;
                                         }
-                                    } catch(err) {
-                                        try { window.parent.location.href = href; } catch(e2) { window.location.href = href; }
+                                    } catch(err) {}
+
+                                    if (!navigated) {
+                                        try {
+                                            if (window.parent && window.parent.location) {
+                                                window.parent.location.href = href;
+                                                navigated = true;
+                                            }
+                                        } catch(err) {}
                                     }
+
+                                    // 3. 沙盒环境下的秒级 DOM 前台反馈
+                                    try {
+                                        var tr = actionBtn.closest('tr');
+                                        if (actionBtn.classList.contains('unfav-btn')) {
+                                            // 切换为加入自选
+                                            actionBtn.className = 'fav-btn';
+                                            actionBtn.innerHTML = '➕ 加入自选';
+                                            actionBtn.title = '添加到自选表';
+                                            // 原 href 中的 _fav=del 替换为 _fav=add
+                                            actionBtn.setAttribute('href', href.replace('_fav=del', '_fav=add'));
+
+                                            // 联动取消星标
+                                            if (tr) {
+                                                var starBtn = tr.querySelector('.star-btn');
+                                                if (starBtn) {
+                                                    starBtn.className = 'star-btn star-inactive';
+                                                }
+                                                tr.classList.remove('alert-log-row-starred');
+                                            }
+                                        } else if (actionBtn.classList.contains('fav-btn')) {
+                                            // 切换为取消自选
+                                            actionBtn.className = 'unfav-btn';
+                                            actionBtn.innerHTML = '🗑️ 取消自选';
+                                            actionBtn.title = '从自选表移除并取消重点关注';
+                                            actionBtn.setAttribute('href', href.replace('_fav=add', '_fav=del'));
+                                        } else if (actionBtn.classList.contains('star-btn')) {
+                                            // ⭐ 按钮手动切星
+                                            if (actionBtn.classList.contains('star-active')) {
+                                                actionBtn.className = 'star-btn star-inactive';
+                                                if (tr) tr.classList.remove('alert-log-row-starred');
+                                            } else {
+                                                actionBtn.className = 'star-btn star-active';
+                                                if (tr) tr.classList.add('alert-log-row-starred');
+                                            }
+                                        }
+                                    } catch(err) {}
                                 }
                             }
                         };
