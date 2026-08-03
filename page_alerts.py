@@ -871,14 +871,17 @@ def render_alert_log_table(full_page=False):
                         tv_html += f'<a href="{sina_url_val}" target="_blank" class="sina-btn" data-ticker="{ticker}">🏦 新浪</a>'
                     
                     star_class = "star-active" if is_starred else "star-inactive"
-                    star_html = f'<a href="/?_page={curr_page}&_t={t_token}&_toggle_star={ticker}" target="_top" class="star-btn {star_class}" title="标记重点关注">⭐</a>'
+                    star_href = f"/?_page={curr_page}&_t={t_token}&_toggle_star={ticker}"
+                    star_html = f'<a href="{star_href}" class="star-btn {star_class}" title="标记重点关注" onclick="window.location.href=this.getAttribute(\'href\');return false;">⭐</a>'
 
                     import urllib.parse
                     encoded_name = urllib.parse.quote(name)
                     if is_in_watchlist:
-                        tv_html += f'<a href="/?_page={curr_page}&_t={t_token}&_fav=del%7C{ticker}%7C{encoded_name}" target="_top" class="unfav-btn" title="从自选表移除并取消重点关注">🗑️ 取消自选</a>'
+                        fav_href = f"/?_page={curr_page}&_t={t_token}&_fav=del%7C{ticker}%7C{encoded_name}"
+                        tv_html += f'<a href="{fav_href}" class="unfav-btn" title="从自选表移除并取消重点关注" onclick="window.location.href=this.getAttribute(\'href\');return false;">🗑️ 取消自选</a>'
                     else:
-                        tv_html += f'<a href="/?_page={curr_page}&_t={t_token}&_fav=add%7C{ticker}%7C{encoded_name}" target="_top" class="fav-btn" title="添加到自选表">➕ 加入自选</a>'
+                        fav_href = f"/?_page={curr_page}&_t={t_token}&_fav=add%7C{ticker}%7C{encoded_name}"
+                        tv_html += f'<a href="{fav_href}" class="fav-btn" title="添加到自选表" onclick="window.location.href=this.getAttribute(\'href\');return false;">➕ 加入自选</a>'
 
                     # 点击统计 HTML
                     click_entry = all_clicks_data.get(f"{ticker.upper()}:tv", {}) if isinstance(all_clicks_data, dict) else {}
@@ -977,26 +980,7 @@ def render_alert_log_table(full_page=False):
                                 return;
                             }
 
-                            // ⭐/🗑️/➕ 按钮：不拦截点击，让 target="_top" 自然导航（根本修复）
-                            // 只在导航前做瞬间 DOM 视觉反馈，不 preventDefault
-                            var actionBtn = e.target.closest('.star-btn, .unfav-btn, .fav-btn');
-                            if (actionBtn) {
-                                // 仅做秒级 DOM 前台视觉反馈，不阻止默认导航行为
-                                try {
-                                    var tr = actionBtn.closest('tr');
-                                    if (actionBtn.classList.contains('unfav-btn')) {
-                                        actionBtn.style.opacity = '0.5';
-                                        actionBtn.innerHTML = '⏳ 处理中…';
-                                        if (tr) tr.classList.remove('alert-log-row-starred');
-                                    } else if (actionBtn.classList.contains('fav-btn')) {
-                                        actionBtn.style.opacity = '0.5';
-                                        actionBtn.innerHTML = '⏳ 处理中…';
-                                    } else if (actionBtn.classList.contains('star-btn')) {
-                                        actionBtn.style.opacity = '0.5';
-                                    }
-                                } catch(err) {}
-                                // 不 return, 不 preventDefault —— 让 <a target="_top"> 自然完成导航
-                            }
+                            // ⭐/🗑️/➕ 按钮：不拦截，onclick 直接触发 window.location.href （当前框内导航，永不被沙盒限制）
                         };
                         pDoc.addEventListener('click', pDoc._tv_click_handler, true);
                     } catch(err) {}
