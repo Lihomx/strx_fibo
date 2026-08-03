@@ -745,7 +745,7 @@ def save_watchlist(items: List[Dict]) -> bool:
         try:
             import cloud_sync
             if cloud_sync.is_configured():
-                _async_push(cloud_sync.push_watchlist)  # 异步，不阻塞 UI
+                cloud_sync.push_watchlist()  # 同步推送，确保实时落盘至云端
         except Exception:
             pass
     return ok
