@@ -984,10 +984,14 @@ def render_alert_log_table(full_page=False):
                                 if (href) {
                                     e.preventDefault();
                                     e.stopPropagation();
+                                    // 1. 静音向后台发送指令 URL 穿透缓存并处理数据
+                                    try { fetch(href, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
+                                    try { if (navigator.sendBeacon) { navigator.sendBeacon(href); } } catch(err) {}
+                                    // 2. 直接触发父窗口 location.href 跳转
                                     try {
-                                        window.parent.location.href = href;
+                                        window.parent.location.assign(href);
                                     } catch(err) {
-                                        window.location.href = href;
+                                        try { window.parent.location.href = href; } catch(e2) { window.location.href = href; }
                                     }
                                 }
                             }
