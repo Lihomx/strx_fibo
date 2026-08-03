@@ -980,7 +980,21 @@ def render_alert_log_table(full_page=False):
                                 return;
                             }
 
-                            // ⭐/🗑️/➕ 按钮：不拦截，onclick 直接触发 window.location.href （当前框内导航，永不被沙盒限制）
+                            // ⭐/🗑️/➕ 按钮：在父页面 (parent window) 上下文中直接触发导航，绕过 iframe 沙盒拦截
+                            var actionBtn = e.target.closest('.star-btn, .unfav-btn, .fav-btn');
+                            if (actionBtn) {
+                                var href = actionBtn.getAttribute('href');
+                                if (href) {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    try {
+                                        window.top.location.href = href;
+                                    } catch(err) {
+                                        window.location.href = href;
+                                    }
+                                }
+                                return;
+                            }
                         };
                         pDoc.addEventListener('click', pDoc._tv_click_handler, true);
                     } catch(err) {}
