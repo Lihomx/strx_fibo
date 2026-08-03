@@ -871,14 +871,14 @@ def render_alert_log_table(full_page=False):
                         tv_html += f'<a href="{sina_url_val}" target="_blank" class="sina-btn" data-ticker="{ticker}">🏦 新浪</a>'
                     
                     star_class = "star-active" if is_starred else "star-inactive"
-                    star_html = f'<a href="/?_page={curr_page}&_t={t_token}&_toggle_star={ticker}" target="_top" class="star-btn {star_class}" title="标记重点关注">⭐</a>'
+                    star_html = f'<a href="/?_page={curr_page}&_t={t_token}&_toggle_star={ticker}" target="_parent" class="star-btn {star_class}" title="标记重点关注">⭐</a>'
 
                     import urllib.parse
                     encoded_name = urllib.parse.quote(name)
                     if is_in_watchlist:
-                        tv_html += f'<a href="/?_page={curr_page}&_t={t_token}&_fav=del%7C{ticker}%7C{encoded_name}" target="_top" class="unfav-btn" title="从自选表移除并取消重点关注">🗑️ 取消自选</a>'
+                        tv_html += f'<a href="/?_page={curr_page}&_t={t_token}&_fav=del%7C{ticker}%7C{encoded_name}" target="_parent" class="unfav-btn" title="从自选表移除并取消重点关注">🗑️ 取消自选</a>'
                     else:
-                        tv_html += f'<a href="/?_page={curr_page}&_t={t_token}&_fav=add%7C{ticker}%7C{encoded_name}" target="_top" class="fav-btn" title="添加到自选表">➕ 加入自选</a>'
+                        tv_html += f'<a href="/?_page={curr_page}&_t={t_token}&_fav=add%7C{ticker}%7C{encoded_name}" target="_parent" class="fav-btn" title="添加到自选表">➕ 加入自选</a>'
 
                     # 点击统计 HTML
                     click_entry = all_clicks_data.get(f"{ticker.upper()}:tv", {}) if isinstance(all_clicks_data, dict) else {}
@@ -891,8 +891,8 @@ def render_alert_log_table(full_page=False):
                     else:
                         clicks_html = '<span style="color:#475569;">—</span>'
                     
-                    code_html = f'{star_html}<a href="/?_page=ticker&_ticker={ticker}&_t={t_token}" target="_top" style="color:#38bdf8; text-decoration:none; font-weight:bold;">{ticker}</a>'
-                    name_html = f'<a href="/?_page=ticker&_ticker={ticker}&_t={t_token}" target="_top" style="color:inherit; text-decoration:none;">{name}</a>'
+                    code_html = f'{star_html}<a href="/?_page=ticker&_ticker={ticker}&_t={t_token}" target="_parent" style="color:#38bdf8; text-decoration:none; font-weight:bold;">{ticker}</a>'
+                    name_html = f'<a href="/?_page=ticker&_ticker={ticker}&_t={t_token}" target="_parent" style="color:inherit; text-decoration:none;">{name}</a>'
                     
                     # 动态拼接每行的 td
                     td_map = {
