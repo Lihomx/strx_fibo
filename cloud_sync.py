@@ -954,11 +954,12 @@ def pull_all() -> Dict[str, Any]:
     ok_tbsnap, msg_tbsnap = pull_tb_snapshots()
     results["tb_snapshots"] = (ok_tbsnap, msg_tbsnap)
 
-    # 重点关注品种
+    # 重点关注品种（以云端为权威，直接写文件，不触发 save_starred_tickers 的云端推送）
     try:
         cloud_starred = _download_latest("starred")
         if isinstance(cloud_starred, list):
-            loc.save_starred_tickers(cloud_starred)
+            import storage as _st_mod
+            _st_mod._save(_st_mod.F_STARRED, [str(x).strip().upper() for x in cloud_starred if x])
             results["starred"] = (True, f"恢复共 {len(cloud_starred)} 个")
         else:
             results["starred"] = (False, "无云端数据")

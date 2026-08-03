@@ -1077,34 +1077,9 @@ def main():
     except Exception:
         pass
 
-    # ── 启动时：从云端自动恢复所有数据 ──────────────────────────
-    if not st.session_state.get("_cloud_pulled"):
-        try:
-            ok, msg = cloud_sync.auto_pull_on_startup()
-            if ok and "成功" in msg:
-                st.toast(f"☁️ 云端数据已恢复：{msg}", icon="✅")
-        except Exception:
-            pass
-
-    # ── 旧 Secrets 收藏夹恢复（兼容旧版本）────────────────────────
-    if not st.session_state.get("_secrets_restored"):
-        try:
-            ok, msg = storage.restore_from_secrets()
-        except Exception:
-            pass
-        st.session_state["_secrets_restored"] = True
-
-    # ── 每次渲染：检查是否需要自动 Push（2小时一次）────────────────
-    try:
-        result = cloud_sync.auto_push_if_due()
-        if result:
-            ok, msg = result
-            if ok:
-                st.toast("☁️ 数据已自动同步到云端", icon="✅")
-    except Exception:
-        pass
-
-    # ── 处理 _fav 收藏指令 ──────────────────────────────────────
+    # ── 【优先】处理 _fav / _toggle_star URL 指令（必须在 cloud pull 之前执行）
+    # 原因：点击链接会创建新 Session，auto_pull_on_startup 会从云端恢复旧数据覆盖本地；
+    # 将用户操作提前，先写本地和云端，再让 pull 读取已正确的云端数据。
     from urllib.parse import unquote as _uq
     import re as _re
 
@@ -1136,6 +1111,33 @@ def main():
             pass
         st.query_params.pop("_toggle_star", None)
         st.rerun()
+
+    # ── 启动时：从云端自动恢复所有数据 ──────────────────────────
+    if not st.session_state.get("_cloud_pulled"):
+        try:
+            ok, msg = cloud_sync.auto_pull_on_startup()
+            if ok and "成功" in msg:
+                st.toast(f"☁️ 云端数据已恢复：{msg}", icon="✅")
+        except Exception:
+            pass
+
+    # ── 旧 Secrets 收藏夹恢复（兼容旧版本）────────────────────────
+    if not st.session_state.get("_secrets_restored"):
+        try:
+            ok, msg = storage.restore_from_secrets()
+        except Exception:
+            pass
+        st.session_state["_secrets_restored"] = True
+
+    # ── 每次渲染：检查是否需要自动 Push（2小时一次）────────────────
+    try:
+        result = cloud_sync.auto_push_if_due()
+        if result:
+            ok, msg = result
+            if ok:
+                st.toast("☁️ 数据已自动同步到云端", icon="✅")
+    except Exception:
+        pass
 
     # ── URL 参数跳转与同步 ────────────────────────────────────────────
     _VALID_PAGES = ("watchlist","hotlist","scanner","confluence","alerts","settings",
