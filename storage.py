@@ -651,6 +651,17 @@ def save_starred_tickers(tickers: List[str]) -> bool:
             pass
     return ok
 
+def unstar_ticker(ticker: str) -> bool:
+    """显式取消重点关注状态"""
+    ticker = ticker.strip().upper()
+    if not ticker:
+        return False
+    starred = load_starred_tickers()
+    if ticker in starred:
+        starred.remove(ticker)
+        return save_starred_tickers(starred)
+    return True
+
 def toggle_starred_ticker(ticker: str) -> bool:
     ticker = ticker.strip().upper()
     if not ticker:
@@ -825,7 +836,10 @@ def remove_from_watchlist(ticker: str) -> bool:
 
     # 从活跃列表移除
     new_items = [i for i in items if i["ticker"].upper() != ticker]
-    return save_watchlist(new_items)
+    ok = save_watchlist(new_items)
+    # 取消自选时，同时自动取消重点关注
+    unstar_ticker(ticker)
+    return ok
 
 
 def restore_from_archive(ticker: str) -> bool:

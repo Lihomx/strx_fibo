@@ -795,6 +795,10 @@ def render_alert_log_table(full_page=False):
                 html_parts.append(".tv-btn:hover { background-color: rgba(30, 144, 255, 0.3); color: #60a5fa !important; transform: translateY(-1px); }")
                 html_parts.append(".sina-btn { display: inline-flex; align-items: center; background-color: rgba(255, 69, 0, 0.15); color: #ff6347 !important; padding: 5px 10px; border-radius: 4px; text-decoration: none !important; font-size: 12px; font-weight: 500; transition: all 0.2s ease; border: 1px solid rgba(255, 69, 0, 0.3); margin-left: 5px; }")
                 html_parts.append(".sina-btn:hover { background-color: rgba(255, 69, 0, 0.3); color: #ff7f50 !important; transform: translateY(-1px); }")
+                html_parts.append(".unfav-btn { display: inline-flex; align-items: center; background-color: rgba(239, 68, 68, 0.15); color: #f87171 !important; padding: 4px 8px; border-radius: 4px; text-decoration: none !important; font-size: 12px; font-weight: 500; transition: all 0.2s ease; border: 1px solid rgba(239, 68, 68, 0.3); margin-left: 5px; }")
+                html_parts.append(".unfav-btn:hover { background-color: rgba(239, 68, 68, 0.3); color: #ef4444 !important; transform: translateY(-1px); }")
+                html_parts.append(".fav-btn { display: inline-flex; align-items: center; background-color: rgba(34, 197, 94, 0.15); color: #4ade80 !important; padding: 4px 8px; border-radius: 4px; text-decoration: none !important; font-size: 12px; font-weight: 500; transition: all 0.2s ease; border: 1px solid rgba(34, 197, 94, 0.3); margin-left: 5px; }")
+                html_parts.append(".fav-btn:hover { background-color: rgba(34, 197, 94, 0.3); color: #22c55e !important; transform: translateY(-1px); }")
                 html_parts.append(".star-btn { text-decoration: none !important; font-size: 16px; margin-right: 6px; cursor: pointer; display: inline-block; transition: transform 0.2s ease; }")
                 html_parts.append(".star-btn:hover { transform: scale(1.2); }")
                 html_parts.append(".star-active { filter: none; opacity: 1; }")
@@ -806,6 +810,10 @@ def render_alert_log_table(full_page=False):
                 html_parts.append("<div class=\"alert-log-container\">")
                 html_parts.append("<table class=\"alert-log-table\">")
                 
+                # 预加载自选收藏列表
+                watchlist_items = storage.load_watchlist()
+                watchlist_tickers = {item.get("ticker", "").upper() for item in watchlist_items if isinstance(item, dict)}
+
                 # 动态生成表头
                 header_th_list = []
                 for k in selected_col_keys:
@@ -827,6 +835,7 @@ def render_alert_log_table(full_page=False):
                     name = row.get("name", "")
                     
                     is_starred = storage.is_ticker_starred(ticker)
+                    is_in_watchlist = ticker.upper() in watchlist_tickers
                     
                     # 确定行样式类
                     row_class = ""
@@ -849,7 +858,7 @@ def render_alert_log_table(full_page=False):
                     else:
                         status_html = f'<span>{status}</span>'
                         
-                    # 格式化 TradingView / 新浪 链接为原始直通按钮（带 data-ticker 属性做后台事件计数）
+                    # 格式化 TradingView / 新浪 链接
                     tv_url_val = row.get("tradingview", "")
                     if tv_url_val:
                         tv_html = f'<a href="{tv_url_val}" target="_blank" class="tv-btn" data-ticker="{ticker}">📈 图表</a>'
@@ -861,6 +870,14 @@ def render_alert_log_table(full_page=False):
                     if sina_url_val:
                         tv_html += f'<a href="{sina_url_val}" target="_blank" class="sina-btn" data-ticker="{ticker}">🏦 新浪</a>'
                     
+                    # 取消自选 / 重新添加自选 按钮 (取消自选时会自动联动取消重点关注)
+                    import urllib.parse
+                    encoded_name = urllib.parse.quote(name)
+                    if is_in_watchlist:
+                        tv_html += f'<a href="/?_page={curr_page}&_t={t_token}&_fav=del%7C{ticker}%7C{encoded_name}" class="unfav-btn" title="从自选表移除并取消重点关注">🗑️ 取消自选</a>'
+                    else:
+                        tv_html += f'<a href="/?_page={curr_page}&_t={t_token}&_fav=add%7C{ticker}%7C{encoded_name}" class="fav-btn" title="添加到自选表">➕ 加入自选</a>'
+
                     # 点击统计 HTML
                     click_entry = all_clicks_data.get(f"{ticker.upper()}:tv", {}) if isinstance(all_clicks_data, dict) else {}
                     total_c = click_entry.get("total", 0) if isinstance(click_entry, dict) else 0
