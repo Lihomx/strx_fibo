@@ -997,7 +997,7 @@ def main():
                 _fav_parts = _fav_act.split("|", 2)
                 if len(_fav_parts) == 3:
                     _fav_op, _fav_tk, _fav_nm = _fav_parts
-                    if _fav_op in ("add", "del") and _re.match(r"^[\w.\-\^=]+$", _fav_tk):
+                    if _fav_op in ("add", "del") and _fav_tk.strip():
                         if _fav_op == "add":
                             storage.add_to_watchlist(ticker=_fav_tk, name=_fav_nm[:60])
                         else:
@@ -1119,7 +1119,7 @@ def main():
             _fav_parts = _fav_act.split("|", 2)
             if len(_fav_parts) == 3:
                 _fav_op, _fav_tk, _fav_nm = _fav_parts
-                if _fav_op in ("add", "del") and _re.match(r"^[\w.\-\^=]+$", _fav_tk):
+                if _fav_op in ("add", "del") and _fav_tk.strip():
                     if _fav_op == "add":
                         storage.add_to_watchlist(ticker=_fav_tk, name=_fav_nm[:60])
                         st.toast(f"⭐ 已收藏：{_fav_nm[:40]}", icon="⭐")
