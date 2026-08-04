@@ -1066,6 +1066,67 @@ def main():
             st.stop()
             return
 
+    # ── 【优先】处理 _fav / _toggle_star / _rename URL 指令（放在密码检查前，避免 Session 重置或 token 校验问题导致丢动作）
+    from urllib.parse import unquote as _uq
+    import re as _re
+
+    _fav_raw = st.query_params.get("_fav", "")
+    if _fav_raw:
+        try:
+            _fav_act   = _uq(_fav_raw)
+            _fav_parts = _fav_act.split("|", 2)
+            if len(_fav_parts) == 3:
+                _fav_op, _fav_tk, _fav_nm = _fav_parts
+                if _fav_op in ("add", "del") and _fav_tk.strip():
+                    if _fav_op == "add":
+                        storage.add_to_watchlist(ticker=_fav_tk, name=_fav_nm[:60])
+                        st.toast(f"⭐ 已收藏：{_fav_nm[:40]}", icon="⭐")
+                    else:
+                        storage.remove_from_watchlist(_fav_tk)
+                        st.toast(f"已移除：{_fav_nm[:40]}", icon="🗑️")
+        except Exception:
+            pass
+        try:
+            del st.query_params["_fav"]
+        except Exception:
+            pass
+        st.session_state["_cloud_pulled"] = True
+        st.rerun()
+
+    _toggle_star = st.query_params.get("_toggle_star", "")
+    if _toggle_star:
+        try:
+            storage.toggle_starred_ticker(_toggle_star)
+            st.toast(f"重点关注状态已更新：{_toggle_star}", icon="⭐")
+        except Exception:
+            pass
+        # 清除 _toggle_star 参数，但保留 _page 等参数
+        try:
+            del st.query_params["_toggle_star"]
+        except Exception:
+            pass
+        st.session_state["_cloud_pulled"] = True
+        st.rerun()
+
+    _rename_raw = st.query_params.get("_rename", "")
+    if _rename_raw:
+        try:
+            _ren_act = _uq(_rename_raw)
+            _ren_parts = _ren_act.split("|", 1)
+            if len(_ren_parts) == 2:
+                _ren_tk, _ren_nm = _ren_parts
+                if _ren_tk.strip() and _ren_nm.strip():
+                    storage.update_symbol_name(_ren_tk, _ren_nm)
+                    st.toast(f"✏️ 名称已修改：{_ren_tk} -> {_ren_nm}", icon="✏️")
+        except Exception:
+            pass
+        try:
+            del st.query_params["_rename"]
+        except Exception:
+            pass
+        st.session_state["_cloud_pulled"] = True
+        st.rerun()
+
     if not _check_password():
         st.stop()
         return
@@ -1126,68 +1187,7 @@ def main():
     except Exception:
         pass
 
-    # ── 【优先】处理 _fav / _toggle_star URL 指令（必须在 cloud pull 之前执行）
-    # 原因：点击链接会创建新 Session，auto_pull_on_startup 会从云端恢复旧数据覆盖本地；
-    # 将用户操作提前，先写本地和云端，再让 pull 读取已正确的云端数据。
-    from urllib.parse import unquote as _uq
-    import re as _re
 
-    _fav_raw = st.query_params.get("_fav", "")
-    if _fav_raw:
-        try:
-            _fav_act   = _uq(_fav_raw)
-            _fav_parts = _fav_act.split("|", 2)
-            if len(_fav_parts) == 3:
-                _fav_op, _fav_tk, _fav_nm = _fav_parts
-                if _fav_op in ("add", "del") and _fav_tk.strip():
-                    if _fav_op == "add":
-                        storage.add_to_watchlist(ticker=_fav_tk, name=_fav_nm[:60])
-                        st.toast(f"⭐ 已收藏：{_fav_nm[:40]}", icon="⭐")
-                    else:
-                        storage.remove_from_watchlist(_fav_tk)
-                        st.toast(f"已移除：{_fav_nm[:40]}", icon="🗑️")
-        except Exception:
-            pass
-        try:
-            del st.query_params["_fav"]
-        except Exception:
-            pass
-        st.session_state["_cloud_pulled"] = True
-        st.rerun()
-
-    _toggle_star = st.query_params.get("_toggle_star", "")
-    if _toggle_star:
-        try:
-            storage.toggle_starred_ticker(_toggle_star)
-            st.toast(f"重点关注状态已更新：{_toggle_star}", icon="⭐")
-        except Exception:
-            pass
-        # 清除 _toggle_star 参数，但保留 _page 等参数
-        try:
-            del st.query_params["_toggle_star"]
-        except Exception:
-            pass
-        st.session_state["_cloud_pulled"] = True
-        st.rerun()
-
-    _rename_raw = st.query_params.get("_rename", "")
-    if _rename_raw:
-        try:
-            _ren_act = _uq(_rename_raw)
-            _ren_parts = _ren_act.split("|", 1)
-            if len(_ren_parts) == 2:
-                _ren_tk, _ren_nm = _ren_parts
-                if _ren_tk.strip() and _ren_nm.strip():
-                    storage.update_symbol_name(_ren_tk, _ren_nm)
-                    st.toast(f"✏️ 名称已修改：{_ren_tk} -> {_ren_nm}", icon="✏️")
-        except Exception:
-            pass
-        try:
-            del st.query_params["_rename"]
-        except Exception:
-            pass
-        st.session_state["_cloud_pulled"] = True
-        st.rerun()
 
     # ── 启动时：从云端自动恢复所有数据 ──────────────────────────
     if not st.session_state.get("_cloud_pulled"):

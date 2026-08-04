@@ -892,16 +892,16 @@ def render_alert_log_table(full_page=False):
                     
                     star_class = "star-active" if is_starred else "star-inactive"
                     star_href = f"/?_page={curr_page}&_t={t_token}&_toggle_star={ticker}"
-                    star_html = f'<a href="{star_href}" target="_top" class="star-btn {star_class}" title="标记重点关注" onclick="try{{window.top.location.href=this.getAttribute(\'href\');}}catch(e){{window.location.href=this.getAttribute(\'href\');}}return false;">⭐</a>'
+                    star_html = f'<a href="{star_href}" target="_top" class="star-btn {star_class}" title="标记重点关注">⭐</a>'
 
                     import urllib.parse
                     encoded_name = urllib.parse.quote(name)
                     if is_in_watchlist:
                         fav_href = f"/?_page={curr_page}&_t={t_token}&_fav=del%7C{ticker}%7C{encoded_name}"
-                        tv_html += f'<a href="{fav_href}" target="_top" class="unfav-btn" title="从自选表移除并取消重点关注" onclick="try{{window.top.location.href=this.getAttribute(\'href\');}}catch(e){{window.location.href=this.getAttribute(\'href\');}}return false;">🗑️ 取消自选</a>'
+                        tv_html += f'<a href="{fav_href}" target="_top" class="unfav-btn" title="从自选表移除并取消重点关注">🗑️ 取消自选</a>'
                     else:
                         fav_href = f"/?_page={curr_page}&_t={t_token}&_fav=add%7C{ticker}%7C{encoded_name}"
-                        tv_html += f'<a href="{fav_href}" target="_top" class="fav-btn" title="添加到自选表" onclick="try{{window.top.location.href=this.getAttribute(\'href\');}}catch(e){{window.location.href=this.getAttribute(\'href\');}}return false;">➕ 加入自选</a>'
+                        tv_html += f'<a href="{fav_href}" target="_top" class="fav-btn" title="添加到自选表">➕ 加入自选</a>'
 
                     # 点击统计 HTML
                     click_entry = all_clicks_data.get(f"{ticker.upper()}:tv", {}) if isinstance(all_clicks_data, dict) else {}
@@ -1029,6 +1029,13 @@ def render_alert_log_table(full_page=False):
                                 if (href) {
                                     e.preventDefault();
                                     e.stopPropagation();
+                                    if (actionBtn.getAttribute('data-disabled') === '1') {
+                                        return;
+                                    }
+                                    actionBtn.setAttribute('data-disabled', '1');
+                                    actionBtn.style.opacity = '0.5';
+                                    actionBtn.style.pointerEvents = 'none';
+
                                     try {
                                         window.top.location.href = href;
                                     } catch(err) {
