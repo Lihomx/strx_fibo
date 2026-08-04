@@ -1029,13 +1029,7 @@ def render_alert_log_table(full_page=False):
                                 if (href) {
                                     e.preventDefault();
                                     e.stopPropagation();
-                                    if (actionBtn.getAttribute('data-disabled') === '1') {
-                                        return;
-                                    }
-                                    actionBtn.setAttribute('data-disabled', '1');
-                                    actionBtn.style.opacity = '0.5';
-                                    actionBtn.style.pointerEvents = 'none';
-
+                                    actionBtn.style.opacity = '0.4';
                                     try {
                                         window.top.location.href = href;
                                     } catch(err) {
