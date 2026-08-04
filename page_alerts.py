@@ -980,24 +980,44 @@ def render_alert_log_table(full_page=False):
                                 return;
                             }
 
-                            // ✏️ 修改名称按钮：弹出原生 Prompt 输入新名称并导航
+                            // ✏️ 修改名称按钮：先尝试查全称（如当前无中文名或与ticker一致），再弹出 Prompt
                             var editBtn = e.target.closest('.edit-name-btn');
                             if (editBtn) {
                                 e.preventDefault();
                                 e.stopPropagation();
                                 var tk = editBtn.getAttribute('data-ticker');
                                 var curName = editBtn.getAttribute('data-name') || tk;
-                                var newName = prompt('✏️ 请输入 [' + tk + '] 的新名称：', curName);
-                                if (newName !== null) {
-                                    newName = newName.trim();
-                                    if (newName && newName !== curName) {
-                                        var targetUrl = '/?_page=alert_logs&_t=' + Date.now() + '&_rename=' + encodeURIComponent(tk + '|' + newName);
-                                        try {
-                                            window.top.location.href = targetUrl;
-                                        } catch(err) {
-                                            window.location.href = targetUrl;
+                                var defaultName = curName;
+                                
+                                function doPromptAndSubmit(initialVal) {
+                                    var newName = prompt('✏️ 请输入 [' + tk + '] 的新名称：', initialVal);
+                                    if (newName !== null) {
+                                        newName = newName.trim();
+                                        if (newName && newName !== curName) {
+                                            var targetUrl = '/?_page=alert_logs&_t=' + Date.now() + '&_rename=' + encodeURIComponent(tk + '|' + newName);
+                                            try {
+                                                window.top.location.href = targetUrl;
+                                            } catch(err) {
+                                                window.location.href = targetUrl;
+                                            }
                                         }
                                     }
+                                }
+
+                                // 若品种名与代码相同（或无有效中文全称），异步网络查询 API 获取最新全称填入输入框
+                                if (!curName || curName.toUpperCase() === tk.toUpperCase()) {
+                                    var queryUrl = '/?_cb=1&_query_name=' + encodeURIComponent(tk);
+                                    fetch(queryUrl).then(function(res) { return res.json(); }).then(function(data) {
+                                        if (data && data.name) {
+                                            doPromptAndSubmit(data.name);
+                                        } else {
+                                            doPromptAndSubmit(defaultName);
+                                        }
+                                    }).catch(function() {
+                                        doPromptAndSubmit(defaultName);
+                                    });
+                                } else {
+                                    doPromptAndSubmit(defaultName);
                                 }
                                 return;
                             }

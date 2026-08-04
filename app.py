@@ -989,9 +989,10 @@ def main():
     _fav_quiet = st.query_params.get("_fav", "")
     _star_quiet = st.query_params.get("_toggle_star", "")
     _rename_quiet = st.query_params.get("_rename", "")
+    _query_name_quiet = st.query_params.get("_query_name", "")
     
     # 如果该请求是从 Iframe JS 静音 fetch/sendBeacon 发送来的（包含 _cb 参数或者不是主页面渲染）
-    if (_fav_quiet or _star_quiet or _rename_quiet) and st.query_params.get("_cb"):
+    if (_fav_quiet or _star_quiet or _rename_quiet or _query_name_quiet) and st.query_params.get("_cb"):
         if _fav_quiet:
             try:
                 _fav_act = _uq(_fav_quiet)
@@ -1020,6 +1021,14 @@ def main():
                         storage.update_symbol_name(_ren_tk, _ren_nm)
             except Exception:
                 pass
+        if _query_name_quiet:
+            try:
+                from page_watchlist import _fetch_ticker_name
+                _fetched = _fetch_ticker_name(_query_name_quiet)
+                import json
+                st.write(json.dumps({"ticker": _query_name_quiet, "name": _fetched}))
+            except Exception:
+                st.write("{}")
         st.stop()
         return
 
