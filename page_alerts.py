@@ -828,11 +828,18 @@ def render_alert_log_table(full_page=False):
                 t_token = st.query_params.get("_t", "")
                 curr_page = st.query_params.get("_page", "alert_logs")
                 
+                # 预加载品种全称字典（从自定义品种库和自选库获取最新持久化名称）
+                custom_symbols = storage.load_symbols()
+                symbol_name_map = {item["ticker"].upper(): item["name"] for item in custom_symbols if item.get("name")}
+                for item in watchlist_items:
+                    if item.get("name") and item.get("ticker"):
+                        symbol_name_map[item["ticker"].upper()] = item["name"]
+
                 for idx, row in df.iterrows():
                     status = row.get("status", "")
                     t_val = row.get("time", "")
                     ticker = row.get("ticker", "")
-                    name = row.get("name", "")
+                    name = symbol_name_map.get(ticker.upper()) or row.get("name", "") or ticker
                     
                     is_starred = storage.is_ticker_starred(ticker)
                     is_in_watchlist = ticker.upper() in watchlist_tickers
@@ -1005,7 +1012,7 @@ def render_alert_log_table(full_page=False):
                                 }
 
                                 // 若品种名与代码相同（或无有效中文全称），异步网络查询 API 获取最新全称填入输入框
-                                if (!curName || curName.toUpperCase() === tk.toUpperCase()) {
+                                if (!curName || curName.toUpperCase().replace(/\./g, '') === tk.toUpperCase().replace(/\./g, '')) {
                                     var queryUrl = '/?_cb=1&_query_name=' + encodeURIComponent(tk);
                                     fetch(queryUrl).then(function(res) { return res.json(); }).then(function(data) {
                                         if (data && data.name) {
