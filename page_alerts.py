@@ -1030,12 +1030,26 @@ def render_alert_log_table(full_page=False):
                                     e.preventDefault();
                                     e.stopPropagation();
                                     
-                                    // 拼接带 _cb 参数的静音请求 URL
+                                    if (actionBtn.classList.contains('star-btn')) {
+                                        // ⭐ 重点关注按钮：触发 Top 页面重定向，保证主渲染更新及提示
+                                        try {
+                                            window.top.location.href = href;
+                                        } catch(err) {
+                                            window.location.href = href;
+                                        }
+                                        return;
+                                    }
+
+                                    // 拼接带 _cb 参数的静音请求 URL (用于取消/加入自选)
                                     var reqUrl = href + (href.indexOf('?') >= 0 ? '&' : '?') + '_cb=' + Date.now() + '_' + Math.floor(Math.random()*10000);
                                     
-                                    // 异步静音落盘
+                                    // 异步静音落盘（多通道保障：fetch + sendBeacon + img ping）
                                     try { fetch(reqUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
                                     try { if (navigator.sendBeacon) { navigator.sendBeacon(reqUrl); } } catch(err) {}
+                                    try {
+                                        var imgPing = new Image();
+                                        imgPing.src = reqUrl;
+                                    } catch(err) {}
 
                                     // DOM 秒级实时反转外观
                                     if (actionBtn.classList.contains('unfav-btn')) {
@@ -1054,15 +1068,6 @@ def render_alert_log_table(full_page=False):
                                         actionBtn.innerHTML = '🗑️ 取消自选';
                                         var newHref = href.replace('_fav=add%7C', '_fav=del%7C').replace('_fav=add|', '_fav=del|');
                                         actionBtn.setAttribute('href', newHref);
-                                    } else if (actionBtn.classList.contains('star-btn')) {
-                                        // 星号开关
-                                        if (actionBtn.classList.contains('star-active')) {
-                                            actionBtn.classList.remove('star-active');
-                                            actionBtn.classList.add('star-inactive');
-                                        } else {
-                                            actionBtn.classList.remove('star-inactive');
-                                            actionBtn.classList.add('star-active');
-                                        }
                                     }
                                 }
                                 return;
