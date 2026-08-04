@@ -653,7 +653,10 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
                     else:
                         storage.remove_from_watchlist(tk)
                         st.toast(f"已移除：{nm[:40]}", icon="🗑️")
-            st.query_params.pop("_fav", None)
+            try:
+                del st.query_params["_fav"]
+            except Exception:
+                pass
             st.rerun()
     except Exception:
         pass

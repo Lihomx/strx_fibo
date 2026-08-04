@@ -291,7 +291,10 @@ def _render_market(market_key: str, load_fn, category: str, cfg: dict, label: st
                 import storage as _st2
                 _st2.remove_from_watchlist(_u_tk)
                 st.toast(f"已移除：{_u_nm[:30]}", icon="🗑️")
-        st.query_params.pop(f"_u_{market_key}", None)
+        try:
+            del st.query_params[f"_u_{market_key}"]
+        except Exception:
+            pass
         st.rerun()
 
     # ── 加载品种列表（带重试 + 缓存清除）──────────────────────
