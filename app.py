@@ -1152,6 +1152,7 @@ def main():
             del st.query_params["_fav"]
         except Exception:
             pass
+        st.session_state["_cloud_pulled"] = True
         st.rerun()
 
     _toggle_star = st.query_params.get("_toggle_star", "")
@@ -1166,6 +1167,7 @@ def main():
             del st.query_params["_toggle_star"]
         except Exception:
             pass
+        st.session_state["_cloud_pulled"] = True
         st.rerun()
 
     _rename_raw = st.query_params.get("_rename", "")
@@ -1184,6 +1186,7 @@ def main():
             del st.query_params["_rename"]
         except Exception:
             pass
+        st.session_state["_cloud_pulled"] = True
         st.rerun()
 
     # ── 启动时：从云端自动恢复所有数据 ──────────────────────────
