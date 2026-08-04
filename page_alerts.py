@@ -1022,18 +1022,47 @@ def render_alert_log_table(full_page=False):
                                 return;
                             }
 
-                            // ⭐/🗑️/➕ 按钮：在父页面 (parent window) 上下文中直接触发导航，绕过 iframe 沙盒拦截
+                            // ⭐/🗑️/➕ 按钮：改用异步 AJAX fetch 处理，并瞬间更新 DOM，无需完整页面刷新，支持连续高速操作
                             var actionBtn = e.target.closest('.star-btn, .unfav-btn, .fav-btn');
                             if (actionBtn) {
                                 var href = actionBtn.getAttribute('href');
                                 if (href) {
                                     e.preventDefault();
                                     e.stopPropagation();
-                                    actionBtn.style.opacity = '0.4';
-                                    try {
-                                        window.top.location.href = href;
-                                    } catch(err) {
-                                        window.location.href = href;
+                                    
+                                    // 拼接带 _cb 参数的静音请求 URL
+                                    var reqUrl = href + (href.indexOf('?') >= 0 ? '&' : '?') + '_cb=' + Date.now() + '_' + Math.floor(Math.random()*10000);
+                                    
+                                    // 异步静音落盘
+                                    try { fetch(reqUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
+                                    try { if (navigator.sendBeacon) { navigator.sendBeacon(reqUrl); } } catch(err) {}
+
+                                    // DOM 秒级实时反转外观
+                                    if (actionBtn.classList.contains('unfav-btn')) {
+                                        // 取消自选 -> 变成 加入自选
+                                        actionBtn.classList.remove('unfav-btn');
+                                        actionBtn.classList.add('fav-btn');
+                                        actionBtn.title = '添加到自选表';
+                                        actionBtn.innerHTML = '➕ 加入自选';
+                                        var newHref = href.replace('_fav=del%7C', '_fav=add%7C').replace('_fav=del|', '_fav=add|');
+                                        actionBtn.setAttribute('href', newHref);
+                                    } else if (actionBtn.classList.contains('fav-btn')) {
+                                        // 加入自选 -> 变成 取消自选
+                                        actionBtn.classList.remove('fav-btn');
+                                        actionBtn.classList.add('unfav-btn');
+                                        actionBtn.title = '从自选表移除并取消重点关注';
+                                        actionBtn.innerHTML = '🗑️ 取消自选';
+                                        var newHref = href.replace('_fav=add%7C', '_fav=del%7C').replace('_fav=add|', '_fav=del|');
+                                        actionBtn.setAttribute('href', newHref);
+                                    } else if (actionBtn.classList.contains('star-btn')) {
+                                        // 星号开关
+                                        if (actionBtn.classList.contains('star-active')) {
+                                            actionBtn.classList.remove('star-active');
+                                            actionBtn.classList.add('star-inactive');
+                                        } else {
+                                            actionBtn.classList.remove('star-inactive');
+                                            actionBtn.classList.add('star-active');
+                                        }
                                     }
                                 }
                                 return;
