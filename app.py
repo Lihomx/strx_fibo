@@ -988,9 +988,10 @@ def main():
     import re as _re
     _fav_quiet = st.query_params.get("_fav", "")
     _star_quiet = st.query_params.get("_toggle_star", "")
+    _rename_quiet = st.query_params.get("_rename", "")
     
     # 如果该请求是从 Iframe JS 静音 fetch/sendBeacon 发送来的（包含 _cb 参数或者不是主页面渲染）
-    if (_fav_quiet or _star_quiet) and st.query_params.get("_cb"):
+    if (_fav_quiet or _star_quiet or _rename_quiet) and st.query_params.get("_cb"):
         if _fav_quiet:
             try:
                 _fav_act = _uq(_fav_quiet)
@@ -1007,6 +1008,16 @@ def main():
         if _star_quiet:
             try:
                 storage.toggle_starred_ticker(_star_quiet)
+            except Exception:
+                pass
+        if _rename_quiet:
+            try:
+                _ren_act = _uq(_rename_quiet)
+                _ren_parts = _ren_act.split("|", 1)
+                if len(_ren_parts) == 2:
+                    _ren_tk, _ren_nm = _ren_parts
+                    if _ren_tk.strip() and _ren_nm.strip():
+                        storage.update_symbol_name(_ren_tk, _ren_nm)
             except Exception:
                 pass
         st.stop()
@@ -1139,6 +1150,21 @@ def main():
         except Exception:
             pass
         st.query_params.pop("_toggle_star", None)
+        st.rerun()
+
+    _rename_raw = st.query_params.get("_rename", "")
+    if _rename_raw:
+        try:
+            _ren_act = _uq(_rename_raw)
+            _ren_parts = _ren_act.split("|", 1)
+            if len(_ren_parts) == 2:
+                _ren_tk, _ren_nm = _ren_parts
+                if _ren_tk.strip() and _ren_nm.strip():
+                    storage.update_symbol_name(_ren_tk, _ren_nm)
+                    st.toast(f"✏️ 名称已修改：{_ren_tk} -> {_ren_nm}", icon="✏️")
+        except Exception:
+            pass
+        st.query_params.pop("_rename", None)
         st.rerun()
 
     # ── 启动时：从云端自动恢复所有数据 ──────────────────────────

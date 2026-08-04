@@ -1900,6 +1900,61 @@ def add_symbol(ticker: str, name: str = "", source: str = "manual") -> bool:
     })
     return save_symbols(items)
 
+def update_symbol_name(ticker: str, new_name: str) -> bool:
+    """更新指定品种的名称（同步更新自定义品种库、自选收藏夹、热门品种库，并推送到云端）"""
+    ticker = ticker.strip().upper()
+    new_name = new_name.strip()
+    if not ticker or not new_name:
+        return False
+    
+    updated = False
+    
+    # 1. 更新自定义品种库 (F_SYMBOLS)
+    symbols = load_symbols()
+    found_in_sym = False
+    for s in symbols:
+        if s.get("ticker", "").strip().upper() == ticker:
+            s["name"] = new_name
+            found_in_sym = True
+            updated = True
+            break
+    if not found_in_sym:
+        symbols.append({
+            "ticker": ticker,
+            "name": new_name,
+            "source": "manual",
+            "added_at": _now_str()
+        })
+        updated = True
+    save_symbols(symbols)
+    
+    # 2. 更新自选收藏夹 (F_WATCHLIST)
+    wl_items = load_watchlist()
+    wl_changed = False
+    for item in wl_items:
+        if item.get("ticker", "").strip().upper() == ticker:
+            item["name"] = new_name
+            wl_changed = True
+            updated = True
+    if wl_changed:
+        save_watchlist(wl_items)
+        
+    # 3. 更新热门品种库 (F_HOTLIST)
+    try:
+        hot_items = load_hotlist()
+        hot_changed = False
+        for item in hot_items:
+            if item.get("ticker", "").strip().upper() == ticker:
+                item["name"] = new_name
+                hot_changed = True
+                updated = True
+        if hot_changed:
+            save_hotlist(hot_items)
+    except Exception:
+        pass
+        
+    return updated
+
 def remove_symbol(ticker: str) -> bool:
     ticker = ticker.strip().upper()
     items = load_symbols()

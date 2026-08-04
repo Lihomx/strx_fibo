@@ -895,7 +895,7 @@ def render_alert_log_table(full_page=False):
                         clicks_html = '<span style="color:#475569;">—</span>'
                     
                     code_html = f'{star_html}<a href="/?_page=ticker&_ticker={ticker}&_t={t_token}" target="_parent" style="color:#38bdf8; text-decoration:none; font-weight:bold;">{ticker}</a>'
-                    name_html = f'<a href="/?_page=ticker&_ticker={ticker}&_t={t_token}" target="_parent" style="color:inherit; text-decoration:none;">{name}</a>'
+                    name_html = f'<span class="name-text-wrap" style="display:inline-flex;align-items:center;gap:4px;"><a href="/?_page=ticker&_ticker={ticker}&_t={t_token}" target="_parent" style="color:inherit; text-decoration:none;">{name}</a><button class="edit-name-btn" data-ticker="{ticker}" data-name="{name}" title="修改品种名称" style="background:none;border:none;cursor:pointer;opacity:0.6;font-size:12px;padding:0 2px;transition:opacity 0.2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.6">✏️</button></span>'
                     
                     # 动态拼接每行的 td
                     td_map = {
@@ -976,6 +976,28 @@ def render_alert_log_table(full_page=False):
                                             }
                                         }
                                     } catch(err) {}
+                                }
+                                return;
+                            }
+
+                            // ✏️ 修改名称按钮：弹出原生 Prompt 输入新名称并导航
+                            var editBtn = e.target.closest('.edit-name-btn');
+                            if (editBtn) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                var tk = editBtn.getAttribute('data-ticker');
+                                var curName = editBtn.getAttribute('data-name') || tk;
+                                var newName = prompt('✏️ 请输入 [' + tk + '] 的新名称：', curName);
+                                if (newName !== null) {
+                                    newName = newName.trim();
+                                    if (newName && newName !== curName) {
+                                        var targetUrl = '/?_page=alert_logs&_t=' + Date.now() + '&_rename=' + encodeURIComponent(tk + '|' + newName);
+                                        try {
+                                            window.top.location.href = targetUrl;
+                                        } catch(err) {
+                                            window.location.href = targetUrl;
+                                        }
+                                    }
                                 }
                                 return;
                             }
