@@ -828,7 +828,8 @@ def render_alert_log_table(full_page=False):
                 t_token = st.query_params.get("_t", "")
                 curr_page = st.query_params.get("_page", "alert_logs")
                 
-                # 预加载品种全称字典（从自定义品种库和自选库获取最新持久化名称）
+                # 预加载品种全称字典（从自定义品种库、自选库及线上新浪/yfinance实时API补全）
+                from page_watchlist import _fetch_ticker_name
                 custom_symbols = storage.load_symbols()
                 symbol_name_map = {item["ticker"].upper(): item["name"] for item in custom_symbols if item.get("name")}
                 for item in watchlist_items:
@@ -839,7 +840,19 @@ def render_alert_log_table(full_page=False):
                     status = row.get("status", "")
                     t_val = row.get("time", "")
                     ticker = row.get("ticker", "")
-                    name = symbol_name_map.get(ticker.upper()) or row.get("name", "") or ticker
+                    tk_upper = ticker.upper()
+                    
+                    # 若存储中尚无中文全称，由 Python 后端服务在渲染前直接调用 _fetch_ticker_name 实时查询填入
+                    raw_name = symbol_name_map.get(tk_upper) or row.get("name", "")
+                    if not raw_name or raw_name.strip().upper().replace(".", "") == tk_upper.replace(".", ""):
+                        fetched_nm = _fetch_ticker_name(ticker)
+                        if fetched_nm:
+                            name = fetched_nm
+                            symbol_name_map[tk_upper] = fetched_nm
+                        else:
+                            name = ticker
+                    else:
+                        name = raw_name
                     
                     is_starred = storage.is_ticker_starred(ticker)
                     is_in_watchlist = ticker.upper() in watchlist_tickers
@@ -987,44 +1000,24 @@ def render_alert_log_table(full_page=False):
                                 return;
                             }
 
-                            // ✏️ 修改名称按钮：先尝试查全称（如当前无中文名或与ticker一致），再弹出 Prompt
+                            // ✏️ 修改名称按钮：直接获取 Python 后端预先解析出的品种全称并弹出 Prompt
                             var editBtn = e.target.closest('.edit-name-btn');
                             if (editBtn) {
                                 e.preventDefault();
                                 e.stopPropagation();
                                 var tk = editBtn.getAttribute('data-ticker');
                                 var curName = editBtn.getAttribute('data-name') || tk;
-                                var defaultName = curName;
-                                
-                                function doPromptAndSubmit(initialVal) {
-                                    var newName = prompt('✏️ 请输入 [' + tk + '] 的新名称：', initialVal);
-                                    if (newName !== null) {
-                                        newName = newName.trim();
-                                        if (newName && newName !== curName) {
-                                            var targetUrl = '/?_page=alert_logs&_t=' + Date.now() + '&_rename=' + encodeURIComponent(tk + '|' + newName);
-                                            try {
-                                                window.top.location.href = targetUrl;
-                                            } catch(err) {
-                                                window.location.href = targetUrl;
-                                            }
+                                var newName = prompt('✏️ 请输入 [' + tk + '] 的新名称：', curName);
+                                if (newName !== null) {
+                                    newName = newName.trim();
+                                    if (newName && newName !== curName) {
+                                        var targetUrl = '/?_page=alert_logs&_t=' + Date.now() + '&_rename=' + encodeURIComponent(tk + '|' + newName);
+                                        try {
+                                            window.top.location.href = targetUrl;
+                                        } catch(err) {
+                                            window.location.href = targetUrl;
                                         }
                                     }
-                                }
-
-                                // 若品种名与代码相同（或无有效中文全称），异步网络查询 API 获取最新全称填入输入框
-                                if (!curName || curName.toUpperCase().replace(/\./g, '') === tk.toUpperCase().replace(/\./g, '')) {
-                                    var queryUrl = '/?_cb=1&_query_name=' + encodeURIComponent(tk);
-                                    fetch(queryUrl).then(function(res) { return res.json(); }).then(function(data) {
-                                        if (data && data.name) {
-                                            doPromptAndSubmit(data.name);
-                                        } else {
-                                            doPromptAndSubmit(defaultName);
-                                        }
-                                    }).catch(function() {
-                                        doPromptAndSubmit(defaultName);
-                                    });
-                                } else {
-                                    doPromptAndSubmit(defaultName);
                                 }
                                 return;
                             }
