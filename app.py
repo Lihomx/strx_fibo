@@ -1148,7 +1148,10 @@ def main():
                         st.toast(f"已移除：{_fav_nm[:40]}", icon="🗑️")
         except Exception:
             pass
-        st.query_params.pop("_fav", None)
+        try:
+            del st.query_params["_fav"]
+        except Exception:
+            pass
         st.rerun()
 
     _toggle_star = st.query_params.get("_toggle_star", "")
@@ -1158,7 +1161,11 @@ def main():
             st.toast(f"重点关注状态已更新：{_toggle_star}", icon="⭐")
         except Exception:
             pass
-        st.query_params.pop("_toggle_star", None)
+        # 清除 _toggle_star 参数，但保留 _page 等参数
+        try:
+            del st.query_params["_toggle_star"]
+        except Exception:
+            pass
         st.rerun()
 
     _rename_raw = st.query_params.get("_rename", "")
@@ -1173,7 +1180,10 @@ def main():
                     st.toast(f"✏️ 名称已修改：{_ren_tk} -> {_ren_nm}", icon="✏️")
         except Exception:
             pass
-        st.query_params.pop("_rename", None)
+        try:
+            del st.query_params["_rename"]
+        except Exception:
+            pass
         st.rerun()
 
     # ── 启动时：从云端自动恢复所有数据 ──────────────────────────
