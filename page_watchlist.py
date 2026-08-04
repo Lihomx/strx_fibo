@@ -162,7 +162,12 @@ def _fetch_ticker_name(ticker: str) -> str:
         except Exception:
             name = ""
 
-    cache[key] = name
+    if name:
+        cache[key] = name
+        try:
+            storage.update_symbol_name(key, name)
+        except Exception:
+            pass
     return name
 
 
