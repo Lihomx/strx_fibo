@@ -1000,15 +1000,19 @@ def main():
                 if len(_fav_parts) == 3:
                     _fav_op, _fav_tk, _fav_nm = _fav_parts
                     if _fav_op in ("add", "del") and _fav_tk.strip():
-                        if _fav_op == "add":
-                            storage.add_to_watchlist(ticker=_fav_tk, name=_fav_nm[:60])
-                        else:
-                            storage.remove_from_watchlist(_fav_tk)
+                        if storage.acquire_fav_lock(_fav_tk):
+                            if _fav_op == "add":
+                                storage.add_to_watchlist(ticker=_fav_tk, name=_fav_nm[:60])
+                            else:
+                                storage.remove_from_watchlist(_fav_tk)
+                            storage.log_fav_action(_fav_tk, _fav_op, success=True, from_ajax=True)
             except Exception:
                 pass
         if _star_quiet:
             try:
-                storage.toggle_starred_ticker(_star_quiet)
+                if storage.acquire_fav_lock(_star_quiet):
+                    storage.toggle_starred_ticker(_star_quiet)
+                    storage.log_fav_action(_star_quiet, "toggle_star", success=True, from_ajax=True)
             except Exception:
                 pass
         if _rename_quiet:
@@ -1078,12 +1082,14 @@ def main():
             if len(_fav_parts) == 3:
                 _fav_op, _fav_tk, _fav_nm = _fav_parts
                 if _fav_op in ("add", "del") and _fav_tk.strip():
-                    if _fav_op == "add":
-                        storage.add_to_watchlist(ticker=_fav_tk, name=_fav_nm[:60])
-                        st.toast(f"⭐ 已收藏：{_fav_nm[:40]}", icon="⭐")
-                    else:
-                        storage.remove_from_watchlist(_fav_tk)
-                        st.toast(f"已移除：{_fav_nm[:40]}", icon="🗑️")
+                    if storage.acquire_fav_lock(_fav_tk):
+                        if _fav_op == "add":
+                            storage.add_to_watchlist(ticker=_fav_tk, name=_fav_nm[:60])
+                            st.toast(f"⭐ 已收藏：{_fav_nm[:40]}", icon="⭐")
+                        else:
+                            storage.remove_from_watchlist(_fav_tk)
+                            st.toast(f"已移除：{_fav_nm[:40]}", icon="🗑️")
+                        storage.log_fav_action(_fav_tk, _fav_op, success=True, from_ajax=False)
         except Exception:
             pass
         try:
@@ -1096,8 +1102,10 @@ def main():
     _toggle_star = st.query_params.get("_toggle_star", "")
     if _toggle_star:
         try:
-            storage.toggle_starred_ticker(_toggle_star)
-            st.toast(f"重点关注状态已更新：{_toggle_star}", icon="⭐")
+            if storage.acquire_fav_lock(_toggle_star):
+                storage.toggle_starred_ticker(_toggle_star)
+                st.toast(f"重点关注状态已更新：{_toggle_star}", icon="⭐")
+                storage.log_fav_action(_toggle_star, "toggle_star", success=True, from_ajax=False)
         except Exception:
             pass
         # 清除 _toggle_star 参数，但保留 _page 等参数

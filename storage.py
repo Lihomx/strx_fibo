@@ -629,6 +629,50 @@ def get_all_link_clicks() -> dict:
     return res if isinstance(res, dict) else {}
 
 
+import threading as _threading
+
+_FAV_LOCK_SET = set()
+_FAV_LOCK_OBJ = _threading.Lock()
+F_FAV_LOG = os.path.join(_BASE, "data_fav_log.json")
+
+def acquire_fav_lock(ticker: str, ttl_seconds: float = 0.5) -> bool:
+    """获取指定 ticker 的自选操作内存锁，防止高频并发冲突"""
+    t = ticker.strip().upper()
+    if not t:
+        return True
+    with _FAV_LOCK_OBJ:
+        if t in _FAV_LOCK_SET:
+            return False
+        _FAV_LOCK_SET.add(t)
+    
+    def _release():
+        with _FAV_LOCK_OBJ:
+            _FAV_LOCK_SET.discard(t)
+            
+    _threading.Timer(ttl_seconds, _release).start()
+    return True
+
+def log_fav_action(ticker: str, op: str, success: bool = True, from_ajax: bool = False) -> None:
+    """记录自选表/重点关注操作审计日志"""
+    try:
+        logs = _load(F_FAV_LOG, [])
+        if not isinstance(logs, list):
+            logs = []
+        entry = {
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
+            "ticker": ticker.strip().upper(),
+            "op": op,
+            "success": success,
+            "from_ajax": from_ajax
+        }
+        logs.append(entry)
+        if len(logs) > 200:
+            logs = logs[-200:]
+        _save(F_FAV_LOG, logs)
+    except Exception:
+        pass
+
+
 F_STARRED = os.path.join(_BASE, "data_starred.json")
 F_TICKER_NOTES = os.path.join(_BASE, "data_ticker_notes.json")
 
