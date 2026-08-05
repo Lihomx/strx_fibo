@@ -884,11 +884,41 @@ import hashlib as _hashlib
 import hmac    as _hmac
 
 _TOKEN_SALT = "STRX_F1b0_S3cur3_S4lt_2025"
+_TOKEN_TTL_DAYS = 30  # 登录后保持有效期（天）
 
 import datetime as _datetime
 import time as _time
 
-def _make_token(pw: str, date_str: str = "") -> str:
+
+def _make_persistent_token(pw: str, expire_epoch: int) -> str:
+    """生成基于过期时间戳的持久化 token：格式 {expire_epoch}.{hmac}"""
+    msg = f"{pw}:{expire_epoch}"
+    sig = _hmac.new(
+        _TOKEN_SALT.encode(),
+        msg.encode(),
+        _hashlib.sha256
+    ).hexdigest()[:40]
+    return f"{expire_epoch}.{sig}"
+
+
+def _verify_persistent_token(token: str, pw: str) -> bool:
+    """验证持久化 token：检查签名有效 + 未过期"""
+    try:
+        parts = token.split(".", 1)
+        if len(parts) != 2:
+            return False
+        expire_epoch = int(parts[0])
+        now_epoch = int(_time.time())
+        if now_epoch > expire_epoch:
+            return False  # 已过期
+        expected = _make_persistent_token(pw, expire_epoch)
+        return _hmac.compare_digest(token.encode(), expected.encode())
+    except Exception:
+        return False
+
+
+def _make_legacy_token(pw: str, date_str: str = "") -> str:
+    """兼容旧版日期 token（保留向后兼容）"""
     if not date_str:
         date_str = _time.strftime("%Y-%m-%d")
     msg = f"{pw}:{date_str}"
@@ -898,6 +928,14 @@ def _make_token(pw: str, date_str: str = "") -> str:
         _hashlib.sha256
     ).hexdigest()[:32]
 
+
+# 保持旧调用兼容（页面导航链接处引用此函数生成 _t= 参数）
+def _make_token(pw: str, date_str: str = "") -> str:
+    """生成持久化 30 天 token（接口向后兼容，忽略 date_str 参数）"""
+    expire_epoch = int(_time.time()) + _TOKEN_TTL_DAYS * 86400
+    return _make_persistent_token(pw, expire_epoch)
+
+
 def _check_password() -> bool:
     try:
         required_pw = st.secrets.get("APP_PASSWORD", "")
@@ -906,20 +944,28 @@ def _check_password() -> bool:
     if not required_pw:
         return True
 
-    today_str = _time.strftime("%Y-%m-%d")
-    valid_token = _make_token(required_pw, today_str)
-
     if st.session_state.get("_authenticated"):
         return True
 
     try:
         url_token = st.query_params.get("_t", "")
         if url_token:
-            yesterday_str = (_datetime.date.today() - _datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-            yesterday_token = _make_token(required_pw, yesterday_str)
-            if _hmac.compare_digest(url_token.encode("utf-8"), valid_token.encode("utf-8")) or \
-               _hmac.compare_digest(url_token.encode("utf-8"), yesterday_token.encode("utf-8")):
+            # 1. 优先验证新版持久化 token
+            if _verify_persistent_token(url_token, required_pw):
                 st.session_state["_authenticated"] = True
+                return True
+            # 2. 兼容旧版日期 token（当天 & 昨天）
+            today_str = _time.strftime("%Y-%m-%d")
+            yesterday_str = (_datetime.date.today() - _datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+            if _hmac.compare_digest(url_token.encode(), _make_legacy_token(required_pw, today_str).encode()) or \
+               _hmac.compare_digest(url_token.encode(), _make_legacy_token(required_pw, yesterday_str).encode()):
+                # 旧 token 验证通过 → 升级为新持久化 token
+                new_token = _make_token(required_pw)
+                st.session_state["_authenticated"] = True
+                try:
+                    st.query_params["_t"] = new_token
+                except Exception:
+                    pass
                 return True
     except Exception:
         pass
@@ -951,8 +997,10 @@ def _check_password() -> bool:
         if pw_input and _hmac.compare_digest(pw_input.encode(), required_pw.encode()):
             st.session_state["_authenticated"] = True
             st.session_state.pop(_fail_key, None)
+            # 登录成功 → 写入 30 天持久化 token
             try:
-                st.query_params["_t"] = valid_token
+                new_token = _make_token(required_pw)
+                st.query_params["_t"] = new_token
             except Exception:
                 pass
             st.rerun()

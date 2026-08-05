@@ -1246,6 +1246,25 @@ def scan_ema_pivot(ticker: str, cfg: Dict) -> Optional[Dict]:
                     }
             else:
                 logger.warning(f"scan_ema_pivot {ticker}: 4h数据不足，跳过4h过滤验证")
+
+        # 4.6. 1小时 20-MA 过滤限制 (如果启用)
+        if cfg.get("filter_1h_ema20", False):
+            # 获取 1h 级别的数据，最近 10 天以确保有足够的 Bar 计算 EMA20
+            df_1h = fetch_data(ticker, interval="1h", period="10d", cfg=cfg)
+            if df_1h is not None and len(df_1h) >= 20:
+                ema_1h_series = df_1h["Close"].ewm(span=20, adjust=False).mean()
+                ema_1h_0 = float(ema_1h_series.iloc[-1])
+                if c_0 <= ema_1h_0:
+                    logger.debug(f"scan_ema_pivot {ticker}: 过滤拦截 (当前价 {c_0:.4f} <= 1h EMA20 {ema_1h_0:.4f})")
+                    return {
+                        "is_signal": False,
+                        "price": c_0,
+                        "ema": float(ema_series.iloc[-1]),
+                        "pivot": daily_pivot,
+                        "triggered_now": False
+                    }
+            else:
+                logger.warning(f"scan_ema_pivot {ticker}: 1h数据不足，跳过1h过滤验证")
         
         # 5. 条件判断
         # latest close

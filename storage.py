@@ -177,6 +177,7 @@ DEFAULT_CFG = {
     "chartink_scan_interval_minutes": 60,
     "alert_cooldown_chartink": 240,
     "filter_4h_ema20": False,
+    "filter_1h_ema20": False,
     "homepage": "watchlist",
     "alert_template": "📐 STRX Fibo 信号 {label}\n━━━━━━━━━━━━━━━━━━━━\n🏷 {name} ({ticker})\n📅 框架: {tf}\n💰 价格: {price}\n📏 黄金区: {zone_bot} – {zone_top}\n📉 回撤: {retrace_pct}%\n🔗 {url}\n🕐 {time}",
     "alert_template_ema_pivot": "🚀 EMA20 + Daily Pivot 信号 {label}\n━━━━━━━━━━━━━━━━━━━━\n🏷 {name} ({ticker})\n📅 框架: {tf}\n💰 价格: {price}\n📈 EMA20: {ema}\n🎯 Pivot: {pivot}\n🔗 {url}\n🕐 {time}",
@@ -631,26 +632,29 @@ def get_all_link_clicks() -> dict:
 
 import threading as _threading
 
-_FAV_LOCK_SET = set()
+import time as _time
+
+_FAV_LOCK_DICT = {}
 _FAV_LOCK_OBJ = _threading.Lock()
 F_FAV_LOG = os.path.join(_BASE, "data_fav_log.json")
 
 def acquire_fav_lock(ticker: str, ttl_seconds: float = 0.5) -> bool:
-    """获取指定 ticker 的自选操作内存锁，防止高频并发冲突"""
+    """获取指定 ticker 的自选操作内存锁，防止高频并发冲突（基于时间戳懒清理，无额外线程开销）"""
     t = ticker.strip().upper()
     if not t:
         return True
+    now = _time.monotonic()
     with _FAV_LOCK_OBJ:
-        if t in _FAV_LOCK_SET:
+        # 清理过期锁
+        expired = [k for k, exp in _FAV_LOCK_DICT.items() if exp <= now]
+        for k in expired:
+            del _FAV_LOCK_DICT[k]
+        
+        # 检查并设置锁
+        if t in _FAV_LOCK_DICT:
             return False
-        _FAV_LOCK_SET.add(t)
-    
-    def _release():
-        with _FAV_LOCK_OBJ:
-            _FAV_LOCK_SET.discard(t)
-            
-    _threading.Timer(ttl_seconds, _release).start()
-    return True
+        _FAV_LOCK_DICT[t] = now + ttl_seconds
+        return True
 
 def log_fav_action(ticker: str, op: str, success: bool = True, from_ajax: bool = False) -> None:
     """记录自选表/重点关注操作审计日志"""
