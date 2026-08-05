@@ -348,6 +348,9 @@ def render():
             filter_1h = st.checkbox("🚀 EMA + Pivot 告警: 当前价格必须在 1小时 20-MA 均线之上",
                                     value=bool(cfg.get("filter_1h_ema20", False)),
                                     help="开启后，在进行 EMA20 + Daily Pivot 扫描时，当前价格必须运行在1小时周期的 20 EMA均线之上，否则进行过滤不触发告警。")
+            filter_15m = st.checkbox("🚀 EMA + Pivot 告警: 当前价格必须在 15分钟 20-MA 均线之上",
+                                     value=bool(cfg.get("filter_15m_ema20", False)),
+                                     help="开启后，在进行 EMA20 + Daily Pivot 扫描时，当前价格必须运行在15分钟周期的 20 EMA均线之上，否则进行过滤不触发告警。")
             
         st.markdown("<div style='margin: 10px 0;'></div>", unsafe_allow_html=True)
         
@@ -376,6 +379,7 @@ def render():
                 "alert_fibo_in_zone_only": fibo_in_zone,
                 "filter_4h_ema20": filter_4h,
                 "filter_1h_ema20": filter_1h,
+                "filter_15m_ema20": filter_15m,
                 "alert_cooldown_fibo": cd_fibo,
                 "alert_cooldown_ema_pivot": cd_ema,
                 "alert_cooldown_chartink": cd_chartink,

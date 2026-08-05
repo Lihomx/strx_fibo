@@ -1265,6 +1265,19 @@ def scan_ema_pivot(ticker: str, cfg: Dict) -> Optional[Dict]:
                     }
             else:
                 logger.warning(f"scan_ema_pivot {ticker}: 1h数据不足，跳过1h过滤验证")
+
+        # 4.7. 15分钟 20-MA 过滤限制 (如果启用)
+        if cfg.get("filter_15m_ema20", False):
+            ema_15m_0 = float(ema_series.iloc[-1])
+            if c_0 <= ema_15m_0:
+                logger.debug(f"scan_ema_pivot {ticker}: 过滤拦截 (当前价 {c_0:.4f} <= 15m EMA20 {ema_15m_0:.4f})")
+                return {
+                    "is_signal": False,
+                    "price": c_0,
+                    "ema": ema_15m_0,
+                    "pivot": daily_pivot,
+                    "triggered_now": False
+                }
         
         # 5. 条件判断
         # latest close
