@@ -209,17 +209,31 @@ def _run_periodic_watchlist_scan() -> None:
             
             try:
                 res = scanner.scan_ema_pivot(ticker=ticker, cfg=cfg)
-                if res and res["is_signal"]:
-                    dispatch_alerts_ema_pivot(
-                        ticker=ticker,
-                        name=name,
-                        timeframe="15m",
-                        price=res["price"],
-                        ema=res["ema"],
-                        pivot=res["pivot"],
-                        label="多头突破",
-                        cfg=cfg
-                    )
+                if res:
+                    if res.get("is_signal_bull"):
+                        dispatch_alerts_ema_pivot(
+                            ticker=ticker,
+                            name=name,
+                            timeframe="15m",
+                            price=res["price"],
+                            ema=res["ema"],
+                            pivot=res["pivot"],
+                            label="多头突破",
+                            cfg=cfg,
+                            icon="🚀"
+                        )
+                    if res.get("is_signal_bear"):
+                        dispatch_alerts_ema_pivot(
+                            ticker=ticker,
+                            name=name,
+                            timeframe="15m",
+                            price=res["price"],
+                            ema=res["ema"],
+                            pivot=res["pivot"],
+                            label="空头破位",
+                            cfg=cfg,
+                            icon="🔻"
+                        )
             except Exception as e:
                 logging.warning(f"[Scheduler] 扫描 {ticker} 出错: {e}")
                 

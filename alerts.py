@@ -107,7 +107,7 @@ def build_message(ticker: str, name: str, tf: str,
 
 def build_message_ema_pivot(ticker: str, name: str, tf: str,
                              price: float, ema: float, pivot: float,
-                             label: str, template: str = None) -> str:
+                             label: str, template: str = None, icon: str = "🚀") -> str:
     from assets import tv_url  # 使用 assets 版本，支持 cn 域名 + 时间框架
     import storage
     is_starred = storage.is_ticker_starred(ticker)
@@ -128,7 +128,7 @@ def build_message_ema_pivot(ticker: str, name: str, tf: str,
             res = starred_prefix + "\n" + res
         return res
     return (
-        f"{starred_prefix}🚀 EMA20 + Daily Pivot 信号  {label}\n"
+        f"{starred_prefix}{icon} EMA20 + Daily Pivot 信号  {label}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"🏷  {name} ({ticker})\n"
         f"📅 框架: {tf}\n"
@@ -406,14 +406,14 @@ def dispatch_alerts(ticker: str, name: str, timeframe: str,
 
 def dispatch_alerts_ema_pivot(ticker: str, name: str, timeframe: str,
                               price: float, ema: float, pivot: float,
-                              label: str, cfg: Dict) -> None:
+                              label: str, cfg: Dict, icon: str = "🚀") -> None:
     cooldown = int(cfg.get("alert_cooldown_ema_pivot", cfg.get("alert_cooldown", 240)))
     sig_hash = _calc_signal_hash(price, label)
     if _is_cooldown("ema_pivot", ticker, timeframe, cooldown, sig_hash):
         return
 
     tmpl = cfg.get("alert_template_ema_pivot", "").strip()
-    text = build_message_ema_pivot(ticker, name, timeframe, price, ema, pivot, label, template=tmpl if tmpl else None)
+    text = build_message_ema_pivot(ticker, name, timeframe, price, ema, pivot, label, template=tmpl if tmpl else None, icon=icon)
     sent = False
 
     if cfg.get("dingtalk_enabled"):
@@ -430,7 +430,7 @@ def dispatch_alerts_ema_pivot(ticker: str, name: str, timeframe: str,
 
     # Also send browser notification to the active Streamlit app session
     try:
-        title = f"🚀 EMA + Pivot 信号: {label}"
+        title = f"{icon} EMA + Pivot 信号: {label}"
         body = f"{name} ({ticker}) [{timeframe}] - 价格: {price}"
         send_browser_notification(title, body, timeout_seconds=15)
     except Exception as e:

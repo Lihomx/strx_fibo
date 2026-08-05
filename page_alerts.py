@@ -342,15 +342,27 @@ def render():
                                         value=bool(cfg.get("alert_fibo_in_zone_only", True)),
                                         help="开启后，只有当价格处于黄金区内时才会发送告警；关闭则即使在黄金区外也发送。")
         with col_rule2:
-            filter_4h = st.checkbox("🚀 EMA + Pivot 告警: 当前价格必须在 4小时 20-MA 均线之上",
+            st.caption("🚀 **上涨扫描条件组（Bullish）**")
+            filter_4h = st.checkbox("当前价格必须在 4小时 20-MA 均线之上",
                                     value=bool(cfg.get("filter_4h_ema20", False)),
-                                    help="开启后，在进行 EMA20 + Daily Pivot 扫描时，当前价格必须运行在4小时周期的 20 EMA均线之上，否则进行过滤不触发告警。")
-            filter_1h = st.checkbox("🚀 EMA + Pivot 告警: 当前价格必须在 1小时 20-MA 均线之上",
+                                    help="开启后，在进行 EMA20 + Daily Pivot 上涨扫描时，当前价格必须运行在4小时周期的 20 EMA均线之上，否则过滤不触发告警。")
+            filter_1h = st.checkbox("当前价格必须在 1小时 20-MA 均线之上",
                                     value=bool(cfg.get("filter_1h_ema20", False)),
-                                    help="开启后，在进行 EMA20 + Daily Pivot 扫描时，当前价格必须运行在1小时周期的 20 EMA均线之上，否则进行过滤不触发告警。")
-            filter_15m = st.checkbox("🚀 EMA + Pivot 告警: 当前价格必须在 15分钟 20-MA 均线之上",
+                                    help="开启后，在进行 EMA20 + Daily Pivot 上涨扫描时，当前价格必须运行在1小时周期的 20 EMA均线之上，否则过滤不触发告警。")
+            filter_15m = st.checkbox("当前价格必须在 15分钟 20-MA 均线之上",
                                      value=bool(cfg.get("filter_15m_ema20", False)),
-                                     help="开启后，在进行 EMA20 + Daily Pivot 扫描时，当前价格必须运行在15分钟周期的 20 EMA均线之上，否则进行过滤不触发告警。")
+                                     help="开启后，在进行 EMA20 + Daily Pivot 上涨扫描时，当前价格必须运行在15分钟周期的 20 EMA均线之上，否则过滤不触发告警。")
+            
+            st.caption("🔻 **下跌扫描条件组（Bearish）**")
+            filter_4h_bear = st.checkbox("当前价格必须在 4小时 20-MA 均线之下",
+                                         value=bool(cfg.get("filter_4h_ema20_bear", False)),
+                                         help="开启后，在进行 EMA20 + Daily Pivot 下跌扫描时，当前价格必须运行在4小时周期的 20 EMA均线之下，否则过滤不触发告警。")
+            filter_1h_bear = st.checkbox("当前价格必须在 1小时 20-MA 均线之下",
+                                         value=bool(cfg.get("filter_1h_ema20_bear", False)),
+                                         help="开启后，在进行 EMA20 + Daily Pivot 下跌扫描时，当前价格必须运行在1小时周期的 20 EMA均线之下，否则过滤不触发告警。")
+            filter_15m_bear = st.checkbox("当前价格必须在 15分钟 20-MA 均线之下",
+                                          value=bool(cfg.get("filter_15m_ema20_bear", False)),
+                                          help="开启后，在进行 EMA20 + Daily Pivot 下跌扫描时，当前价格必须运行在15分钟周期的 20 EMA均线之下，否则过滤不触发告警。")
             
         st.markdown("<div style='margin: 10px 0;'></div>", unsafe_allow_html=True)
         
@@ -380,6 +392,9 @@ def render():
                 "filter_4h_ema20": filter_4h,
                 "filter_1h_ema20": filter_1h,
                 "filter_15m_ema20": filter_15m,
+                "filter_4h_ema20_bear": filter_4h_bear,
+                "filter_1h_ema20_bear": filter_1h_bear,
+                "filter_15m_ema20_bear": filter_15m_bear,
                 "alert_cooldown_fibo": cd_fibo,
                 "alert_cooldown_ema_pivot": cd_ema,
                 "alert_cooldown_chartink": cd_chartink,

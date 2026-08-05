@@ -1228,75 +1228,71 @@ def scan_ema_pivot(ticker: str, cfg: Dict) -> Optional[Dict]:
         
         c_0 = float(df_15m["Close"].iloc[-1])
 
-        # 4.5. 4小时 20-MA 过滤限制 (如果启用)
-        if cfg.get("filter_4h_ema20", False):
-            # 获取 4h 级别的数据，最近 30 天以确保有足够的 Bar 计算 EMA20
-            df_4h = fetch_data(ticker, interval="4h", period="30d", cfg=cfg)
-            if df_4h is not None and len(df_4h) >= 20:
-                ema_4h_series = df_4h["Close"].ewm(span=20, adjust=False).mean()
-                ema_4h_0 = float(ema_4h_series.iloc[-1])
-                if c_0 <= ema_4h_0:
-                    logger.debug(f"scan_ema_pivot {ticker}: 过滤拦截 (当前价 {c_0:.4f} <= 4h EMA20 {ema_4h_0:.4f})")
-                    return {
-                        "is_signal": False,
-                        "price": c_0,
-                        "ema": float(ema_series.iloc[-1]),
-                        "pivot": daily_pivot,
-                        "triggered_now": False
-                    }
-            else:
-                logger.warning(f"scan_ema_pivot {ticker}: 4h数据不足，跳过4h过滤验证")
-
-        # 4.6. 1小时 20-MA 过滤限制 (如果启用)
-        if cfg.get("filter_1h_ema20", False):
-            # 获取 1h 级别的数据，最近 10 天以确保有足够的 Bar 计算 EMA20
-            df_1h = fetch_data(ticker, interval="1h", period="10d", cfg=cfg)
-            if df_1h is not None and len(df_1h) >= 20:
-                ema_1h_series = df_1h["Close"].ewm(span=20, adjust=False).mean()
-                ema_1h_0 = float(ema_1h_series.iloc[-1])
-                if c_0 <= ema_1h_0:
-                    logger.debug(f"scan_ema_pivot {ticker}: 过滤拦截 (当前价 {c_0:.4f} <= 1h EMA20 {ema_1h_0:.4f})")
-                    return {
-                        "is_signal": False,
-                        "price": c_0,
-                        "ema": float(ema_series.iloc[-1]),
-                        "pivot": daily_pivot,
-                        "triggered_now": False
-                    }
-            else:
-                logger.warning(f"scan_ema_pivot {ticker}: 1h数据不足，跳过1h过滤验证")
-
-        # 4.7. 15分钟 20-MA 过滤限制 (如果启用)
-        if cfg.get("filter_15m_ema20", False):
-            ema_15m_0 = float(ema_series.iloc[-1])
-            if c_0 <= ema_15m_0:
-                logger.debug(f"scan_ema_pivot {ticker}: 过滤拦截 (当前价 {c_0:.4f} <= 15m EMA20 {ema_15m_0:.4f})")
-                return {
-                    "is_signal": False,
-                    "price": c_0,
-                    "ema": ema_15m_0,
-                    "pivot": daily_pivot,
-                    "triggered_now": False
-                }
+        # 4.5. 预先获取 4h / 1h / 15m 的 EMA20 值
+        ema_15m_0 = float(ema_series.iloc[-1])
         
-        # 5. 条件判断
-        # latest close
-        ema_0 = float(ema_series.iloc[-1])
-        cond_0 = c_0 > ema_0 and c_0 > daily_pivot
+        # 获取 4h 级别数据及 4h EMA20
+        df_4h = fetch_data(ticker, interval="4h", period="30d", cfg=cfg)
+        ema_4h_0 = None
+        if df_4h is not None and len(df_4h) >= 20:
+            ema_4h_series = df_4h["Close"].ewm(span=20, adjust=False).mean()
+            ema_4h_0 = float(ema_4h_series.iloc[-1])
 
-        # previous close (for change check: not condition[1])
+        # 获取 1h 级别数据及 1h EMA20
+        df_1h = fetch_data(ticker, interval="1h", period="10d", cfg=cfg)
+        ema_1h_0 = None
+        if df_1h is not None and len(df_1h) >= 20:
+            ema_1h_series = df_1h["Close"].ewm(span=20, adjust=False).mean()
+            ema_1h_0 = float(ema_1h_series.iloc[-1])
+
+        # ── 5. 多头 (Bull) 条件及过滤校验 ────────────────────────
+        cond_bull_base = c_0 > ema_15m_0 and c_0 > daily_pivot
+        pass_bull_filters = True
+        
+        if cfg.get("filter_4h_ema20", False):
+            if ema_4h_0 is None or c_0 <= ema_4h_0:
+                pass_bull_filters = False
+        if cfg.get("filter_1h_ema20", False):
+            if ema_1h_0 is None or c_0 <= ema_1h_0:
+                pass_bull_filters = False
+        if cfg.get("filter_15m_ema20", False):
+            if c_0 <= ema_15m_0:
+                pass_bull_filters = False
+
         c_1 = float(df_15m["Close"].iloc[-2])
         ema_1 = float(ema_series.iloc[-2])
-        cond_1 = c_1 > ema_1 and c_1 > daily_pivot
+        cond_bull_prev = c_1 > ema_1 and c_1 > daily_pivot
+        is_signal_bull = cond_bull_base and pass_bull_filters
+        triggered_now_bull = is_signal_bull and not cond_bull_prev
 
-        triggered_now = cond_0 and not cond_1
+        # ── 6. 空头 (Bear) 条件及过滤校验 ────────────────────────
+        cond_bear_base = c_0 < ema_15m_0 and c_0 < daily_pivot
+        pass_bear_filters = True
+
+        if cfg.get("filter_4h_ema20_bear", False):
+            if ema_4h_0 is None or c_0 >= ema_4h_0:
+                pass_bear_filters = False
+        if cfg.get("filter_1h_ema20_bear", False):
+            if ema_1h_0 is None or c_0 >= ema_1h_0:
+                pass_bear_filters = False
+        if cfg.get("filter_15m_ema20_bear", False):
+            if c_0 >= ema_15m_0:
+                pass_bear_filters = False
+
+        cond_bear_prev = c_1 < ema_1 and c_1 < daily_pivot
+        is_signal_bear = cond_bear_base and pass_bear_filters
+        triggered_now_bear = is_signal_bear and not cond_bear_prev
 
         return {
-            "is_signal": cond_0,
+            "is_signal": is_signal_bull,           # 向后兼容
+            "is_signal_bull": is_signal_bull,
+            "is_signal_bear": is_signal_bear,
             "price": c_0,
-            "ema": ema_0,
+            "ema": ema_15m_0,
             "pivot": daily_pivot,
-            "triggered_now": triggered_now
+            "triggered_now": triggered_now_bull,
+            "triggered_now_bull": triggered_now_bull,
+            "triggered_now_bear": triggered_now_bear,
         }
     except Exception as e:
         logger.warning(f"scan_ema_pivot {ticker} error: {e}")
