@@ -648,9 +648,9 @@ def render_alert_log_table(full_page=False):
                 )
             with f_col3:
                 scanner_opt = st.selectbox(
-                    "🔍 扫描器类型",
-                    options=["全部", "Fibonacci 扫描", "EMA + Daily Pivot", "其他"],
-                    help="根据触发告警的扫描类型进行筛选",
+                    "🔍 扫描器与方向",
+                    options=["全部", "🚀 上涨 (多头)", "🔻 下跌 (空头)", "Fibonacci 扫描", "EMA + Daily Pivot", "Chartink 4H", "其他"],
+                    help="根据触发告警的类型或方向进行筛选",
                     key=f"alert_log_scanner_{'full' if full_page else 'tab'}"
                 )
             with f_col4:
@@ -673,6 +673,7 @@ def render_alert_log_table(full_page=False):
                 ("ticker", "代码", True),
                 ("name", "名称", True),
                 ("scanner_name", "扫描器", True),
+                ("label_display", "信号类型", True),
                 ("timeframe", "周期", True),
                 ("tradingview", "行情链接", True),
                 ("clicks", "点击统计", True),
@@ -716,13 +717,19 @@ def render_alert_log_table(full_page=False):
                 df["name"].str.lower().str.contains(q, na=False)
             ]
             
-        # 3. 扫描器筛选
-        if scanner_opt == "Fibonacci 扫描":
+        # 3. 扫描器 / 方向筛选
+        if scanner_opt == "🚀 上涨 (多头)":
+            df = df[df.apply(lambda r: "空头" not in str(r.get("label", "")) and "跌" not in str(r.get("label", "")), axis=1)]
+        elif scanner_opt == "🔻 下跌 (空头)":
+            df = df[df.apply(lambda r: "空头" in str(r.get("label", "")) or "跌" in str(r.get("label", "")), axis=1)]
+        elif scanner_opt == "Fibonacci 扫描":
             df = df[df["scanner"] == "fibo"]
         elif scanner_opt == "EMA + Daily Pivot":
             df = df[df["scanner"] == "ema_pivot"]
+        elif scanner_opt == "Chartink 4H":
+            df = df[df["scanner"] == "chartink"]
         elif scanner_opt == "其他":
-            df = df[~df["scanner"].isin(["fibo", "ema_pivot"])]
+            df = df[~df["scanner"].isin(["fibo", "ema_pivot", "chartink"])]
             
         # 4. 时间框架筛选
         if timeframe_opt:
@@ -940,12 +947,24 @@ def render_alert_log_table(full_page=False):
                     code_html = f'{star_html}<a href="/?_page=ticker&_ticker={ticker}&_t={t_token}" target="_parent" style="color:#38bdf8; text-decoration:none; font-weight:bold;">{ticker}</a>'
                     name_html = f'<span class="name-text-wrap" style="display:inline-flex;align-items:center;gap:4px;"><a href="/?_page=ticker&_ticker={ticker}&_t={t_token}" target="_parent" style="color:inherit; text-decoration:none;">{name}</a><button class="edit-name-btn" data-ticker="{ticker}" data-name="{name}" title="修改品种名称" style="background:none;border:none;cursor:pointer;opacity:0.6;font-size:12px;padding:0 2px;transition:opacity 0.2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.6">✏️</button></span>'
                     
+                    # 信号方向 badge 标签生成
+                    raw_label = str(row.get("label", "") or "").strip()
+                    if "空头" in raw_label or "跌" in raw_label:
+                        label_html = f'<span style="background-color: rgba(239, 68, 68, 0.15); color: #f87171; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; border: 1px solid rgba(239, 68, 68, 0.3);">🔻 {raw_label or "空头破位"}</span>'
+                    elif "多头" in raw_label or "突破" in raw_label or "黄金区" in raw_label:
+                        label_html = f'<span style="background-color: rgba(34, 197, 94, 0.15); color: #4ade80; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; border: 1px solid rgba(34, 197, 94, 0.3);">🚀 {raw_label or "多头突破"}</span>'
+                    elif raw_label:
+                        label_html = f'<span style="background-color: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; border: 1px solid rgba(56, 189, 248, 0.3);">{raw_label}</span>'
+                    else:
+                        label_html = '<span style="color:#64748b;">—</span>'
+
                     # 动态拼接每行的 td
                     td_map = {
                         "time": f"<td>{t_val}</td>",
                         "ticker": f"<td>{code_html}</td>",
                         "name": f"<td>{name_html}</td>",
                         "scanner_name": f"<td>{row.get('scanner_name', '—')}</td>",
+                        "label_display": f"<td>{label_html}</td>",
                         "timeframe": f"<td><code>{row.get('timeframe', '—')}</code></td>",
                         "tradingview": f"<td>{tv_html}</td>",
                         "clicks": f"<td>{clicks_html}</td>",

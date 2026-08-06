@@ -520,7 +520,7 @@ def clear_scanned_groups() -> bool:
     return _save(F_GROUPS, [])
 
 
-def log_alert(ticker_or_entry, name=None, timeframe=None, channel=None, status=None, message=None, scanner=None) -> bool:
+def log_alert(ticker_or_entry, name=None, timeframe=None, channel=None, status=None, message=None, scanner=None, label=None) -> bool:
     from datetime import datetime, timezone
     if isinstance(ticker_or_entry, dict):
         entry = ticker_or_entry
@@ -533,7 +533,8 @@ def log_alert(ticker_or_entry, name=None, timeframe=None, channel=None, status=N
             "channel": channel or "",
             "status": status or "",
             "message": message or "",
-            "scanner": scanner or ""
+            "scanner": scanner or "",
+            "label": label or ""
         }
     logs: List[Dict] = _load(F_ALERTS, [])
     logs.append(entry)

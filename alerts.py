@@ -383,13 +383,13 @@ def dispatch_alerts(ticker: str, name: str, timeframe: str,
     if cfg.get("dingtalk_enabled"):
         ok, msg = send_dingtalk(text, cfg)
         storage.log_alert(ticker, name, timeframe, "dingtalk",
-                          "ok" if ok else "fail", msg, scanner="fibo")
+                          "ok" if ok else "fail", msg, scanner="fibo", label=conf.get("label", ""))
         sent = sent or ok
 
     if cfg.get("telegram_enabled"):
         ok, msg = send_telegram(text, cfg)
         storage.log_alert(ticker, name, timeframe, "telegram",
-                          "ok" if ok else "fail", msg, scanner="fibo")
+                          "ok" if ok else "fail", msg, scanner="fibo", label=conf.get("label", ""))
         sent = sent or ok
 
     # Also send browser notification to the active Streamlit app session
@@ -419,13 +419,13 @@ def dispatch_alerts_ema_pivot(ticker: str, name: str, timeframe: str,
     if cfg.get("dingtalk_enabled"):
         ok, msg = send_dingtalk(text, cfg)
         storage.log_alert(ticker, name, timeframe, "dingtalk",
-                          "ok" if ok else "fail", msg, scanner="ema_pivot")
+                          "ok" if ok else "fail", msg, scanner="ema_pivot", label=label)
         sent = sent or ok
 
     if cfg.get("telegram_enabled"):
         ok, msg = send_telegram(text, cfg)
         storage.log_alert(ticker, name, timeframe, "telegram",
-                          "ok" if ok else "fail", msg, scanner="ema_pivot")
+                          "ok" if ok else "fail", msg, scanner="ema_pivot", label=label)
         sent = sent or ok
 
     # Also send browser notification to the active Streamlit app session
@@ -455,13 +455,13 @@ def dispatch_alerts_chartink(ticker: str, name: str, timeframe: str,
     if cfg.get("dingtalk_enabled"):
         ok, msg = send_dingtalk(text, cfg)
         storage.log_alert(ticker, name, timeframe, "dingtalk",
-                          "ok" if ok else "fail", msg, scanner="chartink")
+                          "ok" if ok else "fail", msg, scanner="chartink", label=label)
         sent = sent or ok
 
     if cfg.get("telegram_enabled"):
         ok, msg = send_telegram(text, cfg)
         storage.log_alert(ticker, name, timeframe, "telegram",
-                          "ok" if ok else "fail", msg, scanner="chartink")
+                          "ok" if ok else "fail", msg, scanner="chartink", label=label)
         sent = sent or ok
 
     try:
