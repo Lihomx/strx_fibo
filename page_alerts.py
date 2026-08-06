@@ -787,14 +787,30 @@ def render_alert_log_table(full_page=False):
             import urllib.parse
             
             # 转换扫描器标签
-            def get_scanner_label(s):
+            def get_scanner_label(row):
+                s = str(row.get("scanner", ""))
+                lbl = str(row.get("label", ""))
+                msg = str(row.get("message", ""))
+                
+                # 判断上涨/下跌
+                if "空头" in lbl or "跌" in lbl or "空头" in msg or "跌" in msg:
+                    dir_tag = " (下跌)"
+                elif "多头" in lbl or "突破" in lbl or "黄金区" in lbl or "多头" in msg or "突破" in msg:
+                    dir_tag = " (上涨)"
+                else:
+                    dir_tag = ""
+
                 if s == "fibo":
-                    return "Fibonacci"
+                    return f"Fibonacci{dir_tag}"
                 elif s == "ema_pivot":
-                    return "EMA + Daily Pivot"
+                    return f"EMA + Daily Pivot{dir_tag}"
+                elif s == "chartink":
+                    return f"Chartink 4H{dir_tag}"
+                elif s:
+                    return f"{s}{dir_tag}"
                 return "其他/历史记录"
                 
-            df["scanner_name"] = df["scanner"].apply(get_scanner_label)
+            df["scanner_name"] = df.apply(get_scanner_label, axis=1)
             df["tradingview"] = df["ticker"].apply(lambda t: tv_url(t, "15m"))
             df["clicks"] = ""  # 占位列
             
