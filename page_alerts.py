@@ -1080,26 +1080,13 @@ def render_alert_log_table(full_page=False):
                                 return;
                             }
 
-                            // ⭐/🗑️/➕ 按钮：统一在父页面上下文进行 URL 导航重定向，带防抖与重复点击阻断
+                            // ⭐/🗑️/➕ 按钮：统一在父页面上下文进行 URL 导航重定向
                             var actionBtn = e.target.closest('.star-btn, .unfav-btn, .fav-btn');
                             if (actionBtn) {
                                 var href = actionBtn.getAttribute('href');
                                 if (href) {
                                     e.preventDefault();
                                     e.stopPropagation();
-                                    
-                                    if (actionBtn.getAttribute('data-pending') === '1') {
-                                        return;
-                                    }
-                                    actionBtn.setAttribute('data-pending', '1');
-                                    actionBtn.style.opacity = '0.4';
-                                    actionBtn.style.pointerEvents = 'none';
-
-                                    setTimeout(function() {
-                                        actionBtn.removeAttribute('data-pending');
-                                        actionBtn.style.opacity = '1';
-                                        actionBtn.style.pointerEvents = 'auto';
-                                    }, 400);
 
                                     try {
                                         window.top.location.href = href;

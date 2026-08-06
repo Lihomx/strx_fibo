@@ -643,7 +643,7 @@ _FAV_LOCK_DICT = {}
 _FAV_LOCK_OBJ = _threading.Lock()
 F_FAV_LOG = os.path.join(_BASE, "data_fav_log.json")
 
-def acquire_fav_lock(ticker: str, ttl_seconds: float = 0.5) -> bool:
+def acquire_fav_lock(ticker: str, ttl_seconds: float = 0.1) -> bool:
     """获取指定 ticker 的自选操作内存锁，防止高频并发冲突（基于时间戳懒清理，无额外线程开销）"""
     t = ticker.strip().upper()
     if not t:
