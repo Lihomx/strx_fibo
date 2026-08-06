@@ -5,6 +5,7 @@ numpy>=2.1.0
 requests>=2.33.1
 
 # ── 数据源
+curl_cffi==0.7.4
 yfinance>=1.5.1
 # akshare 已移至运行时按需/可选导入，避免其依赖 py-mini-racer 在 python 3.13 平台下因源码编译缓慢导致部署超时
 
