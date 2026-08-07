@@ -647,15 +647,18 @@ def render_alert_log_table(full_page=False):
                 starred_cards_html = []
                 starred_cards_html.append("<style>")
                 starred_cards_html.append(".starred-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 5px; }")
-                starred_cards_html.append(".starred-card { background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 8px; padding: 10px 12px; transition: all 0.2s ease; }")
+                starred_cards_html.append(".starred-card { background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 8px; padding: 10px 12px; transition: all 0.2s ease; cursor: pointer; }")
                 starred_cards_html.append(".starred-card:hover { border-color: rgba(245, 158, 11, 0.6); background: rgba(245, 158, 11, 0.14); transform: translateY(-1px); }")
                 starred_cards_html.append(".starred-title { font-weight: 700; font-size: 13px; color: #fbbf24; display: flex; justify-content: space-between; align-items: center; }")
                 starred_cards_html.append(".starred-sub { font-size: 11px; color: #cbd5e1; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }")
                 starred_cards_html.append(".starred-alert { font-size: 11px; margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(245, 158, 11, 0.2); }")
+                starred_cards_html.append(".filter-btn-mini { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 4px; padding: 1px 5px; font-size: 10px; text-decoration: none !important; font-weight: normal; cursor: pointer; transition: all 0.2s; }")
+                starred_cards_html.append(".filter-btn-mini:hover { background: rgba(56, 189, 248, 0.3); color: #7dd3fc; }")
                 starred_cards_html.append("</style>")
                 starred_cards_html.append("<div class='starred-grid'>")
 
                 t_token = st.query_params.get("_t", "")
+                curr_page = st.query_params.get("_page", "alert_logs")
 
                 for stk in starred_tickers:
                     stk_u = stk.upper()
@@ -684,10 +687,13 @@ def render_alert_log_table(full_page=False):
                     else:
                         alert_str = "<span style='color:#64748b;'>暂无近期告警</span>"
 
+                    filter_href = f"/?_page={curr_page}&_t={t_token}&_search={stk_u}"
+
                     card = f"""
-                    <div class='starred-card'>
+                    <div class='starred-card' onclick="if(event.target.tagName !== 'A') {{ window.top.location.href='{filter_href}'; }}" title="点击快速筛选此品种告警">
                         <div class='starred-title'>
-                            <span>⭐ <a href='/?_page=ticker&_ticker={stk_u}&_t={t_token}' target='_parent' style='color:#fbbf24;text-decoration:none;'>{stk_u}</a></span>
+                            <span>⭐ <a href='/?_page=ticker&_ticker={stk_u}&_t={t_token}' target='_parent' style='color:#fbbf24;text-decoration:none;' title='进入品种详情页'>{stk_u}</a></span>
+                            <a href='{filter_href}' target='_top' class='filter-btn-mini' title='快速筛选此品种告警'>🔍 筛选</a>
                         </div>
                         <div class='starred-sub'>{stk_name}</div>
                         <div class='starred-alert'>{alert_str}</div>
@@ -712,8 +718,10 @@ def render_alert_log_table(full_page=False):
                     key=f"alert_log_date_{'full' if full_page else 'tab'}"
                 )
             with f_col2:
+                default_search = st.query_params.get("_search", "")
                 search_q = st.text_input(
                     "🏷️ 代码 / 品种名",
+                    value=default_search,
                     placeholder="输入搜索关键字...",
                     help="不区分大小写，搜索代码或资产名称",
                     key=f"alert_log_search_{'full' if full_page else 'tab'}"
