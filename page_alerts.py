@@ -659,6 +659,7 @@ def render_alert_log_table(full_page=False):
 
                 t_token = st.query_params.get("_t", "")
                 curr_page = st.query_params.get("_page", "alert_logs")
+                from assets import tv_url
 
                 for stk in starred_tickers:
                     stk_u = stk.upper()
@@ -686,14 +687,19 @@ def render_alert_log_table(full_page=False):
                         alert_str = f"⏰ {l_time} [{l_tf}] · {dir_tag}"
                     else:
                         alert_str = "<span style='color:#64748b;'>暂无近期告警</span>"
+                        l_tf = "15m"
 
                     filter_href = f"/?_page={curr_page}&_t={t_token}&_search={stk_u}"
+                    tv_href = tv_url(stk_u, l_tf if l_tf else "15m")
 
                     card = (
                         f"<div class='starred-card' onclick=\"if(event.target.tagName !== 'A') {{ window.top.location.href='{filter_href}'; }}\" title=\"点击快速筛选此品种告警\">"
                         f"<div class='starred-title'>"
                         f"<span>⭐ <a href='/?_page=ticker&_ticker={stk_u}&_t={t_token}' target='_parent' style='color:#fbbf24;text-decoration:none;' title='进入品种详情页'>{stk_u}</a></span>"
+                        f"<div style='display:flex;gap:4px;align-items:center;'>"
+                        f"<a href='{tv_href}' target='_blank' class='filter-btn-mini' style='background:rgba(30,144,255,0.15);color:#38bdf8;border-color:rgba(30,144,255,0.3);' title='打开 TradingView 图表'>📈 图表</a>"
                         f"<a href='{filter_href}' target='_top' class='filter-btn-mini' title='快速筛选此品种告警'>🔍 筛选</a>"
+                        f"</div>"
                         f"</div>"
                         f"<div class='starred-sub'>{stk_name}</div>"
                         f"<div class='starred-alert'>{alert_str}</div>"
