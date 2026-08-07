@@ -689,16 +689,16 @@ def render_alert_log_table(full_page=False):
 
                     filter_href = f"/?_page={curr_page}&_t={t_token}&_search={stk_u}"
 
-                    card = f"""
-                    <div class='starred-card' onclick="if(event.target.tagName !== 'A') {{ window.top.location.href='{filter_href}'; }}" title="点击快速筛选此品种告警">
-                        <div class='starred-title'>
-                            <span>⭐ <a href='/?_page=ticker&_ticker={stk_u}&_t={t_token}' target='_parent' style='color:#fbbf24;text-decoration:none;' title='进入品种详情页'>{stk_u}</a></span>
-                            <a href='{filter_href}' target='_top' class='filter-btn-mini' title='快速筛选此品种告警'>🔍 筛选</a>
-                        </div>
-                        <div class='starred-sub'>{stk_name}</div>
-                        <div class='starred-alert'>{alert_str}</div>
-                    </div>
-                    """
+                    card = (
+                        f"<div class='starred-card' onclick=\"if(event.target.tagName !== 'A') {{ window.top.location.href='{filter_href}'; }}\" title=\"点击快速筛选此品种告警\">"
+                        f"<div class='starred-title'>"
+                        f"<span>⭐ <a href='/?_page=ticker&_ticker={stk_u}&_t={t_token}' target='_parent' style='color:#fbbf24;text-decoration:none;' title='进入品种详情页'>{stk_u}</a></span>"
+                        f"<a href='{filter_href}' target='_top' class='filter-btn-mini' title='快速筛选此品种告警'>🔍 筛选</a>"
+                        f"</div>"
+                        f"<div class='starred-sub'>{stk_name}</div>"
+                        f"<div class='starred-alert'>{alert_str}</div>"
+                        f"</div>"
+                    )
                     starred_cards_html.append(card)
 
                 starred_cards_html.append("</div>")
