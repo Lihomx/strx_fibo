@@ -625,10 +625,82 @@ def render_alert_log_table(full_page=False):
                 
         if "time" in df.columns:
             df["time"] = df["time"].apply(convert_tz)
+
+        # ── 预加载重点关注品种与名称 ─────────────────────────────────────
+        starred_tickers = storage.load_starred_tickers()
+        starred_set = set(starred_tickers)
+        
+        # ── ⭐ 重点关注快捷汇总面板 (默认展开) ───────────────────────────
+        if starred_set:
+            with st.expander("⭐ 重点关注品种告警汇总", expanded=True):
+                st.markdown("<div style='font-size:12px;color:#9ca3af;margin-bottom:8px;'>以下为标记重点关注的品种列表及最新告警快照：</div>", unsafe_allow_html=True)
+                
+                # 预加载品种全称
+                custom_symbols = storage.load_symbols()
+                watchlist_items = storage.load_watchlist()
+                symbol_name_map = {item["ticker"].upper(): item["name"] for item in custom_symbols if item.get("name")}
+                for item in watchlist_items:
+                    if item.get("name") and item.get("ticker"):
+                        symbol_name_map[item["ticker"].upper()] = item["name"]
+
+                # 聚合每个重点品种的最新一条告警记录
+                starred_cards_html = []
+                starred_cards_html.append("<style>")
+                starred_cards_html.append(".starred-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 5px; }")
+                starred_cards_html.append(".starred-card { background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 8px; padding: 10px 12px; transition: all 0.2s ease; }")
+                starred_cards_html.append(".starred-card:hover { border-color: rgba(245, 158, 11, 0.6); background: rgba(245, 158, 11, 0.14); transform: translateY(-1px); }")
+                starred_cards_html.append(".starred-title { font-weight: 700; font-size: 13px; color: #fbbf24; display: flex; justify-content: space-between; align-items: center; }")
+                starred_cards_html.append(".starred-sub { font-size: 11px; color: #cbd5e1; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }")
+                starred_cards_html.append(".starred-alert { font-size: 11px; margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(245, 158, 11, 0.2); }")
+                starred_cards_html.append("</style>")
+                starred_cards_html.append("<div class='starred-grid'>")
+
+                t_token = st.query_params.get("_t", "")
+
+                for stk in starred_tickers:
+                    stk_u = stk.upper()
+                    stk_name = symbol_name_map.get(stk_u) or stk_u
+                    
+                    # 查找该品种在 df 中的最新记录
+                    sub_df = df[df["ticker"].str.upper() == stk_u]
+                    if not sub_df.empty:
+                        latest_row = sub_df.iloc[0]
+                        l_time = str(latest_row.get("time", ""))
+                        if len(l_time) > 16:
+                            l_time = l_time[:16]
+                        l_tf = str(latest_row.get("timeframe", ""))
+                        l_lbl = str(latest_row.get("label", "") or "").strip()
+                        
+                        if "空头" in l_lbl or "跌" in l_lbl:
+                            dir_tag = f"<span style='color:#f87171;'>🔻 {l_lbl or '下跌'}</span>"
+                        elif "多头" in l_lbl or "突破" in l_lbl or "黄金区" in l_lbl:
+                            dir_tag = f"<span style='color:#4ade80;'>🚀 {l_lbl or '上涨'}</span>"
+                        elif l_lbl:
+                            dir_tag = f"<span style='color:#38bdf8;'>{l_lbl}</span>"
+                        else:
+                            dir_tag = "<span style='color:#94a3b8;'>有告警</span>"
+
+                        alert_str = f"⏰ {l_time} [{l_tf}] · {dir_tag}"
+                    else:
+                        alert_str = "<span style='color:#64748b;'>暂无近期告警</span>"
+
+                    card = f"""
+                    <div class='starred-card'>
+                        <div class='starred-title'>
+                            <span>⭐ <a href='/?_page=ticker&_ticker={stk_u}&_t={t_token}' target='_parent' style='color:#fbbf24;text-decoration:none;'>{stk_u}</a></span>
+                        </div>
+                        <div class='starred-sub'>{stk_name}</div>
+                        <div class='starred-alert'>{alert_str}</div>
+                    </div>
+                    """
+                    starred_cards_html.append(card)
+
+                starred_cards_html.append("</div>")
+                st.markdown("".join(starred_cards_html), unsafe_allow_html=True)
             
         # ── 筛选器面板 ────────────────────────────────────────────────
         with st.expander("🔍 筛选与自定义显示列", expanded=True):
-            f_col1, f_col2, f_col3, f_col4 = st.columns(4)
+            f_col1, f_col2, f_col3, f_col4, f_col5 = st.columns([2, 2, 2, 2, 2])
             with f_col1:
                 import datetime
                 today = datetime.date.today()
@@ -665,6 +737,13 @@ def render_alert_log_table(full_page=False):
                     options=available_tf,
                     help="多选过滤时间框架",
                     key=f"alert_log_tf_{'full' if full_page else 'tab'}"
+                )
+            with f_col5:
+                starred_opt = st.selectbox(
+                    "⭐ 重点关注",
+                    options=["全部品种", "仅重点关注", "仅非重点关注"],
+                    help="筛选已标记重点关注的品种告警",
+                    key=f"alert_log_starred_{'full' if full_page else 'tab'}"
                 )
 
             # 所有可选的列表字段映射 (key -> 中文名 & 默认显示)
@@ -734,6 +813,12 @@ def render_alert_log_table(full_page=False):
         # 4. 时间框架筛选
         if timeframe_opt:
             df = df[df["timeframe"].isin(timeframe_opt)]
+            
+        # 5. 重点关注筛选
+        if starred_opt == "仅重点关注":
+            df = df[df["ticker"].str.upper().isin(starred_set)]
+        elif starred_opt == "仅非重点关注":
+            df = df[~df["ticker"].str.upper().isin(starred_set)]
             
         # ── 统计摘要指标 ─────────────────────────────────────────────
         m_col1, m_col2, m_col3 = st.columns(3)
