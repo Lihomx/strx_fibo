@@ -647,15 +647,17 @@ def render_alert_log_table(full_page=False):
                 starred_cards_html = []
                 starred_cards_html.append("<style>")
                 starred_cards_html.append(".starred-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 5px; }")
-                starred_cards_html.append(".starred-card { background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 8px; padding: 10px 12px; transition: all 0.2s ease; cursor: pointer; }")
+                starred_cards_html.append(".starred-card { background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 8px; padding: 10px 12px; transition: all 0.2s ease; cursor: grab; user-select: none; }")
                 starred_cards_html.append(".starred-card:hover { border-color: rgba(245, 158, 11, 0.6); background: rgba(245, 158, 11, 0.14); transform: translateY(-1px); }")
+                starred_cards_html.append(".starred-card.dragging { opacity: 0.35; border: 2px dashed #fbbf24 !important; background: rgba(245, 158, 11, 0.2) !important; cursor: grabbing; }")
+                starred_cards_html.append(".starred-card.drag-over { border: 2px solid #38bdf8 !important; background: rgba(56, 189, 248, 0.15) !important; }")
                 starred_cards_html.append(".starred-title { font-weight: 700; font-size: 13px; color: #fbbf24; display: flex; justify-content: space-between; align-items: center; }")
                 starred_cards_html.append(".starred-sub { font-size: 11px; color: #cbd5e1; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }")
                 starred_cards_html.append(".starred-alert { font-size: 11px; margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(245, 158, 11, 0.2); }")
                 starred_cards_html.append(".filter-btn-mini { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 4px; padding: 1px 5px; font-size: 10px; text-decoration: none !important; font-weight: normal; cursor: pointer; transition: all 0.2s; }")
                 starred_cards_html.append(".filter-btn-mini:hover { background: rgba(56, 189, 248, 0.3); color: #7dd3fc; }")
                 starred_cards_html.append("</style>")
-                starred_cards_html.append("<div class='starred-grid'>")
+                starred_cards_html.append("<div class='starred-grid' id='starred_cards_grid'>")
 
                 t_token = st.query_params.get("_t", "")
                 curr_page = st.query_params.get("_page", "alert_logs")
@@ -693,7 +695,9 @@ def render_alert_log_table(full_page=False):
                     tv_href = tv_url(stk_u, l_tf if l_tf else "15m")
 
                     card = (
-                        f"<div class='starred-card' onclick=\"if(event.target.tagName !== 'A') {{ window.top.location.href='{filter_href}'; }}\" title=\"点击快速筛选此品种告警\">"
+                        f"<div class='starred-card' draggable='true' data-ticker='{stk_u}' "
+                        f"onclick=\"if(!window._is_starred_dragging && event.target.tagName !== 'A') {{ window.top.location.href='{filter_href}'; }}\" "
+                        f"title=\"可拖动自定义排序，或点击快速筛选此品种告警\">"
                         f"<div class='starred-title'>"
                         f"<span>⭐ <a href='/?_page=ticker&_ticker={stk_u}&_t={t_token}' target='_parent' style='color:#fbbf24;text-decoration:none;' title='进入品种详情页'>{stk_u}</a></span>"
                         f"<div style='display:flex;gap:4px;align-items:center;'>"
@@ -708,6 +712,59 @@ def render_alert_log_table(full_page=False):
                     starred_cards_html.append(card)
 
                 starred_cards_html.append("</div>")
+
+                # JS 拖放排序监听器
+                starred_cards_html.append("<script>")
+                starred_cards_html.append("(function() {")
+                starred_cards_html.append("    var grid = document.getElementById('starred_cards_grid');")
+                starred_cards_html.append("    if (!grid || grid._drag_inited) return;")
+                starred_cards_html.append("    grid._drag_inited = true;")
+                starred_cards_html.append("    var dragItem = null;")
+                starred_cards_html.append("    window._is_starred_dragging = false;")
+                starred_cards_html.append("    grid.addEventListener('dragstart', function(e) {")
+                starred_cards_html.append("        var item = e.target.closest('.starred-card');")
+                starred_cards_html.append("        if (!item) return;")
+                starred_cards_html.append("        dragItem = item;")
+                starred_cards_html.append("        window._is_starred_dragging = true;")
+                starred_cards_html.append("        item.classList.add('dragging');")
+                starred_cards_html.append("        e.dataTransfer.effectAllowed = 'move';")
+                starred_cards_html.append("    });")
+                starred_cards_html.append("    grid.addEventListener('dragover', function(e) {")
+                starred_cards_html.append("        e.preventDefault();")
+                starred_cards_html.append("        var over = e.target.closest('.starred-card');")
+                starred_cards_html.append("        if (over && over !== dragItem) {")
+                starred_cards_html.append("            grid.querySelectorAll('.starred-card').forEach(function(c) { c.classList.remove('drag-over'); });")
+                starred_cards_html.append("            over.classList.add('drag-over');")
+                starred_cards_html.append("            var rect = over.getBoundingClientRect();")
+                starred_cards_html.append("            var midX = rect.left + rect.width / 2;")
+                starred_cards_html.append("            if (e.clientX < midX) {")
+                starred_cards_html.append("                grid.insertBefore(dragItem, over);")
+                starred_cards_html.append("            } else {")
+                starred_cards_html.append("                grid.insertBefore(dragItem, over.nextSibling);")
+                starred_cards_html.append("            }")
+                starred_cards_html.append("        }")
+                starred_cards_html.append("    });")
+                starred_cards_html.append("    grid.addEventListener('dragend', function(e) {")
+                starred_cards_html.append("        grid.querySelectorAll('.starred-card').forEach(function(c) { c.classList.remove('dragging', 'drag-over'); });")
+                starred_cards_html.append("        if (!dragItem) return;")
+                starred_cards_html.append("        dragItem = null;")
+                starred_cards_html.append("        setTimeout(function() { window._is_starred_dragging = false; }, 300);")
+                starred_cards_html.append("        var cards = grid.querySelectorAll('.starred-card[data-ticker]');")
+                starred_cards_html.append("        var orderList = [];")
+                starred_cards_html.append("        cards.forEach(function(c) {")
+                starred_cards_html.append("            var tk = c.getAttribute('data-ticker');")
+                starred_cards_html.append("            if (tk) orderList.push(tk);")
+                starred_cards_html.append("        });")
+                starred_cards_html.append("        if (orderList.length > 0) {")
+                starred_cards_html.append("            var newOrderStr = orderList.join(',');")
+                starred_cards_html.append("            var t = new URLSearchParams(window.top.location.search).get('_t') || '';")
+                starred_cards_html.append("            var targetUrl = '/?_page=alert_logs&_t=' + t + '&_reorder=' + encodeURIComponent(newOrderStr);")
+                starred_cards_html.append("            try { window.top.location.href = targetUrl; } catch(err) { window.location.href = targetUrl; }")
+                starred_cards_html.append("        }")
+                starred_cards_html.append("    });")
+                starred_cards_html.append("})();")
+                starred_cards_html.append("</script>")
+
                 st.markdown("".join(starred_cards_html), unsafe_allow_html=True)
             
         # ── 筛选器面板 ────────────────────────────────────────────────

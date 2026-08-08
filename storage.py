@@ -692,7 +692,13 @@ def load_starred_tickers() -> List[str]:
     return [str(x).strip().upper() for x in res if x]
 
 def save_starred_tickers(tickers: List[str]) -> bool:
-    clean = list(set(str(x).strip().upper() for x in tickers if x))
+    seen = set()
+    clean = []
+    for x in tickers:
+        v = str(x).strip().upper()
+        if v and v not in seen:
+            seen.add(v)
+            clean.append(v)
     ok = _save(F_STARRED, clean)
     if ok:
         try:

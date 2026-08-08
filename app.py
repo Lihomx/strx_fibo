@@ -1164,6 +1164,23 @@ def main():
         st.session_state["_cloud_pulled"] = True
         st.rerun()
 
+    _reorder_raw = st.query_params.get("_reorder", "")
+    if _reorder_raw:
+        try:
+            _reord_act = _uq(_reorder_raw)
+            new_order = [t.strip().upper() for t in _reord_act.split(",") if t.strip()]
+            if new_order:
+                storage.save_starred_tickers(new_order)
+                st.toast("⭐ 重点关注品种顺序已保存！", icon="↕️")
+        except Exception:
+            pass
+        try:
+            del st.query_params["_reorder"]
+        except Exception:
+            pass
+        st.session_state["_cloud_pulled"] = True
+        st.rerun()
+
     _rename_raw = st.query_params.get("_rename", "")
     if _rename_raw:
         try:
