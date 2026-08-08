@@ -546,6 +546,44 @@ def render():
                         st.error("❌ 创建失败，名称已存在")
         st.markdown('</div>', unsafe_allow_html=True)
         
+        # ── 0. 分组显示顺序调整 ──
+        if groups:
+            with st.expander("↕️ 调整分组显示顺序", expanded=False):
+                st.caption("按下方表格编辑「排序」数字并保存，可自定义所有下拉菜单中的分组展示顺序。")
+                df_order = pd.DataFrame([
+                    {"排序": idx + 1, "分组名称": g["name"], "品种数": len(g.get("tickers", []))}
+                    for idx, g in enumerate(groups)
+                ])
+                edited_df = st.data_editor(
+                    df_order,
+                    num_rows="fixed",
+                    column_config={
+                        "排序": st.column_config.NumberColumn("排序数字", min_value=1, max_value=len(groups), step=1),
+                        "分组名称": st.column_config.TextColumn("分组名称", disabled=True),
+                        "品种数": st.column_config.NumberColumn("品种数", disabled=True),
+                    },
+                    use_container_width=True,
+                    key="grp_order_editor",
+                    hide_index=True,
+                )
+                if st.button("💾 保存分组显示顺序", key="save_grp_order_btn", type="primary"):
+                    try:
+                        sorted_df = edited_df.sort_values("排序")
+                        sorted_names = sorted_df["分组名称"].tolist()
+                        grp_map = {g["name"]: g for g in groups}
+                        new_groups = [grp_map[name] for name in sorted_names if name in grp_map]
+                        # 补齐未出现在表格里的分组
+                        seen_names = set(sorted_names)
+                        for g in groups:
+                            if g["name"] not in seen_names:
+                                new_groups.append(g)
+                        storage.save_symbol_groups(new_groups)
+                        st.success("✅ 分组排序调整成功！")
+                        time.sleep(0.5)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"保存排序失败: {e}")
+
         # 2. 分组列表与管理
         if not groups:
             st.info("💡 尚未创建任何自定义分组。请在上方输入名称并点击「创建分组」。")
