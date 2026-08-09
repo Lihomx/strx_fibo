@@ -898,7 +898,7 @@ function saveOrder() {{
   if (orderList.length > 0) {{
     var newOrderStr = orderList.join(',');
     var url = {repr(reorder_base)} + encodeURIComponent(newOrderStr);
-    try {{ window.parent.location.href = url; }} catch(err) {{ window.top.location.href = url; }}
+    window.open(url, '_top');
   }}
 }}
 
