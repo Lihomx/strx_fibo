@@ -643,6 +643,22 @@ def render_alert_log_table(full_page=False):
                     if item.get("name") and item.get("ticker"):
                         symbol_name_map[item["ticker"].upper()] = item["name"]
 
+                # ── 原生 Streamlit 拖拽/调整顺序控制器 (解开沙盒限制) ──
+                with st.popover("↕️ 调整重点关注顺序", help="点击调整重点关注品种的显示顺序"):
+                    st.caption("拖动或挑选下面的品种调整顺序，保存后生效：")
+                    reordered_list = st.multiselect(
+                        "排序品种列表",
+                        options=starred_tickers,
+                        default=starred_tickers,
+                        key="starred_reorder_multiselect"
+                    )
+                    if st.button("💾 保存最新排序", key="save_starred_reorder_btn", type="primary", use_container_width=True):
+                        if reordered_list:
+                            storage.save_starred_tickers(reordered_list)
+                            st.success("✅ 顺序保存成功！")
+                            time.sleep(0.5)
+                            st.rerun()
+
                 # 聚合每个重点品种的最新一条告警记录
                 starred_cards_html = []
                 starred_cards_html.append("<style>")
@@ -694,36 +710,12 @@ def render_alert_log_table(full_page=False):
                     filter_href = f"/?_page={curr_page}&_t={t_token}&_search={stk_u}"
                     tv_href = tv_url(stk_u, l_tf if l_tf else "15m")
 
-                    # 生成上下/左右移动的 URL 参数
-                    # 获取前一个和后一个 ticker
-                    idx = starred_tickers.index(stk) if stk in starred_tickers else -1
-                    prev_tk = starred_tickers[idx - 1] if idx > 0 else None
-                    next_tk = starred_tickers[idx + 1] if idx >= 0 and idx < len(starred_tickers) - 1 else None
-
-                    order_left_html = ""
-                    order_right_html = ""
-                    if prev_tk:
-                        # 与前一个交换位置
-                        new_order_left = list(starred_tickers)
-                        new_order_left[idx], new_order_left[idx - 1] = new_order_left[idx - 1], new_order_left[idx]
-                        url_left = f"/?_page=alert_logs&_t={t_token}&_reorder={','.join(new_order_left)}"
-                        order_left_html = f"<a href='{url_left}' target='_parent' class='filter-btn-mini' style='background:rgba(251,191,36,0.15);color:#fbbf24;border-color:rgba(251,191,36,0.3);' title='前移 / 左移'>◄</a>"
-                    
-                    if next_tk:
-                        # 与后一个交换位置
-                        new_order_right = list(starred_tickers)
-                        new_order_right[idx], new_order_right[idx + 1] = new_order_right[idx + 1], new_order_right[idx]
-                        url_right = f"/?_page=alert_logs&_t={t_token}&_reorder={','.join(new_order_right)}"
-                        order_right_html = f"<a href='{url_right}' target='_parent' class='filter-btn-mini' style='background:rgba(251,191,36,0.15);color:#fbbf24;border-color:rgba(251,191,36,0.3);' title='后移 / 右移'>►</a>"
-
                     card = (
                         f"<div class='starred-card' draggable='true' data-ticker='{stk_u}' "
-                        f"title=\"拖动卡片或点击 ◄ ► 按钮调整排序\">"
+                        f"title=\"拖动卡片或点击上方 [↕️ 调整重点关注顺序] 改变顺序\">"
                         f"<div class='starred-title'>"
                         f"<span>⭐ <a href='/?_page=ticker&_ticker={stk_u}&_t={t_token}' target='_parent' style='color:#fbbf24;text-decoration:none;' title='进入品种详情页'>{stk_u}</a></span>"
                         f"<div style='display:flex;gap:4px;align-items:center;'>"
-                        f"{order_left_html}"
-                        f"{order_right_html}"
                         f"<a href='{tv_href}' target='_blank' class='filter-btn-mini' style='background:rgba(30,144,255,0.15);color:#38bdf8;border-color:rgba(30,144,255,0.3);' title='打开 TradingView 图表'>📈 图表</a>"
                         f"<a href='{filter_href}' target='_top' class='filter-btn-mini' title='快速筛选此品种告警'>🔍 筛选</a>"
                         f"</div>"
