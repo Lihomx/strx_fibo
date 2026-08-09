@@ -645,35 +645,34 @@ def render_alert_log_table(full_page=False):
                         symbol_name_map[item["ticker"].upper()] = item["name"]
 
                 # ── 重点关注顺序调整 ──
-                with st.expander("↕️ 拖动或修改排序调整卡片顺序", expanded=False):
-                    st.caption("💡 可在此直接拖动表格行（按左侧行号拖拽）或修改「排序」列来调整卡片顺序，点击保存即可生效：")
-                    df_stk_order = pd.DataFrame([
-                        {"排序": idx + 1, "品种代码": tk, "品种名称": symbol_name_map.get(tk, tk)}
-                        for idx, tk in enumerate(starred_tickers)
-                    ])
-                    edited_stk_df = st.data_editor(
-                        df_stk_order,
-                        num_rows="fixed",
-                        row_height=38,
-                        column_config={
-                            "排序": st.column_config.NumberColumn("排序", min_value=1, max_value=len(starred_tickers), step=1),
-                            "品种代码": st.column_config.TextColumn("品种代码", disabled=True),
-                            "品种名称": st.column_config.TextColumn("品种名称", disabled=True),
-                        },
-                        use_container_width=True,
-                        key="starred_order_editor_df",
-                        hide_index=False,
-                    )
-                    if st.button("💾 保存最新卡片顺序", key="save_starred_cards_order_btn", type="primary", use_container_width=True):
-                        try:
-                            sorted_stk_df = edited_stk_df.sort_values("排序")
-                            new_starred_order = sorted_stk_df["品种代码"].tolist()
-                            storage.save_starred_tickers(new_starred_order)
-                            st.success("✅ 重点关注卡片顺序已更新！")
-                            time.sleep(0.5)
-                            st.rerun()
-                        except Exception as ex:
-                            st.error(f"保存排序失败: {ex}")
+                with st.expander("↕️ 调整重点关注品种显示顺序", expanded=False):
+                    st.caption("💡 点击下方的 **[ ⬆️ 上移 ]** 或 **[ 🔻 下移 ]** 按钮调整顺序，也可以直接在表格中修改「排序数字」：")
+                    
+                    # 按钮快速微调顺序逻辑
+                    if "temp_starred_order" not in st.session_state or set(st.session_state["temp_starred_order"]) != set(starred_tickers):
+                        st.session_state["temp_starred_order"] = list(starred_tickers)
+                    
+                    curr_order = st.session_state["temp_starred_order"]
+                    
+                    # 展示行与移动按钮
+                    for idx, tk in enumerate(curr_order):
+                        c1, c2, c3, c4 = st.columns([1, 4, 1.5, 1.5])
+                        with c1:
+                            st.write(f"**#{idx + 1}**")
+                        with c2:
+                            st.write(f"**{tk}** ({symbol_name_map.get(tk, tk)})")
+                        with c3:
+                            if st.button("⬆️ 上移", key=f"move_up_{tk}_{idx}", disabled=(idx == 0), use_container_width=True):
+                                curr_order[idx], curr_order[idx - 1] = curr_order[idx - 1], curr_order[idx]
+                                st.session_state["temp_starred_order"] = curr_order
+                                storage.save_starred_tickers(curr_order)
+                                st.rerun()
+                        with c4:
+                            if st.button("🔻 下移", key=f"move_down_{tk}_{idx}", disabled=(idx == len(curr_order) - 1), use_container_width=True):
+                                curr_order[idx], curr_order[idx + 1] = curr_order[idx + 1], curr_order[idx]
+                                st.session_state["temp_starred_order"] = curr_order
+                                storage.save_starred_tickers(curr_order)
+                                st.rerun()
 
                 # 聚合每个重点品种的最新一条告警记录
                 starred_cards_html = []
