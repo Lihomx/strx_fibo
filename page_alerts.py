@@ -644,9 +644,9 @@ def render_alert_log_table(full_page=False):
                     if item.get("name") and item.get("ticker"):
                         symbol_name_map[item["ticker"].upper()] = item["name"]
 
-                # ── 重点关注顺序调整表格 ──
-                with st.expander("↕️ 调整重点关注品种显示顺序", expanded=False):
-                    st.caption("直接修改下表中的「排序数字」即可调整重点关注卡片在顶部的排列顺序：")
+                # ── 重点关注顺序调整 ──
+                with st.expander("↕️ 拖动或修改排序调整卡片顺序", expanded=False):
+                    st.caption("💡 可在此直接拖动表格行（按左侧行号拖拽）或修改「排序」列来调整卡片顺序，点击保存即可生效：")
                     df_stk_order = pd.DataFrame([
                         {"排序": idx + 1, "品种代码": tk, "品种名称": symbol_name_map.get(tk, tk)}
                         for idx, tk in enumerate(starred_tickers)
@@ -654,6 +654,7 @@ def render_alert_log_table(full_page=False):
                     edited_stk_df = st.data_editor(
                         df_stk_order,
                         num_rows="fixed",
+                        row_height=38,
                         column_config={
                             "排序": st.column_config.NumberColumn("排序", min_value=1, max_value=len(starred_tickers), step=1),
                             "品种代码": st.column_config.TextColumn("品种代码", disabled=True),
@@ -661,9 +662,9 @@ def render_alert_log_table(full_page=False):
                         },
                         use_container_width=True,
                         key="starred_order_editor_df",
-                        hide_index=True,
+                        hide_index=False,
                     )
-                    if st.button("💾 保存最新卡片顺序", key="save_starred_cards_order_btn", type="primary"):
+                    if st.button("💾 保存最新卡片顺序", key="save_starred_cards_order_btn", type="primary", use_container_width=True):
                         try:
                             sorted_stk_df = edited_stk_df.sort_values("排序")
                             new_starred_order = sorted_stk_df["品种代码"].tolist()
@@ -849,6 +850,11 @@ body {{ background: transparent; font-family: -apple-system, BlinkMacSystemFont,
     <button id="save-btn" onclick="saveOrder()">💾 保存顺序</button>
   </div>
 </div>
+<form id="reorderForm" action="{reorder_base}" method="GET" target="_top" style="display:none;">
+  <input type="hidden" name="_page" value="alert_logs">
+  <input type="hidden" name="_t" value="{t_token}">
+  <input type="hidden" id="reorderInput" name="_reorder" value="">
+</form>
 <script>
 var grid = document.getElementById('grid');
 var saveBar = document.getElementById('save-bar');
@@ -882,7 +888,6 @@ grid.addEventListener('dragover', function(e) {{
 grid.addEventListener('dragend', function(e) {{
   grid.querySelectorAll('.sc').forEach(function(c) {{ c.classList.remove('dragging', 'drag-over'); }});
   dragItem = null;
-  // 检查顺序是否变化
   var nowOrder = Array.from(grid.querySelectorAll('.sc')).map(function(c){{ return c.getAttribute('data-ticker'); }});
   changed = nowOrder.join(',') !== originalOrder.join(',');
   saveBar.style.display = changed ? 'flex' : 'none';
@@ -897,13 +902,12 @@ function saveOrder() {{
   }});
   if (orderList.length > 0) {{
     var newOrderStr = orderList.join(',');
-    var url = {repr(reorder_base)} + encodeURIComponent(newOrderStr);
-    window.open(url, '_top');
+    document.getElementById('reorderInput').value = newOrderStr;
+    document.getElementById('reorderForm').submit();
   }}
 }}
 
 function discardOrder() {{
-  // 还原原始顺序
   originalOrder.forEach(function(tk) {{
     var el = grid.querySelector('.sc[data-ticker="' + tk + '"]');
     if (el) grid.appendChild(el);
