@@ -694,13 +694,36 @@ def render_alert_log_table(full_page=False):
                     filter_href = f"/?_page={curr_page}&_t={t_token}&_search={stk_u}"
                     tv_href = tv_url(stk_u, l_tf if l_tf else "15m")
 
+                    # 生成上下/左右移动的 URL 参数
+                    # 获取前一个和后一个 ticker
+                    idx = starred_tickers.index(stk) if stk in starred_tickers else -1
+                    prev_tk = starred_tickers[idx - 1] if idx > 0 else None
+                    next_tk = starred_tickers[idx + 1] if idx >= 0 and idx < len(starred_tickers) - 1 else None
+
+                    order_left_html = ""
+                    order_right_html = ""
+                    if prev_tk:
+                        # 与前一个交换位置
+                        new_order_left = list(starred_tickers)
+                        new_order_left[idx], new_order_left[idx - 1] = new_order_left[idx - 1], new_order_left[idx]
+                        url_left = f"/?_page=alert_logs&_t={t_token}&_reorder={','.join(new_order_left)}"
+                        order_left_html = f"<a href='{url_left}' target='_parent' class='filter-btn-mini' style='background:rgba(251,191,36,0.15);color:#fbbf24;border-color:rgba(251,191,36,0.3);' title='前移 / 左移'>◄</a>"
+                    
+                    if next_tk:
+                        # 与后一个交换位置
+                        new_order_right = list(starred_tickers)
+                        new_order_right[idx], new_order_right[idx + 1] = new_order_right[idx + 1], new_order_right[idx]
+                        url_right = f"/?_page=alert_logs&_t={t_token}&_reorder={','.join(new_order_right)}"
+                        order_right_html = f"<a href='{url_right}' target='_parent' class='filter-btn-mini' style='background:rgba(251,191,36,0.15);color:#fbbf24;border-color:rgba(251,191,36,0.3);' title='后移 / 右移'>►</a>"
+
                     card = (
                         f"<div class='starred-card' draggable='true' data-ticker='{stk_u}' "
-                        f"onclick=\"if(!window._is_starred_dragging && event.target.tagName !== 'A') {{ window.top.location.href='{filter_href}'; }}\" "
-                        f"title=\"可拖动自定义排序，或点击快速筛选此品种告警\">"
+                        f"title=\"拖动卡片或点击 ◄ ► 按钮调整排序\">"
                         f"<div class='starred-title'>"
                         f"<span>⭐ <a href='/?_page=ticker&_ticker={stk_u}&_t={t_token}' target='_parent' style='color:#fbbf24;text-decoration:none;' title='进入品种详情页'>{stk_u}</a></span>"
                         f"<div style='display:flex;gap:4px;align-items:center;'>"
+                        f"{order_left_html}"
+                        f"{order_right_html}"
                         f"<a href='{tv_href}' target='_blank' class='filter-btn-mini' style='background:rgba(30,144,255,0.15);color:#38bdf8;border-color:rgba(30,144,255,0.3);' title='打开 TradingView 图表'>📈 图表</a>"
                         f"<a href='{filter_href}' target='_top' class='filter-btn-mini' title='快速筛选此品种告警'>🔍 筛选</a>"
                         f"</div>"
@@ -713,73 +736,56 @@ def render_alert_log_table(full_page=False):
 
                 starred_cards_html.append("</div>")
 
+                # HTML5 拖拽事件全套监听脚本 (采用 onerror 触发机制，确保 100% 自动运行)
+                starred_cards_html.append(
+                    "<img src='x' onerror=\""
+                    "(function() {"
+                    "  var doc = window.top.document || document;"
+                    "  var grid = doc.getElementById('starred_cards_grid');"
+                    "  if (!grid || grid._drag_inited) return;"
+                    "  grid._drag_inited = true;"
+                    "  var dragItem = null;"
+                    "  grid.addEventListener('dragstart', function(e) {"
+                    "    var item = e.target.closest('.starred-card');"
+                    "    if (!item) return;"
+                    "    dragItem = item;"
+                    "    item.classList.add('dragging');"
+                    "    e.dataTransfer.effectAllowed = 'move';"
+                    "  });"
+                    "  grid.addEventListener('dragover', function(e) {"
+                    "    e.preventDefault();"
+                    "    var over = e.target.closest('.starred-card');"
+                    "    if (over && over !== dragItem) {"
+                    "      grid.querySelectorAll('.starred-card').forEach(function(c) { c.classList.remove('drag-over'); });"
+                    "      over.classList.add('drag-over');"
+                    "      var rect = over.getBoundingClientRect();"
+                    "      var midX = rect.left + rect.width / 2;"
+                    "      if (e.clientX < midX) { grid.insertBefore(dragItem, over); }"
+                    "      else { grid.insertBefore(dragItem, over.nextSibling); }"
+                    "    }"
+                    "  });"
+                    "  grid.addEventListener('dragend', function(e) {"
+                    "    grid.querySelectorAll('.starred-card').forEach(function(c) { c.classList.remove('dragging', 'drag-over'); });"
+                    "    if (!dragItem) return;"
+                    "    dragItem = null;"
+                    "    var cards = grid.querySelectorAll('.starred-card[data-ticker]');"
+                    "    var orderList = [];"
+                    "    cards.forEach(function(c) {"
+                    "      var tk = c.getAttribute('data-ticker');"
+                    "      if (tk) orderList.push(tk);"
+                    "    });"
+                    "    if (orderList.length > 0) {"
+                    "      var newOrderStr = orderList.join(',');"
+                    "      var t = new URLSearchParams(window.top.location.search).get('_t') || '';"
+                    "      var targetUrl = '/?_page=alert_logs&_t=' + t + '&_reorder=' + encodeURIComponent(newOrderStr);"
+                    "      window.top.location.href = targetUrl;"
+                    "    }"
+                    "  });"
+                    "})();"
+                    "\" style='display:none;'>"
+                )
+
                 st.markdown("".join(starred_cards_html), unsafe_allow_html=True)
-
-                # 使用 st.html 在 Streamlit 主页面 DOM 中无缝运行 JS
-                st.html("""
-                <script>
-                (function() {
-                    function initDrag() {
-                        var doc = window.parent.document || document;
-                        var grid = doc.getElementById('starred_cards_grid');
-                        if (!grid) {
-                            setTimeout(initDrag, 150);
-                            return;
-                        }
-                        if (grid._drag_inited) return;
-                        grid._drag_inited = true;
-
-                        var dragItem = null;
-                        window.parent._is_starred_dragging = false;
-
-                        grid.addEventListener('dragstart', function(e) {
-                            var item = e.target.closest('.starred-card');
-                            if (!item) return;
-                            dragItem = item;
-                            window.parent._is_starred_dragging = true;
-                            item.classList.add('dragging');
-                            e.dataTransfer.effectAllowed = 'move';
-                        });
-
-                        grid.addEventListener('dragover', function(e) {
-                            e.preventDefault();
-                            var over = e.target.closest('.starred-card');
-                            if (over && over !== dragItem) {
-                                grid.querySelectorAll('.starred-card').forEach(function(c) { c.classList.remove('drag-over'); });
-                                over.classList.add('drag-over');
-                                var rect = over.getBoundingClientRect();
-                                var midX = rect.left + rect.width / 2;
-                                if (e.clientX < midX) {
-                                    grid.insertBefore(dragItem, over);
-                                } else {
-                                    grid.insertBefore(dragItem, over.nextSibling);
-                                }
-                            }
-                        });
-
-                        grid.addEventListener('dragend', function(e) {
-                            grid.querySelectorAll('.starred-card').forEach(function(c) { c.classList.remove('dragging', 'drag-over'); });
-                            if (!dragItem) return;
-                            dragItem = null;
-                            setTimeout(function() { window.parent._is_starred_dragging = false; }, 300);
-                            var cards = grid.querySelectorAll('.starred-card[data-ticker]');
-                            var orderList = [];
-                            cards.forEach(function(c) {
-                                var tk = c.getAttribute('data-ticker');
-                                if (tk) orderList.push(tk);
-                            });
-                            if (orderList.length > 0) {
-                                var newOrderStr = orderList.join(',');
-                                var t = new URLSearchParams(window.parent.location.search).get('_t') || '';
-                                var targetUrl = '/?_page=alert_logs&_t=' + t + '&_reorder=' + encodeURIComponent(newOrderStr);
-                                window.parent.location.href = targetUrl;
-                            }
-                        });
-                    }
-                    initDrag();
-                })();
-                </script>
-                """)
             
         # ── 筛选器面板 ────────────────────────────────────────────────
         with st.expander("🔍 筛选与自定义显示列", expanded=True):
