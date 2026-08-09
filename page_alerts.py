@@ -726,12 +726,11 @@ def render_alert_log_table(full_page=False):
 
                     card = (
                         f"<div class='starred-card' draggable='true' data-ticker='{stk_u}' "
-                        f"title=\"拖动卡片调整排序或点击进入详情\">"
+                        f"title=\"点击进入详情\">"
                         f"<div class='starred-title'>"
                         f"<span>⭐ <a href='/?_page=ticker&_ticker={stk_u}&_t={t_token}' target='_parent' style='color:#fbbf24;text-decoration:none;' title='进入品种详情页'>{stk_u}</a></span>"
                         f"<div style='display:flex;gap:4px;align-items:center;'>"
                         f"<a href='{tv_href}' target='_blank' class='filter-btn-mini' style='background:rgba(30,144,255,0.15);color:#38bdf8;border-color:rgba(30,144,255,0.3);' title='打开 TradingView 图表'>📈 图表</a>"
-                        f"<a href='{filter_href}' target='_top' class='filter-btn-mini' title='快速筛选此品种告警'>🔍 筛选</a>"
                         f"</div>"
                         f"</div>"
                         f"<div class='starred-sub'>{stk_name}</div>"
