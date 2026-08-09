@@ -713,59 +713,73 @@ def render_alert_log_table(full_page=False):
 
                 starred_cards_html.append("</div>")
 
-                # 嵌入纯 inline script 避免 components.v1.html 弃用警告
-                starred_cards_html.append(
-                    "<img src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7' "
-                    "style='display:none;' onload=\""
-                    "(function() {"
-                    "  var grid = document.getElementById('starred_cards_grid');"
-                    "  if (!grid || grid._drag_inited) return;"
-                    "  grid._drag_inited = true;"
-                    "  var dragItem = null;"
-                    "  window._is_starred_dragging = false;"
-                    "  grid.addEventListener('dragstart', function(e) {"
-                    "    var item = e.target.closest('.starred-card');"
-                    "    if (!item) return;"
-                    "    dragItem = item;"
-                    "    window._is_starred_dragging = true;"
-                    "    item.classList.add('dragging');"
-                    "    e.dataTransfer.effectAllowed = 'move';"
-                    "  });"
-                    "  grid.addEventListener('dragover', function(e) {"
-                    "    e.preventDefault();"
-                    "    var over = e.target.closest('.starred-card');"
-                    "    if (over && over !== dragItem) {"
-                    "      grid.querySelectorAll('.starred-card').forEach(function(c) { c.classList.remove('drag-over'); });"
-                    "      over.classList.add('drag-over');"
-                    "      var rect = over.getBoundingClientRect();"
-                    "      var midX = rect.left + rect.width / 2;"
-                    "      if (e.clientX < midX) { grid.insertBefore(dragItem, over); }"
-                    "      else { grid.insertBefore(dragItem, over.nextSibling); }"
-                    "    }"
-                    "  });"
-                    "  grid.addEventListener('dragend', function(e) {"
-                    "    grid.querySelectorAll('.starred-card').forEach(function(c) { c.classList.remove('dragging', 'drag-over'); });"
-                    "    if (!dragItem) return;"
-                    "    dragItem = null;"
-                    "    setTimeout(function() { window._is_starred_dragging = false; }, 300);"
-                    "    var cards = grid.querySelectorAll('.starred-card[data-ticker]');"
-                    "    var orderList = [];"
-                    "    cards.forEach(function(c) {"
-                    "      var tk = c.getAttribute('data-ticker');"
-                    "      if (tk) orderList.push(tk);"
-                    "    });"
-                    "    if (orderList.length > 0) {"
-                    "      var newOrderStr = orderList.join(',');"
-                    "      var t = new URLSearchParams(window.top.location.search).get('_t') || '';"
-                    "      var targetUrl = '/?_page=alert_logs&_t=' + t + '&_reorder=' + encodeURIComponent(newOrderStr);"
-                    "      try { window.top.location.href = targetUrl; } catch(err) { window.location.href = targetUrl; }"
-                    "    }"
-                    "  });"
-                    "})();"
-                    "\">"
-                )
-
                 st.markdown("".join(starred_cards_html), unsafe_allow_html=True)
+
+                # 使用 st.html 在 Streamlit 主页面 DOM 中无缝运行 JS
+                st.html("""
+                <script>
+                (function() {
+                    function initDrag() {
+                        var doc = window.parent.document || document;
+                        var grid = doc.getElementById('starred_cards_grid');
+                        if (!grid) {
+                            setTimeout(initDrag, 150);
+                            return;
+                        }
+                        if (grid._drag_inited) return;
+                        grid._drag_inited = true;
+
+                        var dragItem = null;
+                        window.parent._is_starred_dragging = false;
+
+                        grid.addEventListener('dragstart', function(e) {
+                            var item = e.target.closest('.starred-card');
+                            if (!item) return;
+                            dragItem = item;
+                            window.parent._is_starred_dragging = true;
+                            item.classList.add('dragging');
+                            e.dataTransfer.effectAllowed = 'move';
+                        });
+
+                        grid.addEventListener('dragover', function(e) {
+                            e.preventDefault();
+                            var over = e.target.closest('.starred-card');
+                            if (over && over !== dragItem) {
+                                grid.querySelectorAll('.starred-card').forEach(function(c) { c.classList.remove('drag-over'); });
+                                over.classList.add('drag-over');
+                                var rect = over.getBoundingClientRect();
+                                var midX = rect.left + rect.width / 2;
+                                if (e.clientX < midX) {
+                                    grid.insertBefore(dragItem, over);
+                                } else {
+                                    grid.insertBefore(dragItem, over.nextSibling);
+                                }
+                            }
+                        });
+
+                        grid.addEventListener('dragend', function(e) {
+                            grid.querySelectorAll('.starred-card').forEach(function(c) { c.classList.remove('dragging', 'drag-over'); });
+                            if (!dragItem) return;
+                            dragItem = null;
+                            setTimeout(function() { window.parent._is_starred_dragging = false; }, 300);
+                            var cards = grid.querySelectorAll('.starred-card[data-ticker]');
+                            var orderList = [];
+                            cards.forEach(function(c) {
+                                var tk = c.getAttribute('data-ticker');
+                                if (tk) orderList.push(tk);
+                            });
+                            if (orderList.length > 0) {
+                                var newOrderStr = orderList.join(',');
+                                var t = new URLSearchParams(window.parent.location.search).get('_t') || '';
+                                var targetUrl = '/?_page=alert_logs&_t=' + t + '&_reorder=' + encodeURIComponent(newOrderStr);
+                                window.parent.location.href = targetUrl;
+                            }
+                        });
+                    }
+                    initDrag();
+                })();
+                </script>
+                """)
             
         # ── 筛选器面板 ────────────────────────────────────────────────
         with st.expander("🔍 筛选与自定义显示列", expanded=True):
