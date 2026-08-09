@@ -674,31 +674,18 @@ def render_alert_log_table(full_page=False):
                         except Exception as ex:
                             st.error(f"保存排序失败: {ex}")
 
-                # 聚合每个重点品种的最新一条告警记录
-                starred_cards_html = []
-                starred_cards_html.append("<style>")
-                starred_cards_html.append(".starred-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 5px; }")
-                starred_cards_html.append(".starred-card { background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 8px; padding: 10px 12px; transition: all 0.2s ease; cursor: grab; user-select: none; }")
-                starred_cards_html.append(".starred-card:hover { border-color: rgba(245, 158, 11, 0.6); background: rgba(245, 158, 11, 0.14); transform: translateY(-1px); }")
-                starred_cards_html.append(".starred-card.dragging { opacity: 0.35; border: 2px dashed #fbbf24 !important; background: rgba(245, 158, 11, 0.2) !important; cursor: grabbing; }")
-                starred_cards_html.append(".starred-card.drag-over { border: 2px solid #38bdf8 !important; background: rgba(56, 189, 248, 0.15) !important; }")
-                starred_cards_html.append(".starred-title { font-weight: 700; font-size: 13px; color: #fbbf24; display: flex; justify-content: space-between; align-items: center; }")
-                starred_cards_html.append(".starred-sub { font-size: 11px; color: #cbd5e1; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }")
-                starred_cards_html.append(".starred-alert { font-size: 11px; margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(245, 158, 11, 0.2); }")
-                starred_cards_html.append(".filter-btn-mini { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 4px; padding: 1px 5px; font-size: 10px; text-decoration: none !important; font-weight: normal; cursor: pointer; transition: all 0.2s; }")
-                starred_cards_html.append(".filter-btn-mini:hover { background: rgba(56, 189, 248, 0.3); color: #7dd3fc; }")
-                starred_cards_html.append("</style>")
-                starred_cards_html.append("<div class='starred-grid' id='starred_cards_grid'>")
-
+                # ── 构建完整的卡片 HTML 数据，传入组件 iframe 中渲染 ──
+                # 使用 st.components.v1.html 是目前唯一能在 Streamlit Cloud 中
+                # 执行任意 JS (包括拖拽 + window.parent 导航) 的可靠方式
                 t_token = st.query_params.get("_t", "")
                 curr_page = st.query_params.get("_page", "alert_logs")
                 from assets import tv_url
 
+                cards_data = []
                 for stk in starred_tickers:
                     stk_u = stk.upper()
                     stk_name = symbol_name_map.get(stk_u) or stk_u
-                    
-                    # 查找该品种在 df 中的最新记录
+
                     sub_df = df[df["ticker"].str.upper() == stk_u]
                     if not sub_df.empty:
                         latest_row = sub_df.iloc[0]
@@ -707,92 +694,232 @@ def render_alert_log_table(full_page=False):
                             l_time = l_time[:16]
                         l_tf = str(latest_row.get("timeframe", ""))
                         l_lbl = str(latest_row.get("label", "") or "").strip()
-                        
                         if "空头" in l_lbl or "跌" in l_lbl:
-                            dir_tag = f"<span style='color:#f87171;'>🔻 {l_lbl or '下跌'}</span>"
+                            dir_color = "#f87171"
+                            dir_icon = "🔻"
                         elif "多头" in l_lbl or "突破" in l_lbl or "黄金区" in l_lbl:
-                            dir_tag = f"<span style='color:#4ade80;'>🚀 {l_lbl or '上涨'}</span>"
-                        elif l_lbl:
-                            dir_tag = f"<span style='color:#38bdf8;'>{l_lbl}</span>"
+                            dir_color = "#4ade80"
+                            dir_icon = "🚀"
                         else:
-                            dir_tag = "<span style='color:#94a3b8;'>有告警</span>"
-
-                        alert_str = f"⏰ {l_time} [{l_tf}] · {dir_tag}"
+                            dir_color = "#38bdf8"
+                            dir_icon = "ℹ️"
+                        alert_str = f"⏰ {l_time} [{l_tf}] · <span style='color:{dir_color}'>{dir_icon} {l_lbl or '有告警'}</span>"
                     else:
-                        alert_str = "<span style='color:#64748b;'>暂无近期告警</span>"
+                        alert_str = "<span style='color:#64748b'>暂无近期告警</span>"
                         l_tf = "15m"
 
                     filter_href = f"/?_page={curr_page}&_t={t_token}&_search={stk_u}"
-                    tv_href = tv_url(stk_u, l_tf if l_tf else "15m")
+                    tv_href = tv_url(stk_u, l_tf)
+                    ticker_href = f"/?_page=ticker&_ticker={stk_u}&_t={t_token}"
+                    cards_data.append({
+                        "ticker": stk_u,
+                        "name": stk_name,
+                        "alert": alert_str,
+                        "filter_href": filter_href,
+                        "tv_href": tv_href,
+                        "ticker_href": ticker_href,
+                    })
 
-                    card = (
-                        f"<div class='starred-card' draggable='true' data-ticker='{stk_u}' "
-                        f"title=\"拖动卡片或点击上方 [↕️ 调整重点关注顺序] 改变顺序\">"
-                        f"<div class='starred-title'>"
-                        f"<span>⭐ <a href='/?_page=ticker&_ticker={stk_u}&_t={t_token}' target='_parent' style='color:#fbbf24;text-decoration:none;' title='进入品种详情页'>{stk_u}</a></span>"
-                        f"<div style='display:flex;gap:4px;align-items:center;'>"
-                        f"<a href='{tv_href}' target='_blank' class='filter-btn-mini' style='background:rgba(30,144,255,0.15);color:#38bdf8;border-color:rgba(30,144,255,0.3);' title='打开 TradingView 图表'>📈 图表</a>"
-                        f"<a href='{filter_href}' target='_top' class='filter-btn-mini' title='快速筛选此品种告警'>🔍 筛选</a>"
-                        f"</div>"
-                        f"</div>"
-                        f"<div class='starred-sub'>{stk_name}</div>"
-                        f"<div class='starred-alert'>{alert_str}</div>"
-                        f"</div>"
-                    )
-                    starred_cards_html.append(card)
+                # 构建卡片 HTML 字符串
+                cards_html_parts = []
+                for c in cards_data:
+                    cards_html_parts.append(f"""
+                    <div class="sc" draggable="true" data-ticker="{c['ticker']}">
+                      <div class="sc-title">
+                        <span>⭐ <a href="{c['ticker_href']}" target="_parent" class="tk-link">{c['ticker']}</a></span>
+                        <span class="sc-btns">
+                          <a href="{c['tv_href']}" target="_blank" class="btn-mini chart-btn">📈 图表</a>
+                          <a href="{c['filter_href']}" target="_parent" class="btn-mini">🔍 筛选</a>
+                        </span>
+                      </div>
+                      <div class="sc-sub">{c['name']}</div>
+                      <div class="sc-alert">{c['alert']}</div>
+                    </div>""")
+                cards_html = "".join(cards_html_parts)
 
-                starred_cards_html.append("</div>")
+                # 把颜色参数（当前 URL）嵌入
+                reorder_base = f"/?_page=alert_logs&_t={t_token}&_reorder="
 
-                # HTML5 拖拽事件全套监听脚本 (采用 onerror 触发机制，确保 100% 自动运行)
-                starred_cards_html.append(
-                    "<img src='x' onerror=\""
-                    "(function() {"
-                    "  var doc = window.top.document || document;"
-                    "  var grid = doc.getElementById('starred_cards_grid');"
-                    "  if (!grid || grid._drag_inited) return;"
-                    "  grid._drag_inited = true;"
-                    "  var dragItem = null;"
-                    "  grid.addEventListener('dragstart', function(e) {"
-                    "    var item = e.target.closest('.starred-card');"
-                    "    if (!item) return;"
-                    "    dragItem = item;"
-                    "    item.classList.add('dragging');"
-                    "    e.dataTransfer.effectAllowed = 'move';"
-                    "  });"
-                    "  grid.addEventListener('dragover', function(e) {"
-                    "    e.preventDefault();"
-                    "    var over = e.target.closest('.starred-card');"
-                    "    if (over && over !== dragItem) {"
-                    "      grid.querySelectorAll('.starred-card').forEach(function(c) { c.classList.remove('drag-over'); });"
-                    "      over.classList.add('drag-over');"
-                    "      var rect = over.getBoundingClientRect();"
-                    "      var midX = rect.left + rect.width / 2;"
-                    "      if (e.clientX < midX) { grid.insertBefore(dragItem, over); }"
-                    "      else { grid.insertBefore(dragItem, over.nextSibling); }"
-                    "    }"
-                    "  });"
-                    "  grid.addEventListener('dragend', function(e) {"
-                    "    grid.querySelectorAll('.starred-card').forEach(function(c) { c.classList.remove('dragging', 'drag-over'); });"
-                    "    if (!dragItem) return;"
-                    "    dragItem = null;"
-                    "    var cards = grid.querySelectorAll('.starred-card[data-ticker]');"
-                    "    var orderList = [];"
-                    "    cards.forEach(function(c) {"
-                    "      var tk = c.getAttribute('data-ticker');"
-                    "      if (tk) orderList.push(tk);"
-                    "    });"
-                    "    if (orderList.length > 0) {"
-                    "      var newOrderStr = orderList.join(',');"
-                    "      var t = new URLSearchParams(window.top.location.search).get('_t') || '';"
-                    "      var targetUrl = '/?_page=alert_logs&_t=' + t + '&_reorder=' + encodeURIComponent(newOrderStr);"
-                    "      window.top.location.href = targetUrl;"
-                    "    }"
-                    "  });"
-                    "})();"
-                    "\" style='display:none;'>"
-                )
+                component_html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+* {{ box-sizing: border-box; margin: 0; padding: 0; }}
+body {{ background: transparent; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 4px 0; }}
+#hint {{ font-size: 11px; color: #9ca3af; margin-bottom: 8px; }}
+#grid {{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px;
+}}
+.sc {{
+  background: rgba(245,158,11,0.08);
+  border: 1px solid rgba(245,158,11,0.25);
+  border-radius: 8px;
+  padding: 10px 12px;
+  cursor: grab;
+  user-select: none;
+  transition: all 0.15s ease;
+  position: relative;
+}}
+.sc:hover {{ border-color: rgba(245,158,11,0.55); background: rgba(245,158,11,0.13); }}
+.sc.drag-over {{
+  border: 2px solid #38bdf8 !important;
+  background: rgba(56,189,248,0.15) !important;
+}}
+.sc.dragging {{
+  opacity: 0.3;
+  border: 2px dashed #fbbf24 !important;
+  cursor: grabbing;
+}}
+.sc-title {{
+  font-weight: 700;
+  font-size: 13px;
+  color: #fbbf24;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 4px;
+}}
+.tk-link {{ color: #fbbf24; text-decoration: none; }}
+.tk-link:hover {{ text-decoration: underline; }}
+.sc-btns {{ display: flex; gap: 4px; flex-shrink: 0; }}
+.btn-mini {{
+  background: rgba(56,189,248,0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56,189,248,0.3);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 10px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: all 0.15s;
+}}
+.btn-mini:hover {{ background: rgba(56,189,248,0.3); color: #7dd3fc; }}
+.chart-btn {{ background: rgba(30,144,255,0.15); color: #38bdf8; border-color: rgba(30,144,255,0.3); }}
+.sc-sub {{ font-size: 11px; color: #cbd5e1; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+.sc-alert {{ font-size: 11px; margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(245,158,11,0.2); }}
+#save-bar {{
+  display: none;
+  margin-top: 10px;
+  padding: 8px 14px;
+  background: rgba(251,191,36,0.12);
+  border: 1px solid rgba(251,191,36,0.35);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}}
+#save-hint {{ font-size: 12px; color: #fbbf24; }}
+#save-btn {{
+  background: #f59e0b;
+  color: #0f172a;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s;
+}}
+#save-btn:hover {{ background: #fbbf24; }}
+#discard-btn {{
+  background: transparent;
+  color: #94a3b8;
+  border: 1px solid rgba(148,163,184,0.3);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}}
+</style>
+</head>
+<body>
+<div id="hint">💡 拖动卡片即可调整重点关注品种的显示顺序，松手后点击「保存顺序」生效</div>
+<div id="grid">
+{cards_html}
+</div>
+<div id="save-bar">
+  <span id="save-hint">📝 顺序已改变，点击保存让下次打开时也按此顺序显示</span>
+  <div style="display:flex;gap:8px">
+    <button id="discard-btn" onclick="discardOrder()">↩ 还原</button>
+    <button id="save-btn" onclick="saveOrder()">💾 保存顺序</button>
+  </div>
+</div>
+<script>
+var grid = document.getElementById('grid');
+var saveBar = document.getElementById('save-bar');
+var dragItem = null;
+var originalOrder = Array.from(grid.querySelectorAll('.sc')).map(function(c){{ return c.getAttribute('data-ticker'); }});
+var changed = false;
 
-                st.markdown("".join(starred_cards_html), unsafe_allow_html=True)
+grid.addEventListener('dragstart', function(e) {{
+  var item = e.target.closest('.sc');
+  if (!item) return;
+  dragItem = item;
+  item.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}});
+
+grid.addEventListener('dragover', function(e) {{
+  e.preventDefault();
+  var over = e.target.closest('.sc');
+  if (over && over !== dragItem) {{
+    grid.querySelectorAll('.sc').forEach(function(c) {{ c.classList.remove('drag-over'); }});
+    over.classList.add('drag-over');
+    var rect = over.getBoundingClientRect();
+    if (e.clientX < rect.left + rect.width / 2) {{
+      grid.insertBefore(dragItem, over);
+    }} else {{
+      grid.insertBefore(dragItem, over.nextSibling);
+    }}
+  }}
+}});
+
+grid.addEventListener('dragend', function(e) {{
+  grid.querySelectorAll('.sc').forEach(function(c) {{ c.classList.remove('dragging', 'drag-over'); }});
+  dragItem = null;
+  // 检查顺序是否变化
+  var nowOrder = Array.from(grid.querySelectorAll('.sc')).map(function(c){{ return c.getAttribute('data-ticker'); }});
+  changed = nowOrder.join(',') !== originalOrder.join(',');
+  saveBar.style.display = changed ? 'flex' : 'none';
+}});
+
+function saveOrder() {{
+  var cards = grid.querySelectorAll('.sc[data-ticker]');
+  var orderList = [];
+  cards.forEach(function(c) {{
+    var tk = c.getAttribute('data-ticker');
+    if (tk) orderList.push(tk);
+  }});
+  if (orderList.length > 0) {{
+    var newOrderStr = orderList.join(',');
+    var url = {repr(reorder_base)} + encodeURIComponent(newOrderStr);
+    try {{ window.parent.location.href = url; }} catch(err) {{ window.top.location.href = url; }}
+  }}
+}}
+
+function discardOrder() {{
+  // 还原原始顺序
+  originalOrder.forEach(function(tk) {{
+    var el = grid.querySelector('.sc[data-ticker="' + tk + '"]');
+    if (el) grid.appendChild(el);
+  }});
+  saveBar.style.display = 'none';
+  changed = false;
+}}
+</script>
+</body>
+</html>"""
+
+                import streamlit.components.v1 as components
+                n_rows = max(1, (len(starred_tickers) + 2) // 3)  # 估算行数
+                card_h = 100  # 每张卡片约 100px
+                comp_h = 40 + n_rows * (card_h + 12) + 60  # hint + cards + save bar
+                components.html(component_html, height=comp_h, scrolling=False)
             
         # ── 筛选器面板 ────────────────────────────────────────────────
         with st.expander("🔍 筛选与自定义显示列", expanded=True):
