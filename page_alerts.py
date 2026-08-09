@@ -4,6 +4,7 @@ page_alerts.py — 告警配置与测试
 import streamlit as st
 import pandas as pd
 
+import time
 import storage
 import alerts as alt
 
@@ -643,21 +644,35 @@ def render_alert_log_table(full_page=False):
                     if item.get("name") and item.get("ticker"):
                         symbol_name_map[item["ticker"].upper()] = item["name"]
 
-                # ── 原生 Streamlit 拖拽/调整顺序控制器 (解开沙盒限制) ──
-                with st.popover("↕️ 调整重点关注顺序", help="点击调整重点关注品种的显示顺序"):
-                    st.caption("拖动或挑选下面的品种调整顺序，保存后生效：")
-                    reordered_list = st.multiselect(
-                        "排序品种列表",
-                        options=starred_tickers,
-                        default=starred_tickers,
-                        key="starred_reorder_multiselect"
+                # ── 重点关注顺序调整表格 ──
+                with st.expander("↕️ 调整重点关注品种显示顺序", expanded=False):
+                    st.caption("直接修改下表中的「排序数字」即可调整重点关注卡片在顶部的排列顺序：")
+                    df_stk_order = pd.DataFrame([
+                        {"排序": idx + 1, "品种代码": tk, "品种名称": symbol_name_map.get(tk, tk)}
+                        for idx, tk in enumerate(starred_tickers)
+                    ])
+                    edited_stk_df = st.data_editor(
+                        df_stk_order,
+                        num_rows="fixed",
+                        column_config={
+                            "排序": st.column_config.NumberColumn("排序", min_value=1, max_value=len(starred_tickers), step=1),
+                            "品种代码": st.column_config.TextColumn("品种代码", disabled=True),
+                            "品种名称": st.column_config.TextColumn("品种名称", disabled=True),
+                        },
+                        use_container_width=True,
+                        key="starred_order_editor_df",
+                        hide_index=True,
                     )
-                    if st.button("💾 保存最新排序", key="save_starred_reorder_btn", type="primary", use_container_width=True):
-                        if reordered_list:
-                            storage.save_starred_tickers(reordered_list)
-                            st.success("✅ 顺序保存成功！")
+                    if st.button("💾 保存最新卡片顺序", key="save_starred_cards_order_btn", type="primary"):
+                        try:
+                            sorted_stk_df = edited_stk_df.sort_values("排序")
+                            new_starred_order = sorted_stk_df["品种代码"].tolist()
+                            storage.save_starred_tickers(new_starred_order)
+                            st.success("✅ 重点关注卡片顺序已更新！")
                             time.sleep(0.5)
                             st.rerun()
+                        except Exception as ex:
+                            st.error(f"保存排序失败: {ex}")
 
                 # 聚合每个重点品种的最新一条告警记录
                 starred_cards_html = []
