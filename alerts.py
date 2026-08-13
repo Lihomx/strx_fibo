@@ -360,8 +360,12 @@ def send_browser_notification(title: str, body: str, target_url: str = "", timeo
     </script>
     """
     try:
-        from streamlit.components.v1 import html as _html
-        _html(js_code, width=0, height=0)
+        import streamlit as st
+        if hasattr(st, "html"):
+            st.html(js_code)
+        else:
+            from streamlit.components.v1 import html as _html
+            _html(js_code, width=0, height=0)
     except Exception as e:
         pass
 

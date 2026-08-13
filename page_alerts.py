@@ -547,7 +547,10 @@ def render():
             setTimeout(updatePermissionUI, 500);
         </script>
         """
-        st.components.v1.html(js_notify_ui, height=360, scrolling=False)
+        if hasattr(st, "html"):
+            st.html(js_notify_ui)
+        else:
+            st.components.v1.html(js_notify_ui, height=360, scrolling=False)
         
         # 后台依然保存静音/非静音设置
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
@@ -564,69 +567,31 @@ def render():
         render_alert_log_table(full_page=False)
 
 
-def render_alert_log_table(full_page=False):
-    cfg = storage.load_config()
-    # 顶部视图切换
-    try:
-        view_mode = st.segmented_control(
-            "显示范围",
-            options=["最近 20 条", "最近 50 条", "最近 100 条", "全部记录"],
-            default="最近 100 条",
-            key=f"alert_log_view_mode_{'full' if full_page else 'tab'}"
-        ) or "最近 100 条"
-    except Exception:
-        view_mode = st.radio(
-            "显示范围",
-            options=["最近 20 条", "最近 50 条", "最近 100 条", "全部记录"],
-            index=2,
-            horizontal=True,
-            key=f"alert_log_view_mode_{'full' if full_page else 'tab'}"
-        )
-        
-    limit_map = {"最近 20 条": 20, "最近 50 条": 50, "最近 100 条": 100, "全部记录": 0}
-    limit_val = limit_map[view_mode]
-    
-    logs = storage.load_alert_log(limit=limit_val)
-    
-    if not logs:
-        st.info("暂无告警记录")
-    else:
-        df = pd.DataFrame(logs)
-        
-        # 兼容处理历史数据缺少 scanner 字段的情况
-        if "scanner" not in df.columns:
-            df["scanner"] = ""
-        else:
-            df["scanner"] = df["scanner"].fillna("")
-            
-        # ── 时区转换处理 ─────────────────────────────────────────────
-        tz_name = cfg.get("timezone", "Asia/Shanghai")
-        
-        def convert_tz(t_str):
-            from datetime import datetime
-            from zoneinfo import ZoneInfo
-            if not t_str or not isinstance(t_str, str):
-                return str(t_str)
-            # 1. 尝试解析 ISO 格式 (带时区偏移)
-            try:
-                dt = datetime.fromisoformat(t_str.replace("Z", "+00:00"))
-                tz = ZoneInfo(tz_name)
-                return dt.astimezone(tz).strftime("%Y-%m-%d %H:%M")
-            except Exception:
-                pass
-            # 2. 尝试解析旧格式 "YYYY-MM-DD HH:MM"
-            try:
-                dt = datetime.strptime(t_str, "%Y-%m-%d %H:%M")
-                # 旧记录默认视为 UTC 时区时间，转换为目标时区
-                dt = dt.replace(tzinfo=ZoneInfo("UTC"))
-                tz = ZoneInfo(tz_name)
-                return dt.astimezone(tz).strftime("%Y-%m-%d %H:%M")
-            except Exception:
-                return t_str
-                
-        if "time" in df.columns:
-            df["time"] = df["time"].apply(convert_tz)
+@st.cache_data(ttl=300, show_spinner=False)
+def _get_symbol_name_map():
+    custom_symbols = storage.load_symbols()
+    watchlist_items = storage.load_watchlist()
+    symbol_name_map = {item["ticker"].upper(): item["name"] for item in custom_symbols if item.get("name")}
+    for item in watchlist_items:
+        if item.get("name") and item.get("ticker"):
+            symbol_name_map[item["ticker"].upper()] = item["name"]
+    return symbol_name_map
 
+
+def render_alert_log_table(full_page: bool = True):
+    """单独渲染告警日志表格，可嵌入任何页面。"""
+    cfg = storage.load_config()
+    logs = storage.load_alerts()
+    if not logs:
+        st.info("尚无告警记录。运行扫描引擎检测到信号后，告警记录将显示在这里。")
+        return
+
+    df = pd.DataFrame(logs)
+    if not df.empty and "time" in df.columns:
+        df = df.sort_values(by="time", ascending=False)
+
+    # ── 重点关注 (Starred) 快捷控制与展示 ──────────────────────────────
+    if full_page:
         # ── 预加载重点关注品种与名称 ─────────────────────────────────────
         starred_tickers = storage.load_starred_tickers()
         starred_set = set(starred_tickers)
@@ -636,17 +601,12 @@ def render_alert_log_table(full_page=False):
             with st.expander("⭐ 重点关注品种告警汇总", expanded=True):
                 st.markdown("<div style='font-size:12px;color:#9ca3af;margin-bottom:8px;'>以下为标记重点关注的品种列表及最新告警快照：</div>", unsafe_allow_html=True)
                 
-                # 预加载品种全称
-                custom_symbols = storage.load_symbols()
-                watchlist_items = storage.load_watchlist()
-                symbol_name_map = {item["ticker"].upper(): item["name"] for item in custom_symbols if item.get("name")}
-                for item in watchlist_items:
-                    if item.get("name") and item.get("ticker"):
-                        symbol_name_map[item["ticker"].upper()] = item["name"]
+                # 预加载品种全称（使用缓存）
+                symbol_name_map = _get_symbol_name_map()
 
                 # ── 重点关注顺序调整 ──
                 with st.expander("↕️ 调整重点关注品种显示顺序", expanded=False):
-                    st.caption("💡 点击下方的 **[ ⬆️ 上移 ]** 或 **[ 🔻 下移 ]** 按钮调整顺序，也可以直接在表格中修改「排序数字」：")
+                    st.caption("💡 点击下方的 **[ ⬆️ 上移 ]** 或 **[ 🔻 下移 ]** 按钮调整顺序：")
                     
                     # 按钮快速微调顺序逻辑
                     if "temp_starred_order" not in st.session_state or set(st.session_state["temp_starred_order"]) != set(starred_tickers):
@@ -694,7 +654,7 @@ def render_alert_log_table(full_page=False):
                 curr_page = st.query_params.get("_page", "alert_logs")
                 from assets import tv_url
 
-                for stk in starred_tickers:
+                for stk in curr_order:
                     stk_u = stk.upper()
                     stk_name = symbol_name_map.get(stk_u) or stk_u
                     
@@ -1177,8 +1137,7 @@ def render_alert_log_table(full_page=False):
                 st.markdown(html_table, unsafe_allow_html=True)
 
                 # 💡 隐形事件监听组件：捕捉原链接点击，能在后台落盘计数，同时在前台秒级实时更新 (今日/总) 数字
-                import streamlit.components.v1 as _components
-                _components.html(r"""
+                _click_js = r"""
                 <script>
                 (function() {
                     try {
@@ -1278,10 +1237,12 @@ def render_alert_log_table(full_page=False):
                             }
                         };
                         pDoc.addEventListener('click', pDoc._tv_click_handler, true);
-                    } catch(err) {}
-                })();
-                </script>
-                """, height=0)
+                """
+                if hasattr(st, "html"):
+                    st.html(_click_js)
+                else:
+                    import streamlit.components.v1 as _components
+                    _components.html(_click_js, height=0)
             except Exception as e:
                 st.dataframe(df, use_container_width=True, height=850)
 

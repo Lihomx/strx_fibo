@@ -918,8 +918,7 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
     )
 
     # 💡 隐形事件监听组件：捕捉原链接点击，能在后台落盘计数，同时在前台秒级实时更新 (今日/总) 数字
-    import streamlit.components.v1 as _components
-    _components.html(r"""
+    _js_code = r"""
     <script>
     (function() {
         try {
@@ -982,7 +981,12 @@ def _render_results_table(df: pd.DataFrame, last_s: dict, safe_float):
         } catch(err) {}
     })();
     </script>
-    """, height=0)
+    """
+    if hasattr(st, "html"):
+        st.html(_js_code)
+    else:
+        import streamlit.components.v1 as _components
+        _components.html(_js_code, height=0)
 
     st.markdown(
         f'<div style="color:#9ca3af;font-size:11px;margin-top:6px">'

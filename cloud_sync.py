@@ -23,7 +23,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-SYNC_INTERVAL_SEC = 2 * 3600  # 2 小时自动备份一次
+SYNC_INTERVAL_SEC = 12 * 3600  # 12 小时自动备份一次
 
 STARTUP_GRACE_SEC = int(os.environ.get("CLOUD_SYNC_STARTUP_GRACE_SEC", "900"))
 PUSH_DROP_RATIO_LIMIT = float(os.environ.get("CLOUD_SYNC_PUSH_DROP_RATIO_LIMIT", "0.5"))
@@ -53,7 +53,7 @@ _LATEST_FILES = {
     "link_clicks":         "data_link_clicks.json",
 }
 
-_SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "wl_categories", "config", "hotlist", "hotlist_archive", "hl_categories", "symbols", "symbol_groups", "triple_bottom", "chartink", "alerts", "starred", "ticker_notes", "link_clicks"]
+_SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "config", "hotlist", "hotlist_archive", "starred", "ticker_notes"]
 _APP_BOOT_TS = time.time()
 _CLOUD_FILES   = _LATEST_FILES  # 兼容旧接口
 
@@ -121,7 +121,7 @@ def _upload_path(path: str, data: Any) -> Tuple[bool, str]:
     url, key, bucket = _get_secrets()
     if not url or not key:
         return False, "未配置"
-    payload = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+    payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
     obj_url = f"{url}/storage/v1/object/{bucket}/{path}"
     hdrs = {
         "apikey": key, "Authorization": f"Bearer {key}",
@@ -211,6 +211,10 @@ def _upload_latest(file_key: str, data: Any) -> Tuple[bool, str]:
     return _upload_path(f"{_LATEST_DIR}/{fname}", data)
 
 def _download_latest(file_key: str) -> Optional[Any]:
+    # 拦截并阻止拉取超大非核心文件以节省 Supabase 流出带宽 (Egress)
+    if file_key in ("symbols", "symbol_groups", "triple_bottom", "chartink", "scan_history", "scan_results", "scan_groups", "tb_snapshots"):
+        logger.info(f"下载拦截：{file_key} 属于大体积非核心资产，跳过云端下载以节省流量，优先使用本地缓存。")
+        return None
     fname = _LATEST_FILES.get(file_key, f"{file_key}.json")
     return _download_path(f"{_LATEST_DIR}/{fname}")
 
@@ -225,7 +229,9 @@ def _make_snapshot_path(file_key: str, payload_bytes: bytes) -> str:
     return f"{_BACKUP_DIR}/{file_key}_{ts_str}_{size_label}.json"
 
 def _upload_snapshot(file_key: str, data: Any) -> Tuple[bool, str]:
-    payload   = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+    if file_key not in _SNAPSHOT_KEYS:
+        return True, "跳过快照（非核心文件）"
+    payload   = json.dumps(data, ensure_ascii=False).encode("utf-8")
     snap_path = _make_snapshot_path(file_key, payload)
     ok, msg   = _upload_path(snap_path, data)
     return ok, f"{snap_path}: {msg}"
@@ -799,16 +805,7 @@ def push_all(force: bool = False) -> Tuple[bool, str]:
     if not ok_hl:
         errors.append(f"hotlist: {msg_hl}")
     for file_key, loader in [
-        ("wl_categories", lambda: loc.load_wl_categories()),
-        ("hl_categories", lambda: loc.load_hl_categories()),
-        ("scan_history",  lambda: loc._load(loc.F_HIST,   [])),
-        ("scan_results",  lambda: loc._load(loc.F_ALLRES, [])),
-        ("scan_groups",   lambda: loc.load_scanned_groups()),
         ("config",        lambda: loc._load(loc.F_CFG,    {})),
-        ("symbols",       lambda: loc.load_symbols()),
-        ("symbol_groups", lambda: loc.load_symbol_groups()),
-        ("triple_bottom", lambda: loc.load_triple_bottom()),
-        ("chartink",      lambda: loc.load_chartink()),
         ("alerts",        lambda: loc._load(loc.F_ALERTS, [])),
         ("starred",       lambda: loc._load(loc.F_STARRED, [])),
         ("ticker_notes",  lambda: loc._load(loc.F_TICKER_NOTES, {})),
@@ -819,7 +816,7 @@ def push_all(force: bool = False) -> Tuple[bool, str]:
             ok2, msg2 = _upload_latest(file_key, data)
             if not ok2:
                 errors.append(f"{file_key}: {msg2}")
-            if file_key in ("config", "wl_categories", "hl_categories", "symbols", "symbol_groups", "triple_bottom", "chartink", "alerts", "starred", "ticker_notes", "link_clicks"):
+            if file_key in _SNAPSHOT_KEYS:
                 _upload_snapshot(file_key, data)
         except Exception as e:
             errors.append(f"{file_key}: {e}")
@@ -830,7 +827,7 @@ def push_all(force: bool = False) -> Tuple[bool, str]:
             "version":          "6.3",
             "watchlist_cnt":    len(loc.load_watchlist()),
             "hotlist_cnt":      len(loc.load_hotlist()),
-            "scan_results_cnt": len(loc._load(loc.F_ALLRES, [])),
+            "scan_results_cnt": 0,
             "alerts_cnt":       len(loc._load(loc.F_ALERTS, [])),
         })
     except Exception as e:
@@ -853,18 +850,7 @@ def pull_all() -> Dict[str, Any]:
     ok_lc, msg_lc = pull_link_clicks()
     results["link_clicks"] = (ok_lc, msg_lc)
 
-    cloud_hist = _download_latest("scan_history")
-    if isinstance(cloud_hist, list):
-        local_hist = loc._load(loc.F_HIST, []) or []
-        local_ids  = {s.get("session_id") for s in local_hist if isinstance(s, dict)}
-        added = sum(1 for s in cloud_hist
-                    if isinstance(s, dict) and s.get("session_id") not in local_ids
-                    and local_hist.append(s) is None)
-        if added:
-            loc._save(loc.F_HIST, local_hist[-50:])
-        results["scan_history"] = (True, f"补充 {added} 条")
-    else:
-        results["scan_history"] = (False, "无云端数据")
+    results["scan_history"] = (True, "本地优先（跳过云端下载）")
 
     cloud_res = _download_latest("scan_results")
     if isinstance(cloud_res, list):

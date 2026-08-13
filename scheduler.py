@@ -210,7 +210,7 @@ def _run_periodic_watchlist_scan() -> None:
             try:
                 res = scanner.scan_ema_pivot(ticker=ticker, cfg=cfg)
                 if res:
-                    if res.get("is_signal_bull"):
+                    if res.get("triggered_now_bull"):
                         dispatch_alerts_ema_pivot(
                             ticker=ticker,
                             name=name,
@@ -222,7 +222,7 @@ def _run_periodic_watchlist_scan() -> None:
                             cfg=cfg,
                             icon="🚀"
                         )
-                    if res.get("is_signal_bear"):
+                    if res.get("triggered_now_bear"):
                         dispatch_alerts_ema_pivot(
                             ticker=ticker,
                             name=name,

@@ -875,8 +875,7 @@ def render_triple_bottom_page():
                             st.error(f"渲染图形出错: {ex}")
 
     # 💡 隐形事件监听组件：捕捉原链接点击，能在后台落盘计数，同时在前台秒级实时更新 (今日/总) 数字
-    import streamlit.components.v1 as _components
-    _components.html(r"""
+    _js_code = r"""
     <script>
     (function() {
         try {
@@ -939,4 +938,9 @@ def render_triple_bottom_page():
         } catch(err) {}
     })();
     </script>
-    """, height=0)
+    """
+    if hasattr(st, "html"):
+        st.html(_js_code)
+    else:
+        import streamlit.components.v1 as _components
+        _components.html(_js_code, height=0)

@@ -220,6 +220,12 @@ def get_all_hk_tickers() -> List[Tuple[str, str]]:
 # ════════════════════════════════════════════════════════════════════
 # 东方财富前缀：105=NASDAQ, 106=NYSE, 107=AMEX
 _US_CODE_CACHE: Dict[str, str] = {}   # ticker → "105.AAPL"
+_MAX_US_CACHE_SIZE = 20000
+
+def _cache_us_code(ticker: str, code: str):
+    if len(_US_CODE_CACHE) > _MAX_US_CACHE_SIZE:
+        _US_CODE_CACHE.clear()
+    _US_CODE_CACHE[ticker] = code
 
 
 def _ak_us_stock(ticker: str, interval: str) -> Optional[pd.DataFrame]:
@@ -241,7 +247,7 @@ def _ak_us_stock(ticker: str, interval: str) -> Optional[pd.DataFrame]:
                 )
                 result = _to_ohlc(df)
                 if result is not None:
-                    _US_CODE_CACHE[t] = code
+                    _cache_us_code(t, code)
                     return result
             except Exception:
                 continue
@@ -1148,6 +1154,12 @@ def run_full_scan(
             tf_res = {r["timeframe"]: {"in_zone": r["in_zone"], "dist_pct": r.get("dist_pct") if r.get("dist_pct") is not None else 999}
                       for r in t_rows}
             conf = confluence_score(tf_res)
+            
+            # 校验 MA 均线条件组（如果开启）
+            if not check_ma_filters(ticker, cfg):
+                logger.info(f"Fibo alert skipped for {ticker} due to 20-MA filter mismatch.")
+                continue
+
             for r in t_rows:
                 if (not fibo_in_zone_only) or r["in_zone"]:
                     fibo_mock = {
@@ -1297,3 +1309,27 @@ def scan_ema_pivot(ticker: str, cfg: Dict) -> Optional[Dict]:
     except Exception as e:
         logger.warning(f"scan_ema_pivot {ticker} error: {e}")
         return None
+
+
+def check_ma_filters(ticker: str, cfg: Dict) -> bool:
+    """检查 ticker 是否满足用户配置的上涨/下跌 20-MA 均线条件。如果未开启任何均线过滤，默认返回 True。"""
+    has_bull_filter = any([cfg.get("filter_4h_ema20"), cfg.get("filter_1h_ema20"), cfg.get("filter_15m_ema20")])
+    has_bear_filter = any([cfg.get("filter_4h_ema20_bear"), cfg.get("filter_1h_ema20_bear"), cfg.get("filter_15m_ema20_bear")])
+    if not (has_bull_filter or has_bear_filter):
+        return True
+
+    res = scan_ema_pivot(ticker, cfg)
+    if res is None:
+        return True
+
+    if has_bull_filter and not res.get("is_signal_bull"):
+        if has_bear_filter and res.get("is_signal_bear"):
+            return True
+        return False
+
+    if has_bear_filter and not res.get("is_signal_bear"):
+        if has_bull_filter and res.get("is_signal_bull"):
+            return True
+        return False
+
+    return True

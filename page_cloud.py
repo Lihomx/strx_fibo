@@ -108,21 +108,18 @@ def _control(configured: bool) -> None:
             (st.success if ok else st.error)(msg)
 
     with d2:
-        if st.button("📈 仅同步扫描与告警记录", key="push_scan", use_container_width=True):
+        if st.button("📈 仅同步告警与星标备注", key="push_scan", use_container_width=True):
             import storage as loc
 
-            with st.spinner("同步扫描与告警记录..."):
-                r1 = cloud_sync._upload_latest("scan_history", loc._load(loc.F_HIST, []))
-                r2 = cloud_sync._upload_latest("scan_results", loc._load(loc.F_ALLRES, []))
-                r3 = cloud_sync._upload_latest("scan_groups", loc.load_scanned_groups())
+            with st.spinner("同步中..."):
                 r4 = cloud_sync._upload_latest("alerts", loc._load(loc.F_ALERTS, []))
                 cloud_sync._upload_snapshot("alerts", loc._load(loc.F_ALERTS, []))
                 r5 = cloud_sync._upload_latest("starred", loc._load(loc.F_STARRED, []))
                 cloud_sync._upload_snapshot("starred", loc._load(loc.F_STARRED, []))
                 r6 = cloud_sync._upload_latest("ticker_notes", loc._load(loc.F_TICKER_NOTES, {}))
                 cloud_sync._upload_snapshot("ticker_notes", loc._load(loc.F_TICKER_NOTES, {}))
-            all_ok = all(ok for ok, _ in [r1, r2, r3, r4, r5, r6])
-            (st.success if all_ok else st.error)("扫描/告警/关注/备注同步完成" if all_ok else f"部分失败: {r1[1]}")
+            all_ok = all(ok for ok, _ in [r4, r5, r6])
+            (st.success if all_ok else st.error)("告警/星标/备注同步完成" if all_ok else "同步部分失败")
 
     with d3:
         if st.button("⚙️ 仅同步配置", key="push_cfg", use_container_width=True):

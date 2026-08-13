@@ -10,11 +10,14 @@ storage.py — JSON 本地存储（支持分批缓存合并）
 """
 
 import json
+import logging
 import os
 import threading
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 # ── 文件路径 ─────────────────────────────────────────────────────────
 _BASE     = os.path.dirname(os.path.abspath(__file__))
@@ -32,9 +35,10 @@ def get_allres_path(date_str: str) -> str:
 
 
 _MAX_HIST   = 50
-_MAX_ALERTS = 200
+_MAX_ALERTS = 2000
 _MAX_ALLRES = 5000   # 所有品种×框架合并缓存上限
 _MAX_SCAN_SNAPSHOTS = 200
+_MAX_IO_CACHE_SIZE = 100
 
 # ── 备份目录 ─────────────────────────────────────────────────────────
 _BACKUP_DIR = os.path.join(_BASE, "backups")
@@ -52,6 +56,12 @@ IO_LOCK = threading.Lock()
 
 _IO_CACHE: Dict[str, Tuple[float, Any]] = {}
 
+def _prune_io_cache_if_needed():
+    if len(_IO_CACHE) > _MAX_IO_CACHE_SIZE:
+        keys_to_remove = list(_IO_CACHE.keys())[: len(_IO_CACHE) // 2]
+        for k in keys_to_remove:
+            _IO_CACHE.pop(k, None)
+
 # ── 通用 IO ──────────────────────────────────────────────────────────
 def _load(path: str, default):
     with IO_LOCK:
@@ -63,10 +73,11 @@ def _load(path: str, default):
                     return cached[1]
                 with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)
+                _prune_io_cache_if_needed()
                 _IO_CACHE[path] = (mtime, data)
                 return data
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"_load error on {path}: {e}")
         return default
 
 
@@ -77,11 +88,13 @@ def _save(path: str, data) -> bool:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             try:
                 mtime = os.path.getmtime(path)
+                _prune_io_cache_if_needed()
                 _IO_CACHE[path] = (mtime, data)
             except Exception:
                 _IO_CACHE.pop(path, None)
             return True
-        except Exception:
+        except Exception as e:
+            logger.error(f"_save error writing to {path}: {e}")
             return False
 
 
@@ -95,20 +108,21 @@ def save_cooldown(key: str, val_str: str) -> bool:
     data = load_cooldowns()
     data[key] = val_str
     
-    # 自动清理超过 24 小时（86400秒）的过期冷却记录，防止 JSON 文件无限变大
-    now = datetime.now()
-    pruned = {}
-    for k, v in data.items():
-        try:
-            ts_str = v.split("|")[0] if "|" in v else v
-            dt = datetime.fromisoformat(ts_str)
-            # 最长保留 24 小时即可，因为过滤仅需 8 小时
-            max_age = 86400  # 86400秒 = 24小时
-            if (now - dt).total_seconds() < max_age:
-                pruned[k] = v
-        except Exception:
-            pass
-    return _save(F_COOLDOWN, pruned)
+    # 仅当缓存 key 数量较多 (>300) 时执行过期清理，降低全量 isoformat 解析频次
+    if len(data) > 300:
+        now = datetime.now()
+        pruned = {}
+        for k, v in data.items():
+            try:
+                ts_str = v.split("|")[0] if "|" in v else v
+                dt = datetime.fromisoformat(ts_str)
+                # 保留 24 小时内的冷却记录
+                if (now - dt).total_seconds() < 86400:
+                    pruned[k] = v
+            except Exception:
+                pass
+        data = pruned
+    return _save(F_COOLDOWN, data)
 
 
 def _save_with_backup(path: str, data) -> bool:
@@ -202,7 +216,7 @@ def save_config(cfg: Dict) -> bool:
 
 # ── 扫描会话 ─────────────────────────────────────────────────────────
 def _load_all_results() -> List[Dict]:
-    """读取所有分片数据并合并，同 ticker+timeframe 取最新的那个，限制最多加载最近30天/分片"""
+    """读取所有分片数据并合并，同 ticker+timeframe 取最新的那个，自动清理多余 14 天的旧分片"""
     import glob
     merged_map = {}
     
@@ -214,9 +228,15 @@ def _load_all_results() -> List[Dict]:
         
     # 按文件修改时间排序
     files.sort(key=lambda x: os.path.getmtime(x))
-    # 限制最多加载最近 30 个分片，保证极速
-    if len(files) > 30:
-        files = files[-30:]
+    # 限制最多加载/保留最近 14 个分片，清理更旧的分片
+    if len(files) > 14:
+        to_delete = files[:-14]
+        files = files[-14:]
+        for df in to_delete:
+            try:
+                os.remove(df)
+            except Exception:
+                pass
         
     for fpath in files:
         rows = _load(fpath, [])

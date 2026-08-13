@@ -709,7 +709,11 @@ def render_page_chartink():
             "})();\n"
             "</script>"
         )
-        _components.html(_js_code, height=0)
+        if hasattr(st, "html"):
+            st.html(_js_code)
+        else:
+            import streamlit.components.v1 as _components
+            _components.html(_js_code, height=0)
 
         # 详细条件展开
         for r in passed:
