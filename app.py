@@ -1311,13 +1311,7 @@ def main():
     except Exception:
         pass
 
-    # ── 强行重载修改过的子页面模块 ──────────────────────────────
-    import importlib
-    for m in [page_triple_bottom, page_chartink, page_settings, page_watchlist, page_ticker]:
-        try:
-            importlib.reload(m)
-        except Exception:
-            pass
+
 
     p = st.session_state.get("page", "scanner")
     dispatch = {

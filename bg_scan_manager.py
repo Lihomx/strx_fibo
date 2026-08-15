@@ -107,7 +107,16 @@ def submit_job(job_type: str, label: str, params: dict, worker_fn) -> tuple[bool
         _save_state()
         
     t = threading.Thread(target=_bg_worker_wrapper, args=(job_id, worker_fn, params), daemon=True)
-    t.start()
+    try:
+        t.start()
+    except RuntimeError:
+        # 线程数已耗尽，同步降级执行
+        with _lock:
+            _state["status"] = "error"
+            _state["error"] = "系统线程数已耗尽，无法启动后台扫描，请稍后重试"
+            _state["finished_at"] = datetime.now().isoformat()
+            _save_state()
+        return False, "系统线程资源不足，请稍后重试"
     return True, "扫描任务已在后台启动，您可以关闭此页面"
 
 def _bg_worker_wrapper(job_id, worker_fn, params):

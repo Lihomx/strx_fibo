@@ -51,6 +51,7 @@ def start_scheduler_if_needed() -> bool:
         _scheduler = BackgroundScheduler(
             timezone="Asia/Shanghai",
             job_defaults={"misfire_grace_time": 300, "coalesce": True},
+            executors={"default": {"type": "threadpool", "max_workers": 2}},
         )
         added_jobs = []
         if cfg.get("daily_scan_enabled", True):

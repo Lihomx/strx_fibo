@@ -152,19 +152,25 @@ def _save_with_backup(path: str, data) -> bool:
     return ok
 
 
-# ── 异步推送工具 ────────────────────────────────────────────────────
+# ── 异步推送工具（有界线程池）───────────────────────────────────────
+from concurrent.futures import ThreadPoolExecutor
+
+# 最多 3 个 IO 线程并发（备份、云同步等），防止线程池耗尽
+_io_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="strx_io")
+
 
 def _async_push(fn, *args, **kwargs):
-    """在后台守护线程中执行推送，不阻塞主线程。若系统线程数爆满则安全降级为同步/忽略。"""
+    """将指定函数提交到有界线程池异步执行，防止线程池耗尽导致崩溃。"""
     try:
-        t = threading.Thread(target=fn, args=args, kwargs=kwargs, daemon=True)
-        t.start()
-    except Exception:
-        # 当操作系统/容器无法创建新线程时，捕获异常防止崩溃
+        _io_executor.submit(fn, *args, **kwargs)
+    except RuntimeError:
+        # executor 已关闭（死锁）：直接同步执行
         try:
             fn(*args, **kwargs)
         except Exception:
             pass
+    except Exception:
+        pass
 
 
 # ── 配置 ─────────────────────────────────────────────────────────────
