@@ -1668,11 +1668,21 @@ def import_hotlist_json(json_str: str, merge: bool = True):
 
 # ── 三重底扫描数据 ──────────────────────────────────────────────────
 def load_triple_bottom() -> List[Dict]:
-    """返回三重底扫描结果"""
+    """返回三重底扫描结果，自动去重并限制极端最大条数，保证极速读取"""
     res = _load(F_TRIPLE_BOTTOM, [])
     if not isinstance(res, list):
         return []
-    return res
+    seen = {}
+    for r in res:
+        if not isinstance(r, dict) or not r.get("symbol"):
+            continue
+        k = (str(r.get("symbol")).upper(), str(r.get("period", "")).lower(), str(r.get("pattern", "")))
+        if k not in seen or float(r.get("confidence", 0)) > float(seen[k].get("confidence", 0)):
+            seen[k] = r
+    deduped = list(seen.values())
+    deduped.sort(key=lambda x: float(x.get("confidence", 0.0)), reverse=True)
+    return deduped[:3000]
+
 
 def save_triple_bottom(items: List[Dict], with_backup: bool = True) -> bool:
     """保存三重底扫描结果"""

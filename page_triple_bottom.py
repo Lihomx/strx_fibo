@@ -800,7 +800,7 @@ def render_triple_bottom_page():
         elif "expired" in s:
             selected_statuses.append("expired")
 
-    # 执行前端筛选
+    # 执行前端形态与周期、状态筛选
     filtered = []
     for r in results:
         if sel_patt != "全部" and sel_patt not in r.get("pattern", ""):
@@ -812,20 +812,95 @@ def render_triple_bottom_page():
             continue
         filtered.append(r)
 
-    st.markdown(
-        f"<div style='font-size:13px; color:#94a3b8; margin: 8px 0 16px 0; font-weight: 500;'>"
-        f"📊 符合当前筛选条件的形态：<b style='color:#f59e0b;'>{len(filtered)}</b> / {len(results)} 个"
-        f"</div>",
-        unsafe_allow_html=True
-    )
+    # ── 搜索、排序与分页配置 ──
+    col_s1, col_s2, col_s3 = st.columns([2, 1.2, 1])
+    with col_s1:
+        search_query = st.text_input("🔍 搜索代码 / 名称", "", placeholder="输入股票代码或名称关键词过滤...", key="tb_search_query")
+    with col_s2:
+        sort_by = st.selectbox(
+            "排序方式",
+            ["置信度 (高 → 低)", "最新扫描时间 (新 → 旧)", "股票代码 (A → Z)"],
+            index=0,
+            key="tb_sort_by"
+        )
+    with col_s3:
+        page_size = st.selectbox(
+            "每页条数",
+            [20, 50, 100],
+            index=0,
+            key="tb_page_size"
+        )
+
+    # 执行文本搜索过滤
+    if search_query.strip():
+        q = search_query.strip().upper()
+        filtered = [
+            r for r in filtered 
+            if q in str(r.get("symbol", "")).upper() or q in _fetch_name(str(r.get("symbol", ""))).upper()
+        ]
+
+    # 执行排序
+    if sort_by == "置信度 (高 → 低)":
+        filtered.sort(key=lambda x: float(x.get("confidence", 0.0)), reverse=True)
+    elif sort_by == "最新扫描时间 (新 → 旧)":
+        filtered.sort(key=lambda x: str(x.get("scan_time", "")), reverse=True)
+    elif sort_by == "股票代码 (A → Z)":
+        filtered.sort(key=lambda x: str(x.get("symbol", "")).upper())
+
+    total_items = len(filtered)
+    total_pages = max(1, (total_items + page_size - 1) // page_size)
+
+    # 页码状态管理
+    if "tb_current_page" not in st.session_state:
+        st.session_state.tb_current_page = 1
+    if st.session_state.tb_current_page > total_pages:
+        st.session_state.tb_current_page = total_pages
+    if st.session_state.tb_current_page < 1:
+        st.session_state.tb_current_page = 1
+
+    current_page = st.session_state.tb_current_page
+
+    # 分页导航条（顶部）
+    col_p1, col_p2, col_p3, col_p4, col_p5 = st.columns([1, 1.2, 3, 1.2, 1])
+    with col_p1:
+        if st.button("⏮ 首页", disabled=(current_page == 1), key="tb_first_page_top", use_container_width=True):
+            st.session_state.tb_current_page = 1
+            st.rerun()
+    with col_p2:
+        if st.button("◀ 上一页", disabled=(current_page == 1), key="tb_prev_page_top", use_container_width=True):
+            st.session_state.tb_current_page = max(1, current_page - 1)
+            st.rerun()
+    with col_p3:
+        st.markdown(
+            f"<div style='text-align:center; line-height:36px; color:#cbd5e1; font-size:14px; font-weight:600;'>"
+            f"📄 第 <span style='color:#f59e0b;'>{current_page}</span> / {total_pages} 页 "
+            f"(共 <span style='color:#38bdf8;'>{total_items}</span> 条，显示 {(current_page-1)*page_size + 1 if total_items > 0 else 0} - {min(current_page*page_size, total_items)} 条)"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+    with col_p4:
+        if st.button("下一页 ▶", disabled=(current_page == total_pages), key="tb_next_page_top", use_container_width=True):
+            st.session_state.tb_current_page = min(total_pages, current_page + 1)
+            st.rerun()
+    with col_p5:
+        if st.button("末页 ⏭", disabled=(current_page == total_pages), key="tb_last_page_top", use_container_width=True):
+            st.session_state.tb_current_page = total_pages
+            st.rerun()
+
+    # 切片当前页数据
+    start_idx = (current_page - 1) * page_size
+    end_idx = min(start_idx + page_size, total_items)
+    page_items = filtered[start_idx:end_idx]
 
     # 准备共享数据提升循环渲染效率
     all_clicks_data = storage.get_all_link_clicks()
     wl = storage.load_watchlist()
     today_str_val = storage.get_today_str()
 
-    # 循环渲染每一项结果卡片
-    for i, r in enumerate(filtered):
+    # 循环渲染当前页切片结果卡片
+    for i, r in enumerate(page_items):
+        item_idx = start_idx + i
+
         ticker = r["symbol"]
         period = r["period"]
         patt_desc = r["pattern"]
@@ -871,7 +946,7 @@ def render_triple_bottom_page():
                 btn_col1, btn_col2, btn_col3 = st.columns(3)
                 
                 with btn_col1:
-                    if st.button("📊 K线图" if not is_open else "❌ 关闭图", key=f"tb_chart_btn_{i}", use_container_width=True):
+                    if st.button("📊 K线图" if not is_open else "❌ 关闭图", key=f"tb_chart_btn_{item_idx}", use_container_width=True):
                         st.session_state[chart_key] = not is_open
                         st.rerun()
 
@@ -898,7 +973,7 @@ def render_triple_bottom_page():
                     is_in_wl = any(item["ticker"].upper() == ticker.upper() for item in wl)
                     
                     if not is_in_wl:
-                        if st.button("⭐ 收藏", key=f"tb_add_wl_{i}", help="将该品种加入自选收藏夹，并标记 TripleBottom 标签", use_container_width=True):
+                        if st.button("⭐ 收藏", key=f"tb_add_wl_{item_idx}", help="将该品种加入自选收藏夹，并标记 TripleBottom 标签", use_container_width=True):
                             ok = storage.add_to_watchlist(
                                 ticker=ticker,
                                 name=name,
@@ -921,7 +996,7 @@ def render_triple_bottom_page():
                                 st.toast(f"添加失败（{ticker} 可能已在收藏夹中）", icon="⚠️")
                             st.rerun()
                     else:
-                        if st.button("✅ 已加", key=f"tb_sync_tag_{i}", help="该股票已在自选收藏夹中，点击为该股票追加 TripleBottom 与形态标签", use_container_width=True):
+                        if st.button("✅ 已加", key=f"tb_sync_tag_{item_idx}", help="该股票已在自选收藏夹中，点击为该股票追加 TripleBottom 与形态标签", use_container_width=True):
                             for item in wl:
                                 if item["ticker"].upper() == ticker.upper():
                                     tags = item.setdefault("tags", [])
@@ -985,12 +1060,11 @@ def render_triple_bottom_page():
                                     high=df_slice['high'],
                                     low=df_slice['low'],
                                     close=df_slice['close'],
-                                    name='蜡烛图',
-                                    increasing_line_color='#ef4444',
-                                    decreasing_line_color='#10b981'
+                                    name='K线',
+                                    increasing_line_color='#22c55e',
+                                    decreasing_line_color='#ef4444'
                                 ))
 
-                                pts_idx = [r["idx1"], r["idx2"], r["idx3"]]
                                 pts_idx = [p for p in pts_idx if 0 <= p < len(df_slice)]
                                 
                                 if len(pts_idx) == 3:
@@ -1030,7 +1104,37 @@ def render_triple_bottom_page():
                         except Exception as ex:
                             st.error(f"渲染图形出错: {ex}")
 
+    # ── 底部快捷翻页栏 ──
+    if total_pages > 1:
+        st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
+        col_pb1, col_pb2, col_pb3, col_pb4, col_pb5 = st.columns([1, 1.2, 3, 1.2, 1])
+        with col_pb1:
+            if st.button("⏮ 首页", disabled=(current_page == 1), key="tb_first_page_bot", use_container_width=True):
+                st.session_state.tb_current_page = 1
+                st.rerun()
+        with col_pb2:
+            if st.button("◀ 上一页", disabled=(current_page == 1), key="tb_prev_page_bot", use_container_width=True):
+                st.session_state.tb_current_page = max(1, current_page - 1)
+                st.rerun()
+        with col_pb3:
+            st.markdown(
+                f"<div style='text-align:center; line-height:36px; color:#cbd5e1; font-size:14px; font-weight:600;'>"
+                f"📄 第 <span style='color:#f59e0b;'>{current_page}</span> / {total_pages} 页 "
+                f"(共 <span style='color:#38bdf8;'>{total_items}</span> 条)"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+        with col_pb4:
+            if st.button("下一页 ▶", disabled=(current_page == total_pages), key="tb_next_page_bot", use_container_width=True):
+                st.session_state.tb_current_page = min(total_pages, current_page + 1)
+                st.rerun()
+        with col_pb5:
+            if st.button("末页 ⏭", disabled=(current_page == total_pages), key="tb_last_page_bot", use_container_width=True):
+                st.session_state.tb_current_page = total_pages
+                st.rerun()
+
     # 💡 隐形事件监听组件：捕捉原链接点击，能在后台落盘计数，同时在前台秒级实时更新 (今日/总) 数字
+
     _js_code = r"""
     <script>
     (function() {
