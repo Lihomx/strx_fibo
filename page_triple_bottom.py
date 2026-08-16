@@ -687,9 +687,10 @@ def render_triple_bottom_page():
 
             auto_continue_flag = st.checkbox(
                 "⚡ 自动连续扫描下一批 (流水线全自动模式)", 
-                value=bstate.get("auto_continue", False),
+                value=bstate.get("auto_continue", True),
                 help="开启后，每完成 50 只自动休息冷却并开始下一批，无需手动点击"
             )
+
 
             st.markdown("<div style='margin-top:15px;'></div>", unsafe_allow_html=True)
             

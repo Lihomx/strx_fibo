@@ -1733,7 +1733,7 @@ def load_tb_batch_state() -> Dict:
         "total_batches": 0,
         "done_tickers": [],
         "scan_params": {},
-        "auto_continue": False,
+        "auto_continue": True,
         "status": "idle", # idle | in_progress | batch_done | all_done
         "updated_at": None,
     }
