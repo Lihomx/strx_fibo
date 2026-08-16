@@ -145,13 +145,19 @@ def _run_scheduled_scan() -> None:
                     "1d": ("1d", "2y")
                 }
                 
+                import gc
                 tb_results = []
                 for ticker in tickers:
                     for period_key in periods:
                         interval, yf_period = timeframe_configs[period_key]
+                        df = None
                         try:
                             df = fetch_data(ticker, interval=interval, period=yf_period)
                             if df is not None and not df.empty:
+                                # 裁剪多余列
+                                needed_cols = [c for c in ("close", "high", "low", "volume") if c in df.columns]
+                                if len(needed_cols) >= 3:
+                                    df = df[needed_cols].copy()
                                 matches = scan_triple_bottoms(df, symbol=ticker, swing_window=3, lookback_bars=120, max_spacing=60)
                                 for m in matches:
                                     if m.confidence >= 0.6:
@@ -176,8 +182,14 @@ def _run_scheduled_scan() -> None:
                                         })
                         except Exception:
                             pass
+                        finally:
+                            if df is not None:
+                                del df
+                                df = None
+                    gc.collect()
                 storage.save_triple_bottom(tb_results)
                 logging.info(f"[Scheduler] 定时三重底扫描完成：发现 {len(tb_results)} 个形态候选")
+
         except Exception as ex_tb:
             logging.exception(f"[Scheduler] 定时三重底扫描异常: {ex_tb}")
     except Exception as e:

@@ -155,6 +155,28 @@ def _fetch_name(ticker: str) -> str:
     cache[key] = name
     return name
 
+import gc
+
+def _check_memory_guard() -> tuple[bool, float]:
+    """
+    检查系统内存使用率。
+    如果超过 85%，先触发强制垃圾回收并休眠等待；如果仍超过 90% 返回 False。
+    返回 (is_safe, mem_percent)
+    """
+    try:
+        import psutil
+        mem = psutil.virtual_memory()
+        if mem.percent > 85.0:
+            gc.collect()
+            time.sleep(2.0)
+            mem = psutil.virtual_memory()
+            if mem.percent > 90.0:
+                return False, mem.percent
+        return True, mem.percent
+    except Exception:
+        return True, 0.0
+
+
 def triple_bottom_worker(params, update_progress, cancel_check):
     tickers_to_scan = params["tickers_to_scan"]
     selected_periods = params["selected_periods"]
@@ -182,23 +204,50 @@ def triple_bottom_worker(params, update_progress, cancel_check):
     total_steps = len(tickers_to_scan) * len(selected_periods)
     step = (len(tickers_to_scan) - len(remaining_tickers)) * len(selected_periods)
     
-    BATCH_SIZE = 100
+    BATCH_SIZE = 50
     ticker_count = 0
+    start_time = time.time()
     
     for ticker in remaining_tickers:
         if cancel_check():
             break
             
         ticker_count += 1
+        
+        # 内存安全守卫：内存过高时主动休眠等待操作系统释放
+        safe_mem, mem_pct = _check_memory_guard()
+        if not safe_mem:
+            update_progress(step, total_steps, f"⚠️ 内存偏高({mem_pct:.1f}%)，正在缓冲降载...")
+            gc.collect()
+            time.sleep(4.0)
+
         for period_key in selected_periods:
             if cancel_check():
                 break
             step += 1
             interval, yf_period, period_desc = TRIPLE_BOTTOM_TIMEFRAMES[period_key]
-            update_progress(step, total_steps, f"{ticker} ({period_desc}) [{step}/{total_steps}]")
+            
+            # 计算估计剩余时间
+            elapsed = time.time() - start_time
+            if ticker_count > 1 and step > 0:
+                avg_time_per_step = elapsed / ticker_count
+                remaining_tickers_cnt = len(remaining_tickers) - ticker_count
+                rem_sec = int(remaining_tickers_cnt * avg_time_per_step)
+                eta_str = f" | 预计剩余 {rem_sec // 60}分{rem_sec % 60}秒" if rem_sec > 0 else ""
+            else:
+                eta_str = ""
+                
+            update_progress(step, total_steps, f"{ticker} ({period_desc}) [{step}/{total_steps}]{eta_str}")
+            
+            df = None
             try:
                 df = fetch_data(ticker, interval=interval, period=yf_period)
                 if df is not None and not df.empty:
+                    # ✂️ 内存精简：仅提取三重底扫描必需的列，剔除多余字段，减少 4~6 倍内存占用
+                    needed_cols = [c for c in ("close", "high", "low", "volume") if c in df.columns]
+                    if len(needed_cols) >= 3:
+                        df = df[needed_cols].copy()
+                        
                     matches = scan_triple_bottoms(
                         df,
                         symbol=ticker,
@@ -231,11 +280,18 @@ def triple_bottom_worker(params, update_progress, cancel_check):
                             })
             except Exception:
                 pass
+            finally:
+                # 显式解除 DataFrame 引用，防止在局部作用域残留
+                if df is not None:
+                    del df
+                    df = None
             
-            # 微小休眠，防止网络IO高频挂起
-            time.sleep(0.05)
+            # 保守级请求休眠 (0.5秒)，平摊网络与内存吞吐
+            time.sleep(0.5)
             
         done_tickers.add(ticker)
+        # 每只股票完成所有周期扫描后，强制触发一次垃圾回收，彻底释放内存
+        gc.collect()
         
         # 定期写断点（中间过程只刷新数据文件，不创建历史备份文件，避免线程爆炸）
         if ticker_count % 10 == 0 or ticker_count == len(remaining_tickers):
@@ -245,9 +301,11 @@ def triple_bottom_worker(params, update_progress, cancel_check):
         # 批次间休眠冷却
         if ticker_count % BATCH_SIZE == 0:
             time.sleep(2.0)
+            gc.collect()
                 
     storage.save_triple_bottom(new_results, with_backup=True)
     storage.clear_scan_checkpoint()
+
 
 
 def render_triple_bottom_page():

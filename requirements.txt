@@ -13,3 +13,4 @@ openpyxl
 plotly
 streamlit-autorefresh
 apscheduler
+psutil
