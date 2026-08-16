@@ -385,10 +385,14 @@ def _trigger_tb_batch(bstate: dict, batch_idx: int) -> tuple[bool, str]:
 
 
 def render_triple_bottom_page():
+    # ── 数据初始化与安全保障 ──
+    results = storage.load_triple_bottom() or []
+    
     # ── 状态轮询与分批流水线自动推进 ──
     bg_status = bg_scan_manager.get_status()
     bstate = storage.load_tb_batch_state()
     is_running = (bg_status["status"] == "running")
+
     
     # 自动流水线推进检测
     if not is_running and bstate.get("status") == "batch_done":
@@ -741,7 +745,9 @@ def render_triple_bottom_page():
 
 
     # ── 4. 主界面形态展示与过滤 ──
+    results = storage.load_triple_bottom() or []
     if not results:
+
 
 
         st.markdown(
