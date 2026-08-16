@@ -572,11 +572,13 @@ def render_triple_bottom_page():
         unsafe_allow_html=True
     )
 
-    # ── 1. 顶部 Hero Banner ──
-    results_all = storage.load_triple_bottom()
-    active_count = sum(1 for r in results_all if r.get("status") == "active")
-    confirmed_count = sum(1 for r in results_all if r.get("status") == "confirmed")
-    latest_time = results_all[0].get("scan_time", "无记录")[:16] if results_all else "暂未扫描"
+    # ── 1. 顶部 Hero Banner 与数据加载 ──
+    results = storage.load_triple_bottom()
+    if not isinstance(results, list):
+        results = []
+    active_count = sum(1 for r in results if r.get("status") == "active")
+    confirmed_count = sum(1 for r in results if r.get("status") == "confirmed")
+    latest_time = results[0].get("scan_time", "无记录")[:16] if results else "暂未扫描"
 
     st.markdown(
         f"""
@@ -591,7 +593,7 @@ def render_triple_bottom_page():
             </div>
             <div style="display:flex; gap:12px;">
                 <div class="tb-stat-box">
-                    <div class="tb-stat-val">{len(results_all)}</div>
+                    <div class="tb-stat-val">{len(results)}</div>
                     <div class="tb-stat-lbl">累计形态</div>
                 </div>
                 <div class="tb-stat-box">
@@ -607,6 +609,7 @@ def render_triple_bottom_page():
         """,
         unsafe_allow_html=True
     )
+
 
     # ── 恢复/清空扫描结果控件 ──
     _render_tb_restore_session_controls()
@@ -738,8 +741,8 @@ def render_triple_bottom_page():
 
 
     # ── 4. 主界面形态展示与过滤 ──
-    results = storage.load_triple_bottom()
     if not results:
+
 
         st.markdown(
             """
