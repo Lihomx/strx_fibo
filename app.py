@@ -1313,6 +1313,14 @@ def main():
 
 
 
+    # ── 清理旧版本未分批的历史超大断点（避免反复触发 6385 只股票的旧式扫描） ──
+    try:
+        old_ckpt = storage.load_scan_checkpoint("triple_bottom")
+        if old_ckpt and len(old_ckpt.get("total_tickers", [])) > 100:
+            storage.clear_scan_checkpoint()
+    except Exception:
+        pass
+
     p = st.session_state.get("page", "scanner")
     dispatch = {
         "scanner":       page_scanner.render,
@@ -1331,7 +1339,18 @@ def main():
         "symbols":       page_symbols.render,
         "ticker":        page_ticker.render,
     }
-    dispatch.get(p, page_scanner.render)()
+    
+    render_fn = dispatch.get(p, page_scanner.render)
+    try:
+        render_fn()
+    except Exception as e:
+        import traceback
+        st.error(f"⚠️ 页面渲染发生错误: {e}")
+        with st.expander("查看详细错误日志 (Debug Info)"):
+            st.code(traceback.format_exc())
+        if st.button("🔄 刷新页面并重试", key="app_global_page_error_retry_btn"):
+            st.rerun()
+
 
     # ── 动态更新浏览器标签页标题 ──
     try:
