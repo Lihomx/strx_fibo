@@ -577,12 +577,12 @@ def render_triple_bottom_page():
     )
 
     # ── 1. 顶部 Hero Banner 与数据加载 ──
-    results = storage.load_triple_bottom()
-    if not isinstance(results, list):
-        results = []
-    active_count = sum(1 for r in results if r.get("status") == "active")
-    confirmed_count = sum(1 for r in results if r.get("status") == "confirmed")
-    latest_time = results[0].get("scan_time", "无记录")[:16] if results else "暂未扫描"
+    all_patterns = storage.load_triple_bottom()
+    if not isinstance(all_patterns, list):
+        all_patterns = []
+    active_count = sum(1 for r in all_patterns if r.get("status") == "active")
+    confirmed_count = sum(1 for r in all_patterns if r.get("status") == "confirmed")
+    latest_time = all_patterns[0].get("scan_time", "无记录")[:16] if all_patterns else "暂未扫描"
 
     st.markdown(
         f"""
@@ -597,7 +597,7 @@ def render_triple_bottom_page():
             </div>
             <div style="display:flex; gap:12px;">
                 <div class="tb-stat-box">
-                    <div class="tb-stat-val">{len(results)}</div>
+                    <div class="tb-stat-val">{len(all_patterns)}</div>
                     <div class="tb-stat-lbl">累计形态</div>
                 </div>
                 <div class="tb-stat-box">
@@ -613,7 +613,6 @@ def render_triple_bottom_page():
         """,
         unsafe_allow_html=True
     )
-
 
     # ── 恢复/清空扫描结果控件 ──
     _render_tb_restore_session_controls()
@@ -745,11 +744,7 @@ def render_triple_bottom_page():
 
 
     # ── 4. 主界面形态展示与过滤 ──
-    results = storage.load_triple_bottom() or []
-    if not results:
-
-
-
+    if not all_patterns:
         st.markdown(
             """
             <div class="tb-empty-card">
@@ -766,7 +761,7 @@ def render_triple_bottom_page():
         return
 
     # 按置信度降序排列
-    results = sorted(results, key=lambda x: x.get("confidence", 0.0), reverse=True)
+    sorted_patterns = sorted(all_patterns, key=lambda x: x.get("confidence", 0.0), reverse=True)
 
     # 选项卡过滤：形态细分过滤
     pattern_types = [
@@ -813,7 +808,7 @@ def render_triple_bottom_page():
 
     # 执行前端形态与周期、状态筛选
     filtered = []
-    for r in results:
+    for r in sorted_patterns:
         if sel_patt != "全部" and sel_patt not in r.get("pattern", ""):
             continue
         if r.get("period") not in st_period:
@@ -822,6 +817,7 @@ def render_triple_bottom_page():
         if status_val not in selected_statuses:
             continue
         filtered.append(r)
+
 
     # ── 搜索、排序与分页配置 ──
     col_s1, col_s2, col_s3 = st.columns([2, 1.2, 1])

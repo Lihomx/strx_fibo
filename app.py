@@ -1344,12 +1344,18 @@ def main():
     try:
         render_fn()
     except Exception as e:
+        # 排除 Streamlit 内部控制流异常 (如 st.rerun / st.stop)，切勿拦截
+        err_type_str = str(type(e))
+        err_name = type(e).__name__
+        if "Rerun" in err_name or "Stop" in err_name or "ScriptControl" in err_name or "rerun" in err_type_str.lower():
+            raise e
         import traceback
         st.error(f"⚠️ 页面渲染发生错误: {e}")
         with st.expander("查看详细错误日志 (Debug Info)"):
             st.code(traceback.format_exc())
         if st.button("🔄 刷新页面并重试", key="app_global_page_error_retry_btn"):
             st.rerun()
+
 
 
     # ── 动态更新浏览器标签页标题 ──
