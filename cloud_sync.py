@@ -45,6 +45,7 @@ _LATEST_FILES = {
     "symbols":             "symbols.json",
     "symbol_groups":       "symbol_groups.json",
     "triple_bottom":       "data_triple_bottom.json",
+    "tb_batch_state":      "data_tb_batch_state.json",
     "chartink":            "data_chartink.json",
     "scan_checkpoint":     "scan_checkpoint.json",
     "alerts":              "data_alerts.json",
@@ -52,6 +53,7 @@ _LATEST_FILES = {
     "ticker_notes":        "data_ticker_notes.json",
     "link_clicks":         "data_link_clicks.json",
 }
+
 
 _SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "config", "hotlist", "hotlist_archive", "starred", "ticker_notes"]
 _APP_BOOT_TS = time.time()
@@ -211,12 +213,13 @@ def _upload_latest(file_key: str, data: Any) -> Tuple[bool, str]:
     return _upload_path(f"{_LATEST_DIR}/{fname}", data)
 
 def _download_latest(file_key: str) -> Optional[Any]:
-    # 拦截并阻止拉取超大非核心文件以节省 Supabase 流出带宽 (Egress)
-    if file_key in ("symbols", "symbol_groups", "triple_bottom", "chartink", "scan_history", "scan_results", "scan_groups", "tb_snapshots"):
+    # 拦截并阻止拉取非关键超大文件以节省 Supabase 流出带宽 (Egress)
+    if file_key in ("symbols", "symbol_groups", "chartink", "scan_history", "scan_results", "scan_groups", "tb_snapshots"):
         logger.info(f"下载拦截：{file_key} 属于大体积非核心资产，跳过云端下载以节省流量，优先使用本地缓存。")
         return None
     fname = _LATEST_FILES.get(file_key, f"{file_key}.json")
     return _download_path(f"{_LATEST_DIR}/{fname}")
+
 
 # ════════════════════════════════════════════════════════════════════
 # backups/ 快照
@@ -474,6 +477,31 @@ def pull_triple_bottom() -> Tuple[bool, str]:
         return True, f"三重底已恢复 {len(cloud_items)} 个结果"
     except Exception as e:
         return False, f"pull_triple_bottom 异常：{e}"
+
+
+def push_tb_batch_state() -> Tuple[bool, str]:
+    try:
+        import storage as loc
+        state = loc.load_tb_batch_state()
+        ok, msg = _upload_latest("tb_batch_state", state)
+        if ok:
+            return True, f"三重底分批进度已同步 (批次: {state.get('current_batch', 0)}/{state.get('total_batches', 0)})"
+        return False, f"tb_batch_state: {msg}"
+    except Exception as e:
+        return False, f"push_tb_batch_state 异常：{e}"
+
+
+def pull_tb_batch_state() -> Tuple[bool, str]:
+    try:
+        from storage import F_TB_BATCH_STATE, _save
+        cloud_state = _download_latest("tb_batch_state")
+        if not isinstance(cloud_state, dict):
+            return False, "云端无三重底分批进度"
+        _save(F_TB_BATCH_STATE, cloud_state)
+        return True, f"三重底分批进度已恢复 (批次: {cloud_state.get('current_batch', 0)}/{cloud_state.get('total_batches', 0)})"
+    except Exception as e:
+        return False, f"pull_tb_batch_state 异常：{e}"
+
 
 
 def push_chartink() -> Tuple[bool, str]:
@@ -805,12 +833,15 @@ def push_all(force: bool = False) -> Tuple[bool, str]:
     if not ok_hl:
         errors.append(f"hotlist: {msg_hl}")
     for file_key, loader in [
-        ("config",        lambda: loc._load(loc.F_CFG,    {})),
-        ("alerts",        lambda: loc._load(loc.F_ALERTS, [])),
-        ("starred",       lambda: loc._load(loc.F_STARRED, [])),
-        ("ticker_notes",  lambda: loc._load(loc.F_TICKER_NOTES, {})),
-        ("link_clicks",   lambda: loc.get_all_link_clicks()),
+        ("config",         lambda: loc._load(loc.F_CFG,    {})),
+        ("alerts",         lambda: loc._load(loc.F_ALERTS, [])),
+        ("starred",        lambda: loc._load(loc.F_STARRED, [])),
+        ("ticker_notes",   lambda: loc._load(loc.F_TICKER_NOTES, {})),
+        ("link_clicks",    lambda: loc.get_all_link_clicks()),
+        ("triple_bottom",  lambda: loc.load_triple_bottom()),
+        ("tb_batch_state", lambda: loc.load_tb_batch_state()),
     ]:
+
         try:
             data      = loader()
             ok2, msg2 = _upload_latest(file_key, data)
@@ -934,7 +965,11 @@ def pull_all() -> Dict[str, Any]:
     ok_tb, msg_tb = pull_triple_bottom()
     results["triple_bottom"] = (ok_tb, msg_tb)
 
+    ok_tb_state, msg_tb_state = pull_tb_batch_state()
+    results["tb_batch_state"] = (ok_tb_state, msg_tb_state)
+
     ok_ci, msg_ci = pull_chartink()
+
     results["chartink"] = (ok_ci, msg_ci)
 
     ok_tbsnap, msg_tbsnap = pull_tb_snapshots()

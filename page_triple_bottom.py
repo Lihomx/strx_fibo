@@ -307,12 +307,23 @@ def triple_bottom_batch_worker(params, update_progress, cancel_check):
             bstate["status"] = "all_done"
         else:
             bstate["status"] = "batch_done"
-            
         storage.save_tb_batch_state(bstate)
+
     except Exception:
         pass
         
+    # 🚀 关键：每批完成立即同步推送到 Supabase 云端，防止应用休眠丢失数据
+    try:
+        import cloud_sync
+        if cloud_sync.is_configured():
+            if batch_results:
+                cloud_sync.push_triple_bottom()
+            cloud_sync.push_tb_batch_state()
+    except Exception:
+        pass
+
     gc.collect()
+
 
 
 
