@@ -738,7 +738,9 @@ def render_triple_bottom_page():
 
 
     # ── 4. 主界面形态展示与过滤 ──
+    results = storage.load_triple_bottom()
     if not results:
+
         st.markdown(
             """
             <div class="tb-empty-card">
