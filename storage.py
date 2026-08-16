@@ -1687,7 +1687,20 @@ def save_triple_bottom(items: List[Dict], with_backup: bool = True) -> bool:
                 _async_push(cloud_sync.push_triple_bottom)
         except Exception:
             pass
-    return ok
+def append_triple_bottom_results(new_items: List[Dict], with_backup: bool = True) -> bool:
+    """增量合并三重底扫描结果：按 (symbol, period) 去重合并，保留最新的结果"""
+    if not new_items:
+        return True
+    current = load_triple_bottom()
+    item_map = {}
+    for it in current:
+        k = (str(it.get("symbol", "")).upper(), str(it.get("period", "")).lower())
+        item_map[k] = it
+    for it in new_items:
+        k = (str(it.get("symbol", "")).upper(), str(it.get("period", "")).lower())
+        item_map[k] = it
+    merged = list(item_map.values())
+    return save_triple_bottom(merged, with_backup=with_backup)
 
 def clear_triple_bottom_results() -> bool:
     """清空当前三重底扫描结果（清空前会自动进行备份快照）"""
@@ -1695,6 +1708,38 @@ def clear_triple_bottom_results() -> bool:
     if current_items:
         backup_triple_bottom(current_items)
     return save_triple_bottom([])
+
+# ── 三重底分批扫描状态持久化 ────────────────────────────────────
+F_TB_BATCH_STATE = os.path.join(_BASE, "data_tb_batch_state.json")
+
+def load_tb_batch_state() -> Dict:
+    """读取三重底分批扫描状态"""
+    default = {
+        "all_tickers": [],
+        "total_tickers": 0,
+        "selected_periods": ["1d", "1w", "1mo"],
+        "batch_size": 50,
+        "current_batch": 0,
+        "total_batches": 0,
+        "done_tickers": [],
+        "scan_params": {},
+        "auto_continue": False,
+        "status": "idle", # idle | in_progress | batch_done | all_done
+        "updated_at": None,
+    }
+    st = _load(F_TB_BATCH_STATE, default)
+    if not isinstance(st, dict):
+        return default
+    return {**default, **st}
+
+def save_tb_batch_state(state: Dict) -> bool:
+    """保存三重底分批扫描状态"""
+    return _save(F_TB_BATCH_STATE, state)
+
+def clear_tb_batch_state() -> bool:
+    """清除三重底分批扫描状态"""
+    return _save(F_TB_BATCH_STATE, {})
+
 
 def _ensure_tb_snapshot_dir():
     os.makedirs(F_TB_SNAPSHOT_DIR, exist_ok=True)

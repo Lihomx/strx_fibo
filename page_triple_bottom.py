@@ -77,9 +77,11 @@ def _render_tb_restore_session_controls():
     with col1:
         if st.button("🗑️ 清空扫描结果", key="tb_clear_results_btn", help="清空当前所有扫描结果，清空前会自动备份快照", use_container_width=True):
             storage.clear_triple_bottom_results()
+            storage.clear_tb_batch_state()
             st.success("已成功清空当前扫描结果（已自动备份）")
             time.sleep(1)
             st.rerun()
+
 
     with col2:
         if not options:
@@ -177,8 +179,13 @@ def _check_memory_guard() -> tuple[bool, float]:
         return True, 0.0
 
 
-def triple_bottom_worker(params, update_progress, cancel_check):
-    tickers_to_scan = params["tickers_to_scan"]
+def triple_bottom_batch_worker(params, update_progress, cancel_check):
+    """
+    分批执行三重底扫描（每次只执行 50 只股票），彻底释放内存，防止 Streamlit Cloud 内存超标。
+    """
+    batch_tickers = params["batch_tickers"]
+    batch_index = params.get("batch_index", 1)
+    total_batches = params.get("total_batches", 1)
     selected_periods = params["selected_periods"]
     swing_win = params["swing_win"]
     lookback = params["lookback"]
@@ -186,40 +193,26 @@ def triple_bottom_worker(params, update_progress, cancel_check):
     min_conf = params["min_conf"]
     flat_tol = params.get("flat_tol", 0.02)
     break_tol = params.get("break_tol", 0.01)
-    is_resume = params.get("is_resume", False)
     
-    done_tickers = set()
-    new_results = []
+    total_steps = len(batch_tickers) * len(selected_periods)
+    step = 0
+    batch_results = []
     
-    if is_resume and hasattr(storage, "load_scan_checkpoint"):
-        try:
-            ckpt = storage.load_scan_checkpoint("triple_bottom")
-            if ckpt:
-                done_tickers = set(ckpt.get("done_tickers", []))
-                new_results = ckpt.get("current_results", [])
-        except Exception:
-            pass
-    
-    remaining_tickers = [t for t in tickers_to_scan if t not in done_tickers]
-    total_steps = len(tickers_to_scan) * len(selected_periods)
-    step = (len(tickers_to_scan) - len(remaining_tickers)) * len(selected_periods)
-    
-    BATCH_SIZE = 50
-    ticker_count = 0
     start_time = time.time()
+    ticker_count = 0
     
-    for ticker in remaining_tickers:
+    for ticker in batch_tickers:
         if cancel_check():
             break
             
         ticker_count += 1
         
-        # 内存安全守卫：内存过高时主动休眠等待操作系统释放
+        # 内存安全守卫
         safe_mem, mem_pct = _check_memory_guard()
         if not safe_mem:
-            update_progress(step, total_steps, f"⚠️ 内存偏高({mem_pct:.1f}%)，正在缓冲降载...")
+            update_progress(step, total_steps, f"[第{batch_index}/{total_batches}批] ⚠️ 内存缓冲降载({mem_pct:.1f}%)...")
             gc.collect()
-            time.sleep(4.0)
+            time.sleep(3.0)
 
         for period_key in selected_periods:
             if cancel_check():
@@ -227,23 +220,26 @@ def triple_bottom_worker(params, update_progress, cancel_check):
             step += 1
             interval, yf_period, period_desc = TRIPLE_BOTTOM_TIMEFRAMES[period_key]
             
-            # 计算估计剩余时间
+            # 计算剩余时间
             elapsed = time.time() - start_time
             if ticker_count > 1 and step > 0:
-                avg_time_per_step = elapsed / ticker_count
-                remaining_tickers_cnt = len(remaining_tickers) - ticker_count
-                rem_sec = int(remaining_tickers_cnt * avg_time_per_step)
-                eta_str = f" | 预计剩余 {rem_sec // 60}分{rem_sec % 60}秒" if rem_sec > 0 else ""
+                avg_time = elapsed / ticker_count
+                rem_sec = int((len(batch_tickers) - ticker_count) * avg_time)
+                eta_str = f" | 本批预计剩余 {rem_sec // 60}分{rem_sec % 60}秒" if rem_sec > 0 else ""
             else:
                 eta_str = ""
                 
-            update_progress(step, total_steps, f"{ticker} ({period_desc}) [{step}/{total_steps}]{eta_str}")
+            update_progress(
+                step, 
+                total_steps, 
+                f"[第{batch_index}/{total_batches}批] {ticker} ({period_desc}) [{step}/{total_steps}]{eta_str}"
+            )
             
             df = None
             try:
                 df = fetch_data(ticker, interval=interval, period=yf_period)
                 if df is not None and not df.empty:
-                    # ✂️ 内存精简：仅提取三重底扫描必需的列，剔除多余字段，减少 4~6 倍内存占用
+                    # ✂️ 列裁剪，仅提取计算必需列
                     needed_cols = [c for c in ("close", "high", "low", "volume") if c in df.columns]
                     if len(needed_cols) >= 3:
                         df = df[needed_cols].copy()
@@ -259,7 +255,7 @@ def triple_bottom_worker(params, update_progress, cancel_check):
                     )
                     for m in matches:
                         if m.confidence >= min_conf:
-                            new_results.append({
+                            batch_results.append({
                                 "symbol": m.symbol,
                                 "period": period_key,
                                 "pattern": m.pattern,
@@ -281,58 +277,191 @@ def triple_bottom_worker(params, update_progress, cancel_check):
             except Exception:
                 pass
             finally:
-                # 显式解除 DataFrame 引用，防止在局部作用域残留
                 if df is not None:
                     del df
                     df = None
             
-            # 保守级请求休眠 (0.5秒)，平摊网络与内存吞吐
-            time.sleep(0.5)
+            # 频控休眠
+            time.sleep(0.4)
             
-        done_tickers.add(ticker)
-        # 每只股票完成所有周期扫描后，强制触发一次垃圾回收，彻底释放内存
+        # 单只股票完成立即回收
         gc.collect()
         
-        # 定期写断点（中间过程只刷新数据文件，不创建历史备份文件，避免线程爆炸）
-        if ticker_count % 10 == 0 or ticker_count == len(remaining_tickers):
-            storage.save_scan_checkpoint("triple_bottom", list(done_tickers), tickers_to_scan, new_results)
-            storage.save_triple_bottom(new_results, with_backup=False)
+    # 增量合并保存本批次扫描结果
+    if batch_results:
+        storage.append_triple_bottom_results(batch_results, with_backup=True)
+        
+    # 更新持久化分批扫描状态
+    try:
+        bstate = storage.load_tb_batch_state()
+        done_set = set(bstate.get("done_tickers", []))
+        done_set.update(batch_tickers)
+        bstate["done_tickers"] = list(done_set)
+        bstate["current_batch"] = batch_index
+        bstate["last_batch_match_count"] = len(batch_results)
+        bstate["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        if cancel_check():
+            bstate["status"] = "cancelled"
+        elif batch_index >= total_batches or len(bstate["done_tickers"]) >= bstate.get("total_tickers", 0):
+            bstate["status"] = "all_done"
+        else:
+            bstate["status"] = "batch_done"
             
-        # 批次间休眠冷却
-        if ticker_count % BATCH_SIZE == 0:
-            time.sleep(2.0)
-            gc.collect()
-                
-    storage.save_triple_bottom(new_results, with_backup=True)
-    storage.clear_scan_checkpoint()
+        storage.save_tb_batch_state(bstate)
+    except Exception:
+        pass
+        
+    gc.collect()
 
+
+
+
+def _start_new_tb_batch_scan(tickers: list[str], selected_periods: list[str], scan_params: dict, auto_continue: bool) -> tuple[bool, str]:
+    """初始化并启动全新分批扫描任务"""
+    BATCH_SIZE = 50
+    total_tickers = len(tickers)
+    total_batches = (total_tickers + BATCH_SIZE - 1) // BATCH_SIZE
+    
+    bstate = {
+        "all_tickers": tickers,
+        "total_tickers": total_tickers,
+        "selected_periods": selected_periods,
+        "batch_size": BATCH_SIZE,
+        "current_batch": 0,
+        "total_batches": total_batches,
+        "done_tickers": [],
+        "scan_params": scan_params,
+        "auto_continue": auto_continue,
+        "status": "in_progress",
+        "last_batch_match_count": 0,
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    storage.save_tb_batch_state(bstate)
+    return _trigger_tb_batch(bstate, 1)
+
+
+def _trigger_tb_batch(bstate: dict, batch_idx: int) -> tuple[bool, str]:
+    """触发指定批次的后台扫描"""
+    batch_size = bstate.get("batch_size", 50)
+    all_tickers = bstate.get("all_tickers", [])
+    total_batches = bstate.get("total_batches", 1)
+    
+    start_i = (batch_idx - 1) * batch_size
+    end_i = min(start_i + batch_size, len(all_tickers))
+    batch_tickers = all_tickers[start_i:end_i]
+    
+    if not batch_tickers:
+        bstate["status"] = "all_done"
+        storage.save_tb_batch_state(bstate)
+        return False, "所有批次已扫描完毕"
+        
+    scan_params = bstate.get("scan_params", {})
+    selected_periods = bstate.get("selected_periods", ["1d", "1w", "1mo"])
+    
+    params = {
+        "batch_tickers": batch_tickers,
+        "batch_index": batch_idx,
+        "total_batches": total_batches,
+        "selected_periods": selected_periods,
+        "swing_win": scan_params.get("swing_win", 3),
+        "lookback": scan_params.get("lookback", 150),
+        "max_sp": scan_params.get("max_sp", 80),
+        "min_conf": scan_params.get("min_conf", 0.5),
+        "flat_tol": scan_params.get("flat_tol", 0.02),
+        "break_tol": scan_params.get("break_tol", 0.01),
+    }
+    
+    bstate["status"] = "in_progress"
+    storage.save_tb_batch_state(bstate)
+    
+    label = f"三重底分批扫描 [第 {batch_idx}/{total_batches} 批]"
+    return bg_scan_manager.submit_job(
+        job_type="triple_bottom",
+        label=label,
+        params=params,
+        worker_fn=triple_bottom_batch_worker
+    )
 
 
 def render_triple_bottom_page():
-    # ── 状态轮询与展示 ──
-    status = bg_scan_manager.get_status()
-    if status["status"] == "running":
+    # ── 状态轮询与分批流水线自动推进 ──
+    bg_status = bg_scan_manager.get_status()
+    bstate = storage.load_tb_batch_state()
+    is_running = (bg_status["status"] == "running")
+    
+    # 自动流水线推进检测
+    if not is_running and bstate.get("status") == "batch_done":
+        cur_b = bstate.get("current_batch", 0)
+        tot_b = bstate.get("total_batches", 1)
+        if cur_b < tot_b and bstate.get("auto_continue", False):
+            st_autorefresh(interval=2500, key="tb_batch_auto_advance")
+            st.info(f"⚡ **自动流水线运行中**：第 {cur_b}/{tot_b} 批已完成，已释放内存，正在自动启动第 {cur_b + 1} 批...")
+            time.sleep(1.0)
+            ok, msg = _trigger_tb_batch(bstate, cur_b + 1)
+            if ok:
+                st.rerun()
+
+    if is_running and bg_status.get("job_type") == "triple_bottom":
         st_autorefresh(interval=3000, key="triple_bottom_auto_refresh")
-        st.info(f"🔄 后台扫描正在进行中: **{status['job_label']}**")
-        st.progress(status["progress"])
-        st.caption(f"当前正在扫描: {status['current']} ({status['done_count']}/{status['total_count']})")
-        st.caption("💡 扫描会在后台持续运行，您可以安全关闭此页面。结果将自动保存。")
-        if st.button("⏹ 取消后台扫描", key="tb_cancel_btn"):
+        st.info(f"🔄 **后台扫描正在进行中**: **{bg_status['job_label']}**")
+        st.progress(bg_status["progress"])
+        st.caption(f"当前进度: {bg_status['current']} ({bg_status['done_count']}/{bg_status['total_count']})")
+        st.caption("💡 每次仅扫描 50 只股票并即时释放内存，绝不超限。您可以安全关闭页面或切换标签。")
+        if st.button("⏹ 取消当前批次扫描", key="tb_cancel_btn"):
             bg_scan_manager.request_cancel()
             st.warning("正在请求取消，请稍候...")
             st.rerun()
             
-    elif status["status"] in ("done", "error", "cancelled") and status["job_type"] == "triple_bottom":
-        if status["status"] == "done":
-            st.success(f"✅ 后台扫描任务已完成!")
-        elif status["status"] == "error":
-            st.error(f"❌ 后台扫描任务出错! 错误信息: {status.get('error', '')}")
-        elif status["status"] == "cancelled":
-            st.warning("⚠️ 后台扫描任务已被取消。")
-            
-        if st.button("清除状态提示", key="tb_clear_status_btn"):
-            bg_scan_manager.reset_to_idle()
-            st.rerun()
+    elif bstate.get("status") in ("batch_done", "all_done", "in_progress") and not is_running:
+        cur_b = bstate.get("current_batch", 0)
+        tot_b = bstate.get("total_batches", 1)
+        done_cnt = len(bstate.get("done_tickers", []))
+        total_cnt = bstate.get("total_tickers", 0)
+        last_match = bstate.get("last_batch_match_count", 0)
+        
+        if bstate.get("status") == "all_done" or cur_b >= tot_b:
+            st.success(f"🎊 **全部分批扫描已全部完成！** 共扫描完成 {done_cnt}/{total_cnt} 只品种，结果已全部增量保存。")
+            if st.button("🔄 完成并重置分批状态", key="tb_all_done_reset_btn", type="primary"):
+                storage.clear_tb_batch_state()
+                bg_scan_manager.reset_to_idle()
+                st.rerun()
+        elif bstate.get("status") == "batch_done":
+            st.markdown(
+                f"""
+                <div style="background:rgba(34, 197, 94, 0.12); border:1px solid rgba(34, 197, 94, 0.3); border-radius:10px; padding:16px; margin-bottom:15px;">
+                    <div style="font-weight:700; color:#4ade80; font-size:16px; margin-bottom:6px;">
+                        ✅ 第 {cur_b} 批 / 共 {tot_b} 批已扫描完毕！(本批新发现 {last_match} 个形态)
+                    </div>
+                    <div style="color:#cbd5e1; font-size:13px; margin-bottom:10px;">
+                        已完成 <b>{done_cnt}</b> 只 / 总计 <b>{total_cnt}</b> 只品种。当前批次内存已彻底释放归还系统。
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            col_b1, col_b2 = st.columns([2, 1])
+            with col_b1:
+                next_batch_btn = st.button(
+                    f"▶️ 立即开始扫描第 {cur_b + 1} 批 (下 50 只)", 
+                    key="tb_manual_next_batch_btn", 
+                    type="primary", 
+                    use_container_width=True
+                )
+                if next_batch_btn:
+                    ok, msg = _trigger_tb_batch(bstate, cur_b + 1)
+                    if ok:
+                        st.success(f"第 {cur_b + 1} 批已启动！")
+                        time.sleep(0.5)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+            with col_b2:
+                if st.button("⏹ 结束本次分批任务", key="tb_stop_batch_btn", use_container_width=True):
+                    bstate["status"] = "all_done"
+                    storage.save_tb_batch_state(bstate)
+                    bg_scan_manager.reset_to_idle()
+                    st.rerun()
 
     # ── 0. 全局视觉样式注入 ──
     st.markdown(
@@ -457,13 +586,13 @@ def render_triple_bottom_page():
                     <span>📐 三重底多周期智能扫描</span>
                 </div>
                 <div class="tb-hero-sub">
-                    基于 Al Brooks 价格行为学模型，自动定位支撑带附近的三次下探尝试。识别完美三重底、头肩底、双底回调及失败跌破突破等 7 种核心变体形态。
+                    基于 Al Brooks 价格行为学模型，自动定位支撑带附近的三次下探尝试。支持每批 50 只流水线安全分批扫描，彻底解决云端内存限制。
                 </div>
             </div>
             <div style="display:flex; gap:12px;">
                 <div class="tb-stat-box">
                     <div class="tb-stat-val">{len(results_all)}</div>
-                    <div class="tb-stat-lbl">匹配形态</div>
+                    <div class="tb-stat-lbl">累计形态</div>
                 </div>
                 <div class="tb-stat-box">
                     <div class="tb-stat-val" style="color:#38bdf8;">{active_count}</div>
@@ -484,7 +613,7 @@ def render_triple_bottom_page():
     st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
 
     # ── 2. 顶部控制面板（扫描配置与控制） ──
-    with st.expander("⚙️ 扫描参数与目标配置", expanded=True):
+    with st.expander("⚙️ 扫描参数与分批目标配置", expanded=True):
         col_cfg1, col_cfg2 = st.columns([3, 2], gap="large")
         
         with col_cfg1:
@@ -518,7 +647,7 @@ def render_triple_bottom_page():
             break_tol = break_tol_pct / 100.0
 
         with col_cfg2:
-            st.markdown("#### ⚡ 扫描目标与控制")
+            st.markdown("#### ⚡ 扫描目标与分批控制")
             scan_target = st.radio("扫描目标", ["品种库分组", "指定代码"], horizontal=True)
 
             custom_ticker_input = ""
@@ -539,105 +668,74 @@ def render_triple_bottom_page():
                         help="可以多选多个品种组，也可以选择全选合并扫描"
                     )
 
-            st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
-            is_running = bg_scan_manager.is_running()
-            
-            # 优先拉取 Supabase 云端最新的扫描断点（确保跨端/重新部署后能恢复）
-            try:
-                import cloud_sync
-                if cloud_sync.is_configured():
-                    cloud_sync.pull_scan_checkpoint()
-            except Exception:
-                pass
+            auto_continue_flag = st.checkbox(
+                "⚡ 自动连续扫描下一批 (流水线全自动模式)", 
+                value=bstate.get("auto_continue", False),
+                help="开启后，每完成 50 只自动休息冷却并开始下一批，无需手动点击"
+            )
 
-            # 检测是否有中途中断的扫描断点
-            ckpt = {}
-            if hasattr(storage, "load_scan_checkpoint"):
-                try:
-                    ckpt = storage.load_scan_checkpoint("triple_bottom")
-                except Exception:
-                    ckpt = {}
-            has_ckpt = bool(ckpt and ckpt.get("total_tickers") and len(ckpt.get("done_tickers", [])) < len(ckpt.get("total_tickers", [])))
+            st.markdown("<div style='margin-top:15px;'></div>", unsafe_allow_html=True)
             
-            run_scan = False
-            resume_scan = False
-            
-            if has_ckpt:
-                done_num = len(ckpt.get("done_tickers", []))
-                tot_num = len(ckpt.get("total_tickers", []))
-                updated_at = ckpt.get("updated_at", "未知时间")
-                st.info(f"💡 **检出上次未完成任务**：已完成 {done_num}/{tot_num} 个品种 ({updated_at})")
-                btn_col1, btn_col2 = st.columns(2)
-                with btn_col1:
-                    resume_scan = st.button(f"⏯️ 续扫未完成任务 ({done_num}/{tot_num})", type="primary", use_container_width=True, disabled=is_running)
-                with btn_col2:
-                    run_scan = st.button("🚀 重新开始全新扫描", type="secondary", use_container_width=True, disabled=is_running)
-            else:
-                run_scan = st.button("🚀 开始分析扫描", type="primary", use_container_width=True, disabled=is_running)
+            start_scan_clicked = st.button(
+                "🚀 开始分批安全扫描 (每批50只)", 
+                type="primary", 
+                use_container_width=True, 
+                disabled=is_running
+            )
 
             if st.session_state.pop("_trigger_mobile_scan", False):
-                run_scan = True
+                start_scan_clicked = True
 
-    # ── 3. 扫描数据逻辑处理 ──
-    results = storage.load_triple_bottom()
-
-    if run_scan or resume_scan:
+    # ── 3. 触发扫描执行 ──
+    if start_scan_clicked:
         if not selected_periods:
             st.error("请至少选择一个扫描周期！")
             return
 
         tickers_to_scan = []
-        is_resume = False
-        
-        if resume_scan and has_ckpt:
-            tickers_to_scan = ckpt.get("total_tickers", [])
-            is_resume = True
+        if scan_target == "品种库分组":
+            groups = storage.load_symbol_groups()
+            tickers_set = set()
+            if selected_grp_names:
+                ALL_GROUPS_LABEL = "🔥 全部品种组 (一键合并)"
+                if ALL_GROUPS_LABEL in selected_grp_names:
+                    for g in groups:
+                        tickers_set.update(g.get("tickers", []))
+                else:
+                    grp_map = {g["name"]: g for g in groups}
+                    for g_name in selected_grp_names:
+                        if g_name in grp_map:
+                            tickers_set.update(grp_map[g_name].get("tickers", []))
+            tickers_to_scan = [t.strip().upper() for t in tickers_set if t and isinstance(t, str)]
         else:
-            if scan_target == "品种库分组":
-                groups = storage.load_symbol_groups()
-                tickers_set = set()
-                if selected_grp_names:
-                    ALL_GROUPS_LABEL = "🔥 全部品种组 (一键合并)"
-                    if ALL_GROUPS_LABEL in selected_grp_names:
-                        for g in groups:
-                            tickers_set.update(g.get("tickers", []))
-                    else:
-                        grp_map = {g["name"]: g for g in groups}
-                        for g_name in selected_grp_names:
-                            if g_name in grp_map:
-                                tickers_set.update(grp_map[g_name].get("tickers", []))
-                tickers_to_scan = [t.strip().upper() for t in tickers_set if t and isinstance(t, str)]
-            else:
-                tickers_to_scan = [t.strip().upper() for t in custom_ticker_input.split(",") if t.strip()]
+            tickers_to_scan = [t.strip().upper() for t in custom_ticker_input.split(",") if t.strip()]
 
         if not tickers_to_scan:
             st.warning("扫描队列为空，未找到任何代码。")
             return
 
-        params = {
-            "tickers_to_scan": tickers_to_scan,
-            "selected_periods": selected_periods,
+        scan_params = {
             "swing_win": swing_win,
             "lookback": lookback,
             "max_sp": max_sp,
             "min_conf": min_conf,
             "flat_tol": flat_tol,
             "break_tol": break_tol,
-            "is_resume": is_resume,
         }
-        
-        ok, msg = bg_scan_manager.submit_job(
-            job_type="triple_bottom",
-            label=f"三重底扫描 ({'断点续扫' if is_resume else scan_target})",
-            params=params,
-            worker_fn=triple_bottom_worker
+
+        ok, msg = _start_new_tb_batch_scan(
+            tickers=tickers_to_scan,
+            selected_periods=selected_periods,
+            scan_params=scan_params,
+            auto_continue=auto_continue_flag
         )
         if ok:
-            st.success(msg)
+            st.success(f"分批扫描已成功启动！共 {len(tickers_to_scan)} 只品种，分为 {(len(tickers_to_scan) + 49) // 50} 批。")
             time.sleep(1)
             st.rerun()
         else:
             st.error(msg)
+
 
     # ── 4. 主界面形态展示与过滤 ──
     if not results:
