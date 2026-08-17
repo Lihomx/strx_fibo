@@ -115,10 +115,18 @@ def get_scheduler_status() -> dict:
     return {"running": _scheduler.running, "jobs": jobs}
 
 
+_daily_lock    = threading.Lock()
+_periodic_lock = threading.Lock()
+_chartink_lock = threading.Lock()
+
+
 def _run_scheduled_scan() -> None:
-    """定时任务执行体"""
-    logging.info(f"[Scheduler] 定时扫描启动: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    """定时任务执行体（防重叠）"""
+    if not _daily_lock.acquire(blocking=False):
+        logging.warning("[Scheduler] 上次每日定时扫描仍在运行，跳过本次触发")
+        return
     try:
+        logging.info(f"[Scheduler] 定时扫描启动: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
         from scanner import run_full_scan
         import storage
         cfg = storage.load_config()
@@ -194,12 +202,17 @@ def _run_scheduled_scan() -> None:
             logging.exception(f"[Scheduler] 定时三重底扫描异常: {ex_tb}")
     except Exception as e:
         logging.exception(f"[Scheduler] 异常: {e}")
+    finally:
+        _daily_lock.release()
 
 
 def _run_periodic_watchlist_scan() -> None:
-    """每隔指定分钟扫描一次已收藏的品种，使用 EMA20 + Daily Pivot Point 策略 (15分钟)"""
-    logging.info(f"[Scheduler] 周期自选扫描启动: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    """每隔指定分钟扫描一次已收藏的品种，使用 EMA20 + Daily Pivot Point 策略 (15分钟)（防重叠）"""
+    if not _periodic_lock.acquire(blocking=False):
+        logging.warning("[Scheduler] 上次周期自选扫描仍在运行，跳过本次触发")
+        return
     try:
+        logging.info(f"[Scheduler] 周期自选扫描启动: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
         import storage
         import scanner
         from alerts import dispatch_alerts_ema_pivot
@@ -252,12 +265,18 @@ def _run_periodic_watchlist_scan() -> None:
                 
     except Exception as e:
         logging.exception(f"[Scheduler] 周期自选扫描异常: {e}")
+    finally:
+        _periodic_lock.release()
+
 
 
 def _run_periodic_chartink_scan() -> None:
-    """每隔指定分钟扫描一次已收藏的品种，使用 Chartink 4 Hour Breakout 策略"""
-    logging.info(f"[Scheduler] Chartink 4H 突破周期自选扫描启动: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    """每隔指定分钟扫描一次已收藏的品种，使用 Chartink 4 Hour Breakout 策略（防重叠）"""
+    if not _chartink_lock.acquire(blocking=False):
+        logging.warning("[Scheduler] 上次 Chartink 周期扫描仍在运行，跳过本次触发")
+        return
     try:
+        logging.info(f"[Scheduler] Chartink 4H 突破周期自选扫描启动: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
         import time
         import storage
         from page_chartink import _check_ticker
@@ -323,5 +342,8 @@ def _run_periodic_chartink_scan() -> None:
         logging.info(f"[Scheduler] Chartink 周期扫描完成，共 {total} 个品种，其中通过 {len(passed_list)} 个")
     except Exception as e:
         logging.exception(f"[Scheduler] Chartink 周期自选扫描异常: {e}")
+    finally:
+        _chartink_lock.release()
+
 
 

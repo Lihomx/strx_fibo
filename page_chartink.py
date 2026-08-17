@@ -107,7 +107,8 @@ def _fetch(ticker: str, interval: str, period: str = "6mo") -> pd.DataFrame | No
     for attempt in range(3):
         try:
             df = yf.download(ticker, period=period, interval=interval,
-                             progress=False, auto_adjust=True)
+                             progress=False, auto_adjust=True, threads=False, timeout=15)
+
             if df is None or df.empty:
                 return None
             new_cols = []

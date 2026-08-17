@@ -1310,7 +1310,8 @@ def _try_fetch_ticker(ticker: str) -> bool:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             df = yf.download(ticker, period="5d", interval="1d",
-                             progress=False, auto_adjust=True)
+                             progress=False, auto_adjust=True, threads=False, timeout=10)
+
         return df is not None and not df.empty
     except Exception:
         return False

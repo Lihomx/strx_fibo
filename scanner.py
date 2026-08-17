@@ -514,8 +514,9 @@ def fetch_yfinance(ticker: str, interval: str, period: str) -> Optional[pd.DataF
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     df = yf.download(yf_ticker, interval=interval, period=p,
-                                     progress=False, auto_adjust=True)
+                                     progress=False, auto_adjust=True, threads=False, timeout=15)
                 if df is None or df.empty:
+
                     if attempt == 0:
                         time.sleep(random.uniform(1.0, 2.0))
                         continue

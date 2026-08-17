@@ -14,6 +14,14 @@ except Exception:
 import sys
 import os
 
+# ── 全局限制 yfinance multitasking 线程派生，防止线程爆炸 (can't start new thread) ──
+try:
+    import multitasking
+    multitasking.set_max_threads(1)
+except Exception:
+    pass
+
+
 # ── 确保当前目录在 sys.path（Streamlit Cloud 必须）──────────────────
 _root = os.path.dirname(os.path.abspath(__file__))
 if _root not in sys.path:
