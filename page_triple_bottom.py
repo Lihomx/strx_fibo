@@ -366,7 +366,25 @@ def _trigger_tb_batch(bstate: dict, batch_idx: int) -> tuple[bool, str]:
     """触发指定批次的后台扫描"""
     batch_size = bstate.get("batch_size", 50)
     all_tickers = bstate.get("all_tickers", [])
-    total_batches = bstate.get("total_batches", 1)
+    
+    # 容错保障：若 all_tickers 为空（从云端瘦身拉取），尝试根据已配置的分组自动重建
+    if not all_tickers:
+        selected_grp = bstate.get("scan_params", {}).get("selected_group")
+        if selected_grp:
+            all_groups = storage.load_symbol_groups()
+            for g in all_groups:
+                if g.get("name") == selected_grp:
+                    all_tickers = g.get("tickers", [])
+                    bstate["all_tickers"] = all_tickers
+                    break
+        if not all_tickers:
+            all_tickers = storage.load_symbols_list()
+            bstate["all_tickers"] = all_tickers
+            
+    total_tickers = len(all_tickers)
+    total_batches = (total_tickers + batch_size - 1) // batch_size if total_tickers > 0 else bstate.get("total_batches", 1)
+    bstate["total_batches"] = total_batches
+    bstate["total_tickers"] = total_tickers
     
     start_i = (batch_idx - 1) * batch_size
     end_i = min(start_i + batch_size, len(all_tickers))
@@ -376,6 +394,7 @@ def _trigger_tb_batch(bstate: dict, batch_idx: int) -> tuple[bool, str]:
         bstate["status"] = "all_done"
         storage.save_tb_batch_state(bstate)
         return False, "所有批次已扫描完毕"
+
         
     scan_params = bstate.get("scan_params", {})
     selected_periods = bstate.get("selected_periods", ["1d", "1w", "1mo"])

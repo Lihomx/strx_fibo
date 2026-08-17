@@ -213,12 +213,14 @@ def _upload_latest(file_key: str, data: Any) -> Tuple[bool, str]:
     return _upload_path(f"{_LATEST_DIR}/{fname}", data)
 
 def _download_latest(file_key: str) -> Optional[Any]:
-    # 拦截并阻止拉取非关键超大文件以节省 Supabase 流出带宽 (Egress)
+    # 拦截并阻止拉取非关键或超大文件以节省 Supabase 流出带宽 (Egress)
+    # 本地已有缓存或不需要云端初始化的资产一律直接跳过
     if file_key in ("symbols", "symbol_groups", "chartink", "scan_history", "scan_results", "scan_groups", "tb_snapshots"):
         logger.info(f"下载拦截：{file_key} 属于大体积非核心资产，跳过云端下载以节省流量，优先使用本地缓存。")
         return None
     fname = _LATEST_FILES.get(file_key, f"{file_key}.json")
     return _download_path(f"{_LATEST_DIR}/{fname}")
+
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -276,7 +278,8 @@ def list_backup_snapshots() -> List[Dict]:
     result.sort(key=lambda x: x["ts_epoch"], reverse=True)
     return result
 
-def delete_old_snapshots(days: int = 30) -> Tuple[int, int, List[str]]:
+def delete_old_snapshots(days: int = 7, max_per_key: int = 3) -> Tuple[int, int, List[str]]:
+    """清理历史快照，防止过度积累（每个 key 最多保留 3 个最新快照，超期或超额自动删除）"""
     snapshots    = list_backup_snapshots()
     cutoff_epoch = time.time() - days * 86400
     deleted, skipped = 0, 0
@@ -285,11 +288,11 @@ def delete_old_snapshots(days: int = 30) -> Tuple[int, int, List[str]]:
     for s in snapshots:
         by_key[s["file_key"]].append(s)
     for file_key, snaps in by_key.items():
+        # 按时间倒序排序（最新的在最前）
+        snaps.sort(key=lambda x: x.get("ts_epoch", 0), reverse=True)
         for i, snap in enumerate(snaps):
-            if i == 0:
-                skipped += 1
-                continue
-            if snap["ts_epoch"] <= 0 or snap["ts_epoch"] >= cutoff_epoch:
+            # 保留最新的前 max_per_key 个快照（且在有效期内）
+            if i < max_per_key and (snap["ts_epoch"] <= 0 or snap["ts_epoch"] >= cutoff_epoch):
                 skipped += 1
                 continue
             ok, msg = _delete_path(snap["path"])
@@ -299,6 +302,7 @@ def delete_old_snapshots(days: int = 30) -> Tuple[int, int, List[str]]:
                 errors.append(f"{snap['path']}: {msg}")
                 skipped += 1
     return deleted, skipped, errors
+
 
 # ════════════════════════════════════════════════════════════════════
 # 从历史快照恢复
@@ -469,7 +473,12 @@ def push_triple_bottom() -> Tuple[bool, str]:
 
 def pull_triple_bottom() -> Tuple[bool, str]:
     try:
-        from storage import F_TRIPLE_BOTTOM, _save
+        from storage import F_TRIPLE_BOTTOM, _save, _load
+        local_items = _load(F_TRIPLE_BOTTOM, [])
+        # 如果本地已有三重底数据，直接使用本地缓存，不再触发云端大文件下载（节省 Egress 带宽）
+        if isinstance(local_items, list) and len(local_items) > 0:
+            return True, f"本地已有三重底数据 ({len(local_items)} 条)，跳过云端下载"
+            
         cloud_items = _download_latest("triple_bottom")
         if not isinstance(cloud_items, list):
             return False, "云端无三重底数据"
@@ -483,7 +492,9 @@ def push_tb_batch_state() -> Tuple[bool, str]:
     try:
         import storage as loc
         state = loc.load_tb_batch_state()
-        ok, msg = _upload_latest("tb_batch_state", state)
+        # 🚀 关键流量优化：剔除包含数千只股票的大体积 all_tickers 数组，只保留进度与元数据
+        slim_state = {k: v for k, v in state.items() if k != "all_tickers"}
+        ok, msg = _upload_latest("tb_batch_state", slim_state)
         if ok:
             return True, f"三重底分批进度已同步 (批次: {state.get('current_batch', 0)}/{state.get('total_batches', 0)})"
         return False, f"tb_batch_state: {msg}"
@@ -494,20 +505,20 @@ def push_tb_batch_state() -> Tuple[bool, str]:
 def pull_tb_batch_state() -> Tuple[bool, str]:
     try:
         from storage import F_TB_BATCH_STATE, _save, _load
+        local_state = _load(F_TB_BATCH_STATE, {})
+        # 保护：若本地已有活跃的分批队列（含 all_tickers），则保留本地，绝不重复拉取
+        if isinstance(local_state, dict) and local_state.get("all_tickers"):
+            return True, "本地已有完整扫描队列，跳过云端下载"
+            
         cloud_state = _download_latest("tb_batch_state")
         if not isinstance(cloud_state, dict):
             return False, "云端无三重底分批进度"
-        
-        # 保护：若本地已有活跃的分批队列（含 all_tickers），且云端没有/不完整，则保留本地
-        local_state = _load(F_TB_BATCH_STATE, {})
-        if isinstance(local_state, dict) and local_state.get("all_tickers"):
-            if not cloud_state.get("all_tickers"):
-                return True, "本地已有完整扫描队列，跳过云端空覆盖"
                 
         _save(F_TB_BATCH_STATE, cloud_state)
         return True, f"三重底分批进度已恢复 (批次: {cloud_state.get('current_batch', 0)}/{cloud_state.get('total_batches', 0)})"
     except Exception as e:
         return False, f"pull_tb_batch_state 异常：{e}"
+
 
 
 
