@@ -493,14 +493,22 @@ def push_tb_batch_state() -> Tuple[bool, str]:
 
 def pull_tb_batch_state() -> Tuple[bool, str]:
     try:
-        from storage import F_TB_BATCH_STATE, _save
+        from storage import F_TB_BATCH_STATE, _save, _load
         cloud_state = _download_latest("tb_batch_state")
         if not isinstance(cloud_state, dict):
             return False, "云端无三重底分批进度"
+        
+        # 保护：若本地已有活跃的分批队列（含 all_tickers），且云端没有/不完整，则保留本地
+        local_state = _load(F_TB_BATCH_STATE, {})
+        if isinstance(local_state, dict) and local_state.get("all_tickers"):
+            if not cloud_state.get("all_tickers"):
+                return True, "本地已有完整扫描队列，跳过云端空覆盖"
+                
         _save(F_TB_BATCH_STATE, cloud_state)
         return True, f"三重底分批进度已恢复 (批次: {cloud_state.get('current_batch', 0)}/{cloud_state.get('total_batches', 0)})"
     except Exception as e:
         return False, f"pull_tb_batch_state 异常：{e}"
+
 
 
 

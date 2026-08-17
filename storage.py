@@ -1743,8 +1743,15 @@ def load_tb_batch_state() -> Dict:
     return {**default, **st}
 
 def save_tb_batch_state(state: Dict) -> bool:
-    """保存三重底分批扫描状态"""
+    """保存三重底分批扫描状态（自动确保 total_tickers / total_batches 准确无误）"""
+    if isinstance(state, dict):
+        all_tks = state.get("all_tickers", [])
+        if all_tks:
+            state["total_tickers"] = len(all_tks)
+            bsize = state.get("batch_size", 50)
+            state["total_batches"] = (len(all_tks) + bsize - 1) // bsize
     return _save(F_TB_BATCH_STATE, state)
+
 
 def clear_tb_batch_state() -> bool:
     """清除三重底分批扫描状态"""

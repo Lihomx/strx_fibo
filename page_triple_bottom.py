@@ -294,23 +294,33 @@ def triple_bottom_batch_worker(params, update_progress, cancel_check):
     # 更新持久化分批扫描状态
     try:
         bstate = storage.load_tb_batch_state()
+        all_tickers = bstate.get("all_tickers", [])
+        total_tickers = len(all_tickers) if all_tickers else bstate.get("total_tickers", 0)
+        batch_size = bstate.get("batch_size", 50)
+        calc_total_batches = (total_tickers + batch_size - 1) // batch_size if total_tickers > 0 else total_batches
+        
         done_set = set(bstate.get("done_tickers", []))
         done_set.update(batch_tickers)
         bstate["done_tickers"] = list(done_set)
         bstate["current_batch"] = batch_index
+        bstate["total_tickers"] = total_tickers
+        bstate["total_batches"] = calc_total_batches
         bstate["last_batch_match_count"] = len(batch_results)
         bstate["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         if cancel_check():
             bstate["status"] = "cancelled"
-        elif batch_index >= total_batches or len(bstate["done_tickers"]) >= bstate.get("total_tickers", 0):
+        elif calc_total_batches > 0 and batch_index >= calc_total_batches:
+            bstate["status"] = "all_done"
+        elif total_tickers > 0 and len(bstate["done_tickers"]) >= total_tickers:
             bstate["status"] = "all_done"
         else:
             bstate["status"] = "batch_done"
+            
         storage.save_tb_batch_state(bstate)
-
     except Exception:
         pass
+
         
     # 🚀 关键：每批完成立即同步推送到 Supabase 云端，防止应用休眠丢失数据
     try:
@@ -408,8 +418,9 @@ def render_triple_bottom_page():
     # 自动流水线推进检测
     if not is_running and bstate.get("status") == "batch_done":
         cur_b = bstate.get("current_batch", 0)
+
         tot_b = bstate.get("total_batches", 1)
-        if cur_b < tot_b and bstate.get("auto_continue", False):
+        if cur_b < tot_b and bstate.get("auto_continue", True):
             st_autorefresh(interval=2500, key="tb_batch_auto_advance")
             st.info(f"⚡ **自动流水线运行中**：第 {cur_b}/{tot_b} 批已完成，已释放内存，正在自动启动第 {cur_b + 1} 批...")
             time.sleep(1.0)
@@ -432,15 +443,17 @@ def render_triple_bottom_page():
         cur_b = bstate.get("current_batch", 0)
         tot_b = bstate.get("total_batches", 1)
         done_cnt = len(bstate.get("done_tickers", []))
-        total_cnt = bstate.get("total_tickers", 0)
+        all_tks = bstate.get("all_tickers", [])
+        total_cnt = len(all_tks) if all_tks else bstate.get("total_tickers", 0)
         last_match = bstate.get("last_batch_match_count", 0)
         
-        if bstate.get("status") == "all_done" or cur_b >= tot_b:
+        if bstate.get("status") == "all_done" or (tot_b > 0 and cur_b >= tot_b):
             st.success(f"🎊 **全部分批扫描已全部完成！** 共扫描完成 {done_cnt}/{total_cnt} 只品种，结果已全部增量保存。")
             if st.button("🔄 完成并重置分批状态", key="tb_all_done_reset_btn", type="primary"):
                 storage.clear_tb_batch_state()
                 bg_scan_manager.reset_to_idle()
                 st.rerun()
+
         elif bstate.get("status") == "batch_done":
             st.markdown(
                 f"""
