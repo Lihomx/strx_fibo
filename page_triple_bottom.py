@@ -1012,13 +1012,25 @@ def render_triple_bottom_page():
                     else:
                         click_badge_html = ' <span style="font-size:11px;color:#64748b;font-weight:500;">(0/0)</span>'
                     tv_url_val = _tv_link(ticker, period)
+                    # 🚀 内联直连上报：点击时直接通过 JS 递增数字并静音推送后台，绝不受任何事件委托失效影响
+                    onclick_js = (
+                        f"var f=window.top.document.createElement('iframe');"
+                        f"f.style.display='none';"
+                        f"f.src='/?_tv_click={ticker}&_cb='+Date.now();"
+                        f"window.top.document.body.appendChild(f);"
+                        f"setTimeout(function(){{try{{f.remove();}}catch(e){{}}}},6000);"
+                        f"var sp=this.querySelector('span');"
+                        f"if(sp){{var m=(sp.innerText||'').match(/\\((\\d+)\\/(\\d+)\\)/);"
+                        f"if(m){{sp.innerText='('+(parseInt(m[1])+1)+'/'+(parseInt(m[2])+1)+')';sp.style.color='#4ade80';sp.style.fontWeight='700';}}}}"
+                    )
                     st.markdown(
-                        f'<a href="{tv_url_val}" target="_blank" class="tv-btn" data-ticker="{ticker}" '
+                        f'<a href="{tv_url_val}" target="_blank" class="tv-btn" data-ticker="{ticker}" onclick="{onclick_js}" '
                         f'style="display:block;text-align:center;padding:6px 0;background:rgba(30,144,255,0.15);'
                         f'color:#38bdf8;border-radius:4px;text-decoration:none;font-weight:600;font-size:13px;'
                         f'border:1px solid rgba(30,144,255,0.3);">📈 TV{click_badge_html}</a>',
                         unsafe_allow_html=True
                     )
+
 
                 with btn_col3:
                     is_in_wl = any(item["ticker"].upper() == ticker.upper() for item in wl)
