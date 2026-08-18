@@ -144,71 +144,85 @@ def scan_triple_bottoms(df, symbol="", swing_window=3, lookback_bars=150, max_sp
     if len(df) < swing_window * 2 + 10:
         return []
 
-    df_sw = find_swing_points(df, window=swing_window)
-    df_recent = df_sw.iloc[-lookback_bars:].copy()
-    offset = len(df_sw) - len(df_recent)
+    df = df.tail(lookback_bars).reset_index(drop=True)
+    df = find_swing_points(df, window=swing_window)
 
-    swing_low_indices = df_recent.index[df_recent["is_swing_low"]].tolist()
-    if len(swing_low_indices) < 3:
+    swing_low_idx = df.index[df["is_swing_low"]].tolist()
+    if len(swing_low_idx) < 3:
         return []
 
     results = []
-    n_lows = len(swing_low_indices)
+    # ⚡ 核心算法对齐：枚举相邻的 3 个低点组合，毫秒级完成，杜绝 O(N^3) 爆炸
+    for a in range(len(swing_low_idx) - 2):
+        i1, i2, i3 = swing_low_idx[a], swing_low_idx[a + 1], swing_low_idx[a + 2]
 
-    for i in range(n_lows - 2):
-        for j in range(i + 1, n_lows - 1):
-            for k in range(j + 1, n_lows):
-                idx1_loc = swing_low_indices[i]
-                idx2_loc = swing_low_indices[j]
-                idx3_loc = swing_low_indices[k]
+        spacing_12 = i2 - i1
+        spacing_23 = i3 - i2
+        if not (min_spacing <= spacing_12 <= max_spacing and min_spacing <= spacing_23 <= max_spacing):
+            continue
 
-                pos1 = df_recent.index.get_loc(idx1_loc)
-                pos2 = df_recent.index.get_loc(idx2_loc)
-                pos3 = df_recent.index.get_loc(idx3_loc)
+        low1, low2, low3 = float(df.loc[i1, "low"]), float(df.loc[i2, "low"]), float(df.loc[i3, "low"])
 
-                sp12 = pos2 - pos1
-                sp23 = pos3 - pos2
-                total_sp = pos3 - pos1
+        seg_12 = df.loc[i1:i2, "high"]
+        seg_23 = df.loc[i2:i3, "high"]
+        mid_high_12 = float(seg_12.max()) if len(seg_12) else low1
+        mid_high_23 = float(seg_23.max()) if len(seg_23) else low2
+        mid_high = max(mid_high_12, mid_high_23)
 
-                if not (min_spacing <= sp12 <= max_spacing and min_spacing <= sp23 <= max_spacing and total_sp <= max_spacing * 2):
-                    continue
+        support_level = min(low1, low2)
+        broke = False
+        seg_break = df.loc[i2:i3]
+        if len(seg_break):
+            min_low_in_seg = float(seg_break["low"].min())
+            close_at_end = float(df.loc[i3, "close"])
+            if min_low_in_seg < support_level * (1 - break_tol) and close_at_end > support_level:
+                broke = True
 
-                low1 = df_recent.loc[idx1_loc, "low"]
-                low2 = df_recent.loc[idx2_loc, "low"]
-                low3 = df_recent.loc[idx3_loc, "low"]
+        pattern_name, confidence, note = classify_triple(
+            low1, low2, low3, mid_high_12, mid_high_23, broke, flat_tol=flat_tol
+        )
 
-                mid_high_12 = df_recent.iloc[pos1:pos2 + 1]["high"].max()
-                mid_high_23 = df_recent.iloc[pos2:pos3 + 1]["high"].max()
-                mid_high = max(mid_high_12, mid_high_23)
+        support_level_valid = min(low1, low2, low3)
+        neckline = max(mid_high_12, mid_high_23)
+        seg_post_low3 = df.loc[i3:]
+        latest_close = float(df.loc[df.index[-1], "close"])
+        bars_since_low3 = int(len(df) - 1 - i3)
 
-                support_level = min(low1, low2)
-                broke_support = (low3 < support_level * (1 - break_tol)) and (low3 >= support_level * 0.90)
+        has_broken_support = bool((seg_post_low3["close"] < support_level_valid * (1 - break_tol)).any())
+        has_broken_neckline = bool((seg_post_low3["close"] > neckline).any())
 
-                pattern_name, confidence, note = classify_triple(
-                    low1, low2, low3, mid_high_12, mid_high_23, broke_support, flat_tol=flat_tol
-                )
+        if has_broken_support:
+            status = "invalidated"
+            status_reason = f"已失效：收盘跌破支撑 {{support_level_valid:.3f}}"
+        elif bars_since_low3 > 45:
+            status = "expired"
+            status_reason = f"已过期：形态后已有 {{bars_since_low3}} 根 K 线"
+        elif has_broken_neckline:
+            status = "confirmed"
+            status_reason = f"已确认突破：收盘站上颈线 {{neckline:.3f}}"
+        else:
+            status = "active"
+            status_reason = "形态成型中，观察是否突破颈线"
 
-                global_pos3 = offset + pos3
-                bars_since_low3 = len(df_sw) - 1 - global_pos3
-                latest_close = float(df_sw.iloc[-1]["close"])
-
-                results.append({{
-                    "symbol": symbol,
-                    "pattern": pattern_name,
-                    "confidence": round(float(confidence), 4),
-                    "idx1": int(offset + pos1),
-                    "idx2": int(offset + pos2),
-                    "idx3": int(offset + pos3),
-                    "low1": round(float(low1), 4),
-                    "low2": round(float(low2), 4),
-                    "low3": round(float(low3), 4),
-                    "mid_high": round(float(mid_high), 4),
-                    "note": note,
-                    "status": "active",
-                    "status_reason": "",
-                    "bars_since_low3": int(bars_since_low3),
-                    "latest_close": round(latest_close, 4),
-                }})
+        # 只保留有实战价值的 active(观望中) 或 confirmed(已突破) 形态
+        if status in ("active", "confirmed"):
+            results.append({{
+                "symbol": symbol,
+                "pattern": pattern_name,
+                "confidence": round(float(confidence), 4),
+                "idx1": int(i1),
+                "idx2": int(i2),
+                "idx3": int(i3),
+                "low1": round(float(low1), 4),
+                "low2": round(float(low2), 4),
+                "low3": round(float(low3), 4),
+                "mid_high": round(float(mid_high), 4),
+                "note": note,
+                "status": status,
+                "status_reason": status_reason,
+                "bars_since_low3": int(bars_since_low3),
+                "latest_close": round(latest_close, 4),
+            }})
     return results
 
 
