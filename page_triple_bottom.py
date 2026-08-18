@@ -1008,9 +1008,9 @@ def render_triple_bottom_page():
                     today_c = by_date_map.get(today_str_val, 0) if isinstance(by_date_map, dict) else 0
 
                     if total_c > 0:
-                        click_badge_html = f' <span style="font-size:11px;color:#4ade80;font-weight:600;">({today_c}/{total_c})</span>'
+                        click_badge_html = f' <span class="click-count-badge" style="font-size:11px;color:#4ade80;font-weight:600;">({today_c}/{total_c})</span>'
                     else:
-                        click_badge_html = ' <span style="font-size:11px;color:#64748b;font-weight:500;">(0/0)</span>'
+                        click_badge_html = ' <span class="click-count-badge" style="font-size:11px;color:#64748b;font-weight:500;">(0/0)</span>'
                     tv_url_val = _tv_link(ticker, period)
                     st.markdown(
                         f'<a href="{tv_url_val}" target="_blank" class="tv-btn" data-ticker="{ticker}" '
