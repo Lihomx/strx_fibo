@@ -203,6 +203,8 @@ DEFAULT_CFG = {
     "filter_1h_ema20_bear": False,
     "filter_15m_ema20_bear": False,
     "homepage": "watchlist",
+    "theme_style": "极简深邃 (Minimal Dark)",
+    "font_size": "默认 (14px)",
     "alert_template": "📐 STRX Fibo 信号 {label}\n━━━━━━━━━━━━━━━━━━━━\n🏷 {name} ({ticker})\n📅 框架: {tf}\n💰 价格: {price}\n📏 黄金区: {zone_bot} – {zone_top}\n📉 回撤: {retrace_pct}%\n🔗 {url}\n🕐 {time}",
     "alert_template_ema_pivot": "🚀 EMA20 + Daily Pivot 信号 {label}\n━━━━━━━━━━━━━━━━━━━━\n🏷 {name} ({ticker})\n📅 框架: {tf}\n💰 价格: {price}\n📈 EMA20: {ema}\n🎯 Pivot: {pivot}\n🔗 {url}\n🕐 {time}",
     "alert_template_chartink": "📈 Chartink 4H Breakout 突破信号 {label}\n━━━━━━━━━━━━━━━━━━━━\n🏷 {name} ({ticker})\n📅 框架: {tf}\n💰 价格: {price}\n📊 4H成交量: {volume_4h}\n📈 RSI: {rsi}\n🔗 {url}\n🕐 {time}",
