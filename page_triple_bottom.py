@@ -661,6 +661,93 @@ def render_triple_bottom_page():
     _render_tb_restore_session_controls()
     st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
 
+    # ── 🌐 Google Colab 独立大规模扫描渠道 ──
+    with st.expander("☁️ Google Colab 算力扫描渠道 (全美股 / 全A股 极速扫描与结果导入)", expanded=False):
+        colab_c1, colab_c2 = st.columns([1.2, 1], gap="medium")
+        with colab_c1:
+            st.markdown("##### 1. 获取 Colab 脚本并在云端运行")
+            st.caption("利用 Google Colab 免费高性能算力扫描数百上千只全市场股票，完全不受 Streamlit Cloud 内存配额限制。")
+            import colab_scan_script
+            colab_code = colab_scan_script.get_colab_script("US")
+            st.code(colab_code, language="python", line_numbers=True)
+            st.markdown(
+                """
+                <div style="font-size:12px;color:#94a3b8;margin-top:-6px;margin-bottom:10px;">
+                    👉 <b>操作指引：</b> 点击代码框右上角<b>复制</b> ➔ 打开 <a href="https://colab.research.google.com/" target="_blank" style="color:#38bdf8;text-decoration:underline;">Google Colab</a> 新建笔记本粘贴并运行 ➔ 运行完毕将自动下载 <code>colab_triple_bottom_results_us.csv</code>。
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+        
+        with colab_c2:
+            st.markdown("##### 2. 导入 Colab 扫描结果 CSV")
+            st.caption("上传从 Google Colab 导出的扫描结果 CSV 文件，系统将自动进行格式校验并增量合并到当前三重底结果库中。")
+            uploaded_file = st.file_uploader(
+                "选择或拖拽 Colab 导出的 CSV 文件",
+                type=["csv"],
+                key="tb_colab_csv_uploader",
+                help="支持导入 colab_triple_bottom_results_*.csv"
+            )
+            
+            if uploaded_file is not None:
+                try:
+                    import io
+                    import csv
+                    df_up = pd.read_csv(uploaded_file)
+                    
+                    # 字段校验
+                    required_fields = ["symbol", "period", "pattern", "confidence", "idx1", "idx2", "idx3", "low1", "low2", "low3", "mid_high"]
+                    missing = [f for f in required_fields if f not in df_up.columns]
+                    
+                    if missing:
+                        st.error(f"❌ CSV 文件格式不符合要求，缺少关键列: {', '.join(missing)}")
+                    else:
+                        valid_items = []
+                        for _, r in df_up.iterrows():
+                            sym = str(r.get("symbol", "")).strip().upper()
+                            if not sym:
+                                continue
+                            item = {
+                                "symbol": sym,
+                                "period": str(r.get("period", "1d")).strip().lower(),
+                                "pattern": str(r.get("pattern", "三重底")).strip(),
+                                "confidence": float(r.get("confidence", 0.7)),
+                                "idx1": int(r.get("idx1", 0)),
+                                "idx2": int(r.get("idx2", 0)),
+                                "idx3": int(r.get("idx3", 0)),
+                                "low1": float(r.get("low1", 0.0)),
+                                "low2": float(r.get("low2", 0.0)),
+                                "low3": float(r.get("low3", 0.0)),
+                                "mid_high": float(r.get("mid_high", 0.0)),
+                                "note": str(r.get("note", "")),
+                                "status": str(r.get("status", "active")),
+                                "status_reason": str(r.get("status_reason", "")),
+                                "bars_since_low3": int(r.get("bars_since_low3", 0)),
+                                "latest_close": float(r.get("latest_close", 0.0)),
+                                "scan_time": str(r.get("scan_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                            }
+                            valid_items.append(item)
+                            
+                        st.markdown(f"📊 **检测到有效形态记录**: `{len(valid_items)}` 条")
+                        if st.button("📥 确认增量导入并合并", key="tb_colab_confirm_import_btn", type="primary", use_container_width=True):
+                            ok = storage.append_triple_bottom_results(valid_items, with_backup=True)
+                            if ok:
+                                try:
+                                    import cloud_sync
+                                    if cloud_sync.is_configured():
+                                        cloud_sync.push_triple_bottom()
+                                except Exception:
+                                    pass
+                                st.toast(f"✅ 成功导入 {len(valid_items)} 条来自 Google Colab 的扫描结果！", icon="🎉")
+                                time.sleep(1.0)
+                                st.rerun()
+                            else:
+                                st.error("❌ 写入存储失败，请重试。")
+                except Exception as ex:
+                    st.error(f"❌ 解析 CSV 文件失败: {ex}")
+
+    st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
+
     # ── 2. 顶部控制面板（扫描配置与控制） ──
     with st.expander("⚙️ 扫描参数与分批目标配置", expanded=True):
         col_cfg1, col_cfg2 = st.columns([3, 2], gap="large")
