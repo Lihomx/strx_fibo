@@ -265,7 +265,7 @@ def run_scanner():
     completed = 0
     
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        future_map = {executor.submit(_scan_single_ticker, tk): tk for tk in tickers}
+        future_map = {{executor.submit(_scan_single_ticker, tk): tk for tk in tickers}}
         
         for future in as_completed(future_map):
             completed += 1
