@@ -434,6 +434,34 @@ def push_symbol_groups() -> Tuple[bool, str]:
         return False, f"push_symbol_groups 异常：{e}"
 
 
+def push_config() -> Tuple[bool, str]:
+    try:
+        import storage as loc
+        cfg = loc.load_config()
+        ok, msg = _upload_latest("config", cfg)
+        _upload_snapshot("config", cfg)
+        if ok:
+            return True, "系统配置已同步到云端"
+        return False, f"config: {msg}"
+    except Exception as e:
+        return False, f"push_config 异常：{e}"
+
+
+def pull_config() -> Tuple[bool, str]:
+    try:
+        from storage import F_CFG, _save, _load
+        cloud_cfg = _download_latest("config")
+        if not isinstance(cloud_cfg, dict) or not cloud_cfg:
+            return False, "云端无系统配置数据"
+        local_cfg = _load(F_CFG, {})
+        # 云端权威合并：以云端最新配置为主
+        local_cfg.update(cloud_cfg)
+        _save(F_CFG, local_cfg)
+        return True, "系统配置已从云端恢复"
+    except Exception as e:
+        return False, f"pull_config 异常：{e}"
+
+
 def pull_symbol_groups() -> Tuple[bool, str]:
     try:
         from storage import F_SYMBOL_GROUPS, _save
@@ -957,15 +985,8 @@ def pull_all() -> Dict[str, Any]:
     else:
         results["alerts"] = (False, "无云端数据")
 
-    if not loc._load(loc.F_CFG, {}):
-        cloud_cfg = _download_latest("config")
-        if isinstance(cloud_cfg, dict):
-            loc._save(loc.F_CFG, cloud_cfg)
-            results["config"] = (True, "已恢复")
-        else:
-            results["config"] = (False, "无云端数据")
-    else:
-        results["config"] = (True, "本地已有，跳过")
+    ok_cfg, msg_cfg = pull_config()
+    results["config"] = (ok_cfg, msg_cfg)
 
     if not results.get("watchlist", (False,))[0]:
         cat_ok2, cat_msg2 = pull_wl_categories()

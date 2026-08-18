@@ -219,7 +219,15 @@ def load_config() -> Dict:
 def save_config(cfg: Dict) -> bool:
     current = _load(F_CFG, {})
     current.update(cfg)
-    return _save(F_CFG, current)
+    ok = _save(F_CFG, current)
+    if ok:
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                _async_push(cloud_sync.push_config)
+        except Exception:
+            pass
+    return ok
 
 
 # ── 扫描会话 ─────────────────────────────────────────────────────────
