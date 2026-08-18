@@ -679,13 +679,34 @@ def render_triple_bottom_page():
                     pool_options.append(f"📁 分组: {gn}")
             pool_options.append("⭐ 我的自选关注列表")
             
-            selected_pool = st.selectbox(
-                "选择需要导出的扫描股票池",
-                options=pool_options,
-                index=0,
-                key="tb_colab_selected_pool",
-                help="系统会自动将选定股票池中的所有股票代码注入到 Colab 脚本中，无需在 Colab 中重复拉取"
-            )
+            p_col1, p_col2 = st.columns([1.5, 1])
+            with p_col1:
+                selected_pool = st.selectbox(
+                    "选择需要导出的扫描股票池",
+                    options=pool_options,
+                    index=0,
+                    key="tb_colab_selected_pool",
+                    help="系统会自动将选定股票池中的所有股票代码注入到 Colab 脚本中，无需在 Colab 中重复拉取"
+                )
+            with p_col2:
+                colab_selected_tfs = st.multiselect(
+                    "选择 Colab 扫描周期",
+                    options=["1d (日线)", "1w (周线)", "1mo (月线)", "4h (4小时)", "60m (1小时)"],
+                    default=["1d (日线)", "1w (周线)", "1mo (月线)"],
+                    key="tb_colab_selected_tfs",
+                    help="设置 Colab 脚本中默认执行扫描的时间框架"
+                )
+            
+            # 解析周期映射
+            tf_map_keys = []
+            for tf_str in colab_selected_tfs:
+                if "1d" in tf_str: tf_map_keys.append("1d")
+                elif "1w" in tf_str: tf_map_keys.append("1w")
+                elif "1mo" in tf_str: tf_map_keys.append("1mo")
+                elif "4h" in tf_str: tf_map_keys.append("4h")
+                elif "60m" in tf_str: tf_map_keys.append("60m")
+            if not tf_map_keys:
+                tf_map_keys = ["1d", "1w", "1mo"]
             
             # 提取对应股票代码
             export_tickers = []
@@ -717,10 +738,10 @@ def render_triple_bottom_page():
                 
             export_tickers = list(dict.fromkeys([t.strip().upper() for t in export_tickers if t and isinstance(t, str)]))
             
-            st.info(f"📋 当前选定股票池包含 **{len(export_tickers)}** 支品种代码，已直接内置写入以下脚本：")
+            st.info(f"📋 选定股票池: **{len(export_tickers)}** 支品种 | 周期: **{', '.join(tf_map_keys)}** (已直接生成于下方代码中)：")
             
             import colab_scan_script
-            colab_code = colab_scan_script.generate_colab_script_for_tickers(export_tickers, pool_name=selected_pool)
+            colab_code = colab_scan_script.generate_colab_script_for_tickers(export_tickers, pool_name=selected_pool, selected_tfs=tf_map_keys)
             st.code(colab_code, language="python", line_numbers=True)
             st.markdown(
                 """

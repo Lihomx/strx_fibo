@@ -12,13 +12,32 @@ colab_scan_script.py — Google Colab 独立大规模三重底扫描脚本生成
 
 import json
 
-def generate_colab_script_for_tickers(tickers: list[str], pool_name: str = "系统品种库") -> str:
-    """生成内置指定股票池代码的 Google Colab 完整扫描脚本"""
+def generate_colab_script_for_tickers(tickers: list[str], pool_name: str = "系统品种库", selected_tfs: list[str] = None) -> str:
+    """生成内置指定股票池代码与扫描周期的 Google Colab 完整扫描脚本"""
     tickers_json = json.dumps(tickers, ensure_ascii=False)
+    
+    if not selected_tfs:
+        selected_tfs = ["1d", "1w", "1mo"]
+        
+    all_tf_defs = {
+        "1d": '("1d", "2y")',
+        "1w": '("1wk", "5y")',
+        "1mo": '("1mo", "10y")',
+        "4h": '("1h", "730d")',
+        "60m": '("60m", "720d")',
+    }
+    
+    tf_lines = []
+    for tf in selected_tfs:
+        if tf in all_tf_defs:
+            tf_lines.append(f'    "{tf}": {all_tf_defs[tf]},')
+            
+    timeframes_code = "{\n" + "\n".join(tf_lines) + "\n}"
     
     script = f'''# ==============================================================================
 # 🚀 Google Colab 三重底 (Triple Bottom) 大规模扫描脚本
 # 股票池来源: {pool_name} (共 {len(tickers)} 支品种)
+# 扫描周期: {', '.join(selected_tfs)}
 # ==============================================================================
 # 使用方法：
 # 1. 打开 Google Colab (https://colab.research.google.com/)
@@ -43,12 +62,8 @@ import yfinance as yf
 # ------------------------------------------------------------------------------
 # ⚙️ 扫描配置
 # ------------------------------------------------------------------------------
-# 扫描周期: "1d"(日线), "1w"(周线), "1mo"(月线)
-TIMEFRAMES = {{
-    "1d": ("1d", "2y"),
-    "1w": ("1wk", "5y"),
-    "1mo": ("1mo", "10y"),
-}}
+# 扫描周期配置 (已选: {', '.join(selected_tfs)})
+TIMEFRAMES = {timeframes_code}
 
 # 形态识别参数 (与 Streamlit 系统完全对齐)
 SWING_WINDOW = 3      # 分形左右窗口大小
