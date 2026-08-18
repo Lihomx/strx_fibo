@@ -210,6 +210,69 @@ if (!document.querySelector('meta[name="theme-color"]')) {
     var _obsBody = new MutationObserver(function() { _clearSaved(); });
     try {
         _obsBody.observe(_mainDoc().body, { childList: true, subtree: false });
+// ── 全局行情链接点击计数监听器 (保障所有页面、任何方式打开 TV 均能落盘并即时响应) ──
+(function() {
+    try {
+        var _mainDoc = function() {
+            try { return window.parent.document; } catch(e) { return document; }
+        };
+        var pDoc = _mainDoc();
+        if (pDoc._global_tv_click_handler) {
+            pDoc.removeEventListener('click', pDoc._global_tv_click_handler, true);
+        }
+        pDoc._global_tv_click_handler = function(e) {
+            var btn = e.target && e.target.closest ? e.target.closest('.tv-btn, .sina-btn') : null;
+            if (btn) {
+                var tk = btn.getAttribute('data-ticker');
+                if (tk) {
+                    tk = tk.trim().toUpperCase();
+                    var cbUrl = '/?_tv_click=' + encodeURIComponent(tk) + '&_cb=' + Date.now() + '_' + Math.floor(Math.random()*10000);
+
+                    // 1. fetch 强制 no-store 穿透所有浏览器/CDN 缓存
+                    try { fetch(cbUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
+
+                    // 2. sendBeacon 后台保障发送
+                    try { if (navigator.sendBeacon) { navigator.sendBeacon(cbUrl); } } catch(err) {}
+
+                    // 3. IFrame 静音发送
+                    try {
+                        var f = pDoc.createElement('iframe');
+                        f.style.display = 'none';
+                        f.src = cbUrl;
+                        pDoc.body.appendChild(f);
+                        setTimeout(function() {
+                            try { f.remove(); } catch(err) {}
+                        }, 6000);
+                    } catch(err) {}
+
+                    // 4. 前台 DOM 瞬间更新该 ticker 所有对应按钮数值 (秒级反馈)
+                    try {
+                        var allBtns = pDoc.querySelectorAll('.tv-btn, .sina-btn');
+                        for (var i = 0; i < allBtns.length; i++) {
+                            var b = allBtns[i];
+                            var bTk = b.getAttribute('data-ticker');
+                            if (bTk && bTk.trim().toUpperCase() === tk) {
+                                var spans = b.getElementsByTagName('span');
+                                if (spans && spans.length > 0) {
+                                    var span = spans[spans.length - 1];
+                                    var txt = span.innerText || span.textContent || "";
+                                    var m = txt.match(/\\((\\d+)\\/(\\d+)\\)/);
+
+                                    if (m) {
+                                        var today = parseInt(m[1], 10) + 1;
+                                        var total = parseInt(m[2], 10) + 1;
+                                        span.innerText = '(' + today + '/' + total + ')';
+                                        span.style.color = '#4ade80';
+                                        span.style.fontWeight = '600';
+                                    }
+                                }
+                            }
+                        }
+                    } catch(err) {}
+                }
+            }
+        };
+        pDoc.addEventListener('click', pDoc._global_tv_click_handler, true);
     } catch(e) {}
 })();
 </script>""", unsafe_allow_html=True)
