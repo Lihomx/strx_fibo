@@ -223,14 +223,14 @@ def _resample_ohlc(df, rule):
         if not isinstance(df.index, pd.DatetimeIndex):
             df = df.copy()
             df.index = pd.to_datetime(df.index)
-        ohlc_dict = {
+        ohlc_dict = {{
             'open': 'first',
             'high': 'max',
             'low': 'min',
             'close': 'last',
             'volume': 'sum'
-        }
-        valid_dict = {k: v for k, v in ohlc_dict.items() if k in df.columns}
+        }}
+        valid_dict = {{k: v for k, v in ohlc_dict.items() if k in df.columns}}
         resampled = df.resample(rule).agg(valid_dict).dropna(subset=['close', 'high', 'low'])
         return resampled
     except Exception:
