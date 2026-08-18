@@ -145,7 +145,7 @@ div[data-testid="stSidebar"] .stButton>button:hover{background:var(--secondary-b
 
 # ── 移动端 viewport meta / PWA / 点击与滚动监听器 ───────────────────────
 import streamlit.components.v1 as _st_components
-_st_components.html("""<script>
+_st_components.html(r"""<script>
 (function() {
     var _mainDoc = function() {
         try { return window.parent.document; } catch(e) { return document; }
@@ -233,7 +233,7 @@ _st_components.html("""<script>
                                 if (spans && spans.length > 0) {
                                     var span = spans[spans.length - 1];
                                     var txt = span.innerText || span.textContent || "";
-                                    var m = txt.match(/\\((\\d+)\\/(\\d+)\\)/);
+                                    var m = txt.match(/\((\d+)\/(\d+)\)/);
                                     if (m) {
                                         var today = parseInt(m[1], 10) + 1;
                                         var total = parseInt(m[2], 10) + 1;
