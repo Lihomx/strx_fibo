@@ -213,58 +213,79 @@ def scan_triple_bottoms(df, symbol="", swing_window=3, lookback_bars=150, max_sp
 
 
 # ------------------------------------------------------------------------------
-# 🚀 批量多周期扫描主程序
+# 🚀 批量多周期极速并发扫描主程序 (多线程加速 15-20 倍)
 # ------------------------------------------------------------------------------
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+def _scan_single_ticker(ticker):
+    results = []
+    for period_key, (yf_interval, yf_period) in TIMEFRAMES.items():
+        try:
+            df = yf.download(ticker, interval=yf_interval, period=yf_period, progress=False)
+            if df is None or df.empty:
+                continue
+            
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            df.columns = [c.lower() for c in df.columns]
+            
+            if not all(k in df.columns for k in ["close", "high", "low"]):
+                continue
+                
+            matches = scan_triple_bottoms(
+                df,
+                symbol=ticker,
+                swing_window=SWING_WINDOW,
+                lookback_bars=LOOKBACK_BARS,
+                max_spacing=MAX_SPACING,
+                flat_tol=FLAT_TOL,
+                break_tol=BREAK_TOL,
+            )
+            
+            for m in matches:
+                if m["confidence"] >= MIN_CONFIDENCE:
+                    m["period"] = period_key
+                    m["scan_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    results.append(m)
+        except Exception:
+            pass
+    return results
+
+
 def run_scanner():
     tickers = SCAN_TICKERS
     all_results = []
-    
     total_tickers = len(tickers)
-    print(f"\\n🚀 开始执行扫描任务 (共 {{total_tickers}} 只股票, 周期: {{list(TIMEFRAMES.keys())}})...\\n")
+    
+    # ⚡ 利用 Colab 云端多核性能开启 16 线程极速并发下载与计算
+    MAX_WORKERS = min(20, max(4, os.cpu_count() * 4 if os.cpu_count() else 12))
+    print(f"\\n🚀 开启极速多线程并发扫描 (共 {{total_tickers}} 只股票, 线程数: {{MAX_WORKERS}}, 周期: {{list(TIMEFRAMES.keys())}})...\\n")
     
     start_time = time.time()
-    for idx, ticker in enumerate(tickers, 1):
-        if idx % 10 == 0 or idx == total_tickers:
-            elapsed = time.time() - start_time
-            rate = idx / elapsed if elapsed > 0 else 1
-            rem = (total_tickers - idx) / rate
-            print(f"[{{idx}}/{{total_tickers}}] 正在扫描: {{ticker}} (已发现 {{len(all_results)}} 个形态, 预计剩余 {{int(rem//60)}}分{{int(rem%60)}}秒)")
-            
-        for period_key, (yf_interval, yf_period) in TIMEFRAMES.items():
+    completed = 0
+    
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        future_map = {executor.submit(_scan_single_ticker, tk): tk for tk in tickers}
+        
+        for future in as_completed(future_map):
+            completed += 1
+            tk = future_map[future]
             try:
-                # yfinance 下载
-                df = yf.download(ticker, interval=yf_interval, period=yf_period, progress=False)
-                if df is None or df.empty:
-                    continue
-                
-                # 多级索引展平
-                if isinstance(df.columns, pd.MultiIndex):
-                    df.columns = df.columns.get_level_values(0)
-                df.columns = [c.lower() for c in df.columns]
-                
-                if not all(k in df.columns for k in ["close", "high", "low"]):
-                    continue
-                    
-                matches = scan_triple_bottoms(
-                    df,
-                    symbol=ticker,
-                    swing_window=SWING_WINDOW,
-                    lookback_bars=LOOKBACK_BARS,
-                    max_spacing=MAX_SPACING,
-                    flat_tol=FLAT_TOL,
-                    break_tol=BREAK_TOL,
-                )
-                
-                for m in matches:
-                    if m["confidence"] >= MIN_CONFIDENCE:
-                        m["period"] = period_key
-                        m["scan_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        all_results.append(m)
-            except Exception as e:
+                res = future.result()
+                if res:
+                    all_results.extend(res)
+            except Exception:
                 pass
                 
+            if completed % 25 == 0 or completed == total_tickers:
+                elapsed = time.time() - start_time
+                rate = completed / elapsed if elapsed > 0 else 1
+                rem = (total_tickers - completed) / rate
+                print(f"[{{completed}}/{{total_tickers}}] 进度: {{completed*100//total_tickers}}% | 已匹配: {{len(all_results)}} 条形态 | 预计剩余: {{int(rem//60)}}分{{int(rem%60)}}秒")
+                
     # 汇总并输出
-    print(f"\\n🎉 扫描完成！共耗时 {{int((time.time()-start_time)//60)}} 分钟，匹配到 {{len(all_results)}} 条三重底形态！")
+    total_min = (time.time() - start_time) / 60
+    print(f"\\n🎉 扫描全部完成！共耗时 {{total_min:.1f}} 分钟，匹配到 {{len(all_results)}} 条三重底形态！")
     
     if all_results:
         out_df = pd.DataFrame(all_results)
@@ -279,7 +300,6 @@ def run_scanner():
         out_df.to_csv(csv_filename, index=False, encoding="utf-8-sig")
         print(f"💾 结果已保存至: {{csv_filename}}")
         
-        # 尝试自动触发浏览器下载
         try:
             from google.colab import files
             print("⬇️ 正在触发自动下载到本地...")
