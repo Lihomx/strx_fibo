@@ -1170,16 +1170,25 @@ def render_triple_bottom_page():
                     by_date_map = click_entry.get("by_date", {}) if isinstance(click_entry, dict) else {}
                     today_c = by_date_map.get(today_str_val, 0) if isinstance(by_date_map, dict) else 0
 
-                    if total_c > 0:
-                        click_badge_html = f' <span class="click-count-badge" style="font-size:11px;color:#4ade80;font-weight:600;">({today_c}/{total_c})</span>'
+                    if today_c > 0:
+                        # 🌟 当天有点击：极度醒目的亮黄色/橙色发光 Badge，带火焰图标
+                        click_badge_html = f' <span class="click-count-badge" style="font-size:11px;background:#f59e0b;color:#0f172a;padding:1px 5px;border-radius:10px;font-weight:800;box-shadow:0 0 8px rgba(245,158,11,0.6);">🔥{today_c}/{total_c}</span>'
+                        tv_btn_bg = "background:rgba(245,158,11,0.22);border:1px solid rgba(245,158,11,0.5);color:#fde047;"
+                    elif total_c > 0:
+                        # 历史有点击但今日未点：清爽绿色
+                        click_badge_html = f' <span class="click-count-badge" style="font-size:11px;color:#4ade80;font-weight:600;">(0/{total_c})</span>'
+                        tv_btn_bg = "background:rgba(30,144,255,0.15);border:1px solid rgba(30,144,255,0.3);color:#38bdf8;"
                     else:
+                        # 从无点击：暗灰色
                         click_badge_html = ' <span class="click-count-badge" style="font-size:11px;color:#64748b;font-weight:500;">(0/0)</span>'
+                        tv_btn_bg = "background:rgba(30,144,255,0.15);border:1px solid rgba(30,144,255,0.3);color:#38bdf8;"
+
                     tv_url_val = _tv_link(ticker, period)
                     st.markdown(
                         f'<a href="{tv_url_val}" target="_blank" class="tv-btn" data-ticker="{ticker}" '
-                        f'style="display:block;text-align:center;padding:6px 0;background:rgba(30,144,255,0.15);'
-                        f'color:#38bdf8;border-radius:4px;text-decoration:none;font-weight:600;font-size:13px;'
-                        f'border:1px solid rgba(30,144,255,0.3);">📈 TV{click_badge_html}</a>',
+                        f'style="display:block;text-align:center;padding:6px 0;{tv_btn_bg}'
+                        f'border-radius:4px;text-decoration:none;font-weight:600;font-size:13px;">'
+                        f'📈 TV{click_badge_html}</a>',
                         unsafe_allow_html=True
                     )
 
@@ -1394,13 +1403,20 @@ def render_triple_bottom_page():
                                     if (spans && spans.length > 0) {
                                         var span = spans[spans.length - 1];
                                         var txt = span.innerText || span.textContent || "";
-                                        var m = txt.match(/\((\d+)\/(\d+)\)/);
+                                        var m = txt.match(/\((\d+)\/(\d+)\)/) || txt.match(/🔥(\d+)\/(\d+)/);
                                         if (m) {
                                             var today = parseInt(m[1], 10) + 1;
                                             var total = parseInt(m[2], 10) + 1;
-                                            span.innerText = '(' + today + '/' + total + ')';
-                                            span.style.color = '#4ade80';
-                                            span.style.fontWeight = '600';
+                                            span.innerText = '🔥' + today + '/' + total;
+                                            span.style.background = '#f59e0b';
+                                            span.style.color = '#0f172a';
+                                            span.style.padding = '1px 5px';
+                                            span.style.borderRadius = '10px';
+                                            span.style.fontWeight = '800';
+                                            span.style.boxShadow = '0 0 8px rgba(245,158,11,0.6)';
+                                            b.style.background = 'rgba(245,158,11,0.22)';
+                                            b.style.border = '1px solid rgba(245,158,11,0.5)';
+                                            b.style.color = '#fde047';
                                         }
                                     }
                                 }

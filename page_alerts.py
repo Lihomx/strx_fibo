@@ -1095,8 +1095,10 @@ def render_alert_log_table(full_page: bool = True):
                     by_date_map = click_entry.get("by_date", {}) if isinstance(click_entry, dict) else {}
                     today_c = by_date_map.get(today_str_val, 0) if isinstance(by_date_map, dict) else 0
                     
-                    if total_c > 0:
-                        clicks_html = f'<span class="click-count-badge" style="color:#4ade80;">{today_c}</span> <span style="color:#94a3b8;font-size:11px;">/ {total_c}</span>'
+                    if today_c > 0:
+                        clicks_html = f'<span class="click-count-badge" style="background:#f59e0b;color:#0f172a;padding:2px 6px;border-radius:10px;font-weight:800;font-size:11px;box-shadow:0 0 6px rgba(245,158,11,0.6);">🔥{today_c}</span> <span style="color:#94a3b8;font-size:11px;">/ {total_c}</span>'
+                    elif total_c > 0:
+                        clicks_html = f'<span class="click-count-badge" style="color:#4ade80;">0</span> <span style="color:#94a3b8;font-size:11px;">/ {total_c}</span>'
                     else:
                         clicks_html = '<span style="color:#475569;">—</span>'
                     
