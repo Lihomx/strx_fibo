@@ -665,15 +665,67 @@ def render_triple_bottom_page():
     with st.expander("☁️ Google Colab 算力扫描渠道 (全美股 / 全A股 极速扫描与结果导入)", expanded=True):
         colab_c1, colab_c2 = st.columns([1.2, 1], gap="medium")
         with colab_c1:
-            st.markdown("##### 1. 获取 Colab 脚本并在云端运行")
+            st.markdown("##### 1. 选择股票池并获取专属 Colab 脚本")
             st.caption("利用 Google Colab 免费高性能算力扫描数百上千只全市场股票，完全不受 Streamlit Cloud 内存配额限制。")
+            
+            # 从系统已有品种库与分组中提取
+            groups = storage.load_symbol_groups() or []
+            all_symbols = storage.load_symbols() or []
+            
+            pool_options = ["🇺🇸 全量美股 (系统内置)", "🇨🇳 全量A股 (系统内置)"]
+            grp_name_list = [g["name"] for g in groups if g.get("name")]
+            for gn in grp_name_list:
+                if gn not in pool_options:
+                    pool_options.append(f"📁 分组: {gn}")
+            pool_options.append("⭐ 我的自选关注列表")
+            
+            selected_pool = st.selectbox(
+                "选择需要导出的扫描股票池",
+                options=pool_options,
+                index=0,
+                key="tb_colab_selected_pool",
+                help="系统会自动将选定股票池中的所有股票代码注入到 Colab 脚本中，无需在 Colab 中重复拉取"
+            )
+            
+            # 提取对应股票代码
+            export_tickers = []
+            if "全量美股" in selected_pool:
+                # 寻找美股分组或过滤美股
+                us_grp = next((g for g in groups if "全量美股" in g.get("name", "")), None)
+                if us_grp and us_grp.get("tickers"):
+                    export_tickers = us_grp["tickers"]
+                else:
+                    export_tickers = [s["ticker"] for s in all_symbols if not s["ticker"].endswith(".SS") and not s["ticker"].endswith(".SZ") and not s["ticker"].endswith(".BJ") and not s["ticker"].isdigit()]
+            elif "全量A股" in selected_pool:
+                a_grp = next((g for g in groups if "全量A股" in g.get("name", "")), None)
+                if a_grp and a_grp.get("tickers"):
+                    export_tickers = a_grp["tickers"]
+                else:
+                    export_tickers = [s["ticker"] for s in all_symbols if s["ticker"].endswith(".SS") or s["ticker"].endswith(".SZ") or s["ticker"].endswith(".BJ") or s["ticker"].isdigit()]
+            elif "自选关注" in selected_pool:
+                wl = storage.load_watchlist() or []
+                export_tickers = [w["ticker"] for w in wl if w.get("ticker")]
+            elif selected_pool.startswith("📁 分组:"):
+                g_target_name = selected_pool.replace("📁 分组: ", "").strip()
+                target_g = next((g for g in groups if g.get("name") == g_target_name), None)
+                if target_g:
+                    export_tickers = target_g.get("tickers", [])
+                    
+            if not export_tickers:
+                # 兜底：如果为空，取所有 symbols
+                export_tickers = [s["ticker"] for s in all_symbols[:500]] if all_symbols else ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN"]
+                
+            export_tickers = list(dict.fromkeys([t.strip().upper() for t in export_tickers if t and isinstance(t, str)]))
+            
+            st.info(f"📋 当前选定股票池包含 **{len(export_tickers)}** 支品种代码，已直接内置写入以下脚本：")
+            
             import colab_scan_script
-            colab_code = colab_scan_script.get_colab_script("US")
+            colab_code = colab_scan_script.generate_colab_script_for_tickers(export_tickers, pool_name=selected_pool)
             st.code(colab_code, language="python", line_numbers=True)
             st.markdown(
                 """
                 <div style="font-size:12px;color:#94a3b8;margin-top:-6px;margin-bottom:10px;">
-                    👉 <b>操作指引：</b> 点击代码框右上角<b>复制</b> ➔ 打开 <a href="https://colab.research.google.com/" target="_blank" style="color:#38bdf8;text-decoration:underline;">Google Colab</a> 新建笔记本粘贴并运行 ➔ 运行完毕将自动下载 <code>colab_triple_bottom_results_us.csv</code>。
+                    👉 <b>操作指引：</b> 点击代码框右上角<b>复制</b> ➔ 打开 <a href="https://colab.research.google.com/" target="_blank" style="color:#38bdf8;text-decoration:underline;">Google Colab</a> 新建笔记本粘贴并运行 ➔ 运行完毕将自动下载 <code>colab_triple_bottom_results.csv</code>。
                 </div>
                 """,
                 unsafe_allow_html=True

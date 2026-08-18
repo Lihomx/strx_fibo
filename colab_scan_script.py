@@ -5,22 +5,27 @@ colab_scan_script.py — Google Colab 独立大规模三重底扫描脚本生成
 包含：
   1. yfinance 批量下载
   2. Al Brooks 三重底 7 种形态识别算法
-  3. 预设股票池 (美股 SP500+NASDAQ100 / A股核心股票) 或用户自定义
+  3. 预设股票池 (直接从系统品种库/分组中提取)
   4. 多周期扫描 (日线 1d, 4小时 4h, 周线 1w 等)
   5. 自动导出与下载 CSV 文件，与主平台格式 100% 兼容
 """
 
-def get_colab_script(default_market: str = "US") -> str:
-    """生成可在 Google Colab 一键运行的 Python 完整脚本"""
-    return r'''# ==============================================================================
+import json
+
+def generate_colab_script_for_tickers(tickers: list[str], pool_name: str = "系统品种库") -> str:
+    """生成内置指定股票池代码的 Google Colab 完整扫描脚本"""
+    tickers_json = json.dumps(tickers, ensure_ascii=False)
+    
+    script = f'''# ==============================================================================
 # 🚀 Google Colab 三重底 (Triple Bottom) 大规模扫描脚本
+# 股票池来源: {pool_name} (共 {len(tickers)} 支品种)
 # ==============================================================================
 # 使用方法：
 # 1. 打开 Google Colab (https://colab.research.google.com/)
 # 2. 新建笔记本，将本脚本完整粘贴到一个代码单元格中
-# 3. 点击运行 (Shift + Enter)，脚本将自动拉取数据扫描
+# 3. 点击运行 (Shift + Enter)，脚本将自动在云端执行极速扫描
 # 4. 扫描完成后会自动下载 `colab_triple_bottom_results.csv`
-# 5. 回到 Streamlit 应用页面，点击“上传 CSV 结果”导入即可！
+# 5. 回到 Streamlit 应用页面，拖入该 CSV 文件即可一键合并展示！
 # ==============================================================================
 
 # 1. 安装所需依赖
@@ -36,19 +41,16 @@ import numpy as np
 import yfinance as yf
 
 # ------------------------------------------------------------------------------
-# ⚙️ 扫描配置 (可根据需求修改)
+# ⚙️ 扫描配置
 # ------------------------------------------------------------------------------
-# 市场选择: "US" (美股标普500+纳指100) / "CN" (A股主要核心指数成分股) / "CUSTOM" (自定义)
-MARKET = "US"
-
-# 扫描周期: "1d"(日线), "4h"(4小时), "1w"(周线), "60m"(1小时)
-TIMEFRAMES = {
+# 扫描周期: "1d"(日线), "4h"(4小时), "1w"(周线)
+TIMEFRAMES = {{
     "1d": ("1d", "2y"),
-    "4h": ("1h", "730d"),  # yfinance拉取1h后可重采样或直接扫
+    "4h": ("1h", "730d"),
     "1w": ("1wk", "5y"),
-}
+}}
 
-# 形态识别参数 (与 Streamlit 端完全一致)
+# 形态识别参数 (与 Streamlit 系统完全对齐)
 SWING_WINDOW = 3      # 分形左右窗口大小
 LOOKBACK_BARS = 150   # 回溯 K 线根数
 MAX_SPACING = 80      # 三个低点最大间距
@@ -57,49 +59,8 @@ MIN_CONFIDENCE = 0.5  # 最小置信度阈值
 FLAT_TOL = 0.02       # 底部持平容差 (2%)
 BREAK_TOL = 0.01      # 跌破容差 (1%)
 
-# 自定义股票列表 (当 MARKET = "CUSTOM" 时生效)
-CUSTOM_TICKERS = ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "GOOGL", "META", "AMD", "PLTR", "COIN"]
-
-
-# ------------------------------------------------------------------------------
-# 📊 获取股票池列表
-# ------------------------------------------------------------------------------
-def get_stock_universe(market="US"):
-    if market == "CUSTOM":
-        return CUSTOM_TICKERS
-    
-    tickers = []
-    if market == "US":
-        print("📥 正在拉取美股标普500与纳斯达克100成分股列表...")
-        try:
-            sp500 = pd.read_html("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies")[0]
-            tickers.extend(sp500["Symbol"].str.replace(".", "-", regex=False).tolist())
-        except Exception as e:
-            print(f"⚠️ 拉取标普500失败 ({e})，使用备用大盘股列表...")
-            tickers.extend(["AAPL","MSFT","NVDA","AMZN","GOOGL","META","TSLA","BRK-B","UNH","JNJ","JPM","V","PG","XOM","AVGO","HD","CVX","MA","LLY","ABBV","MRK","COST","PEP","KO","ADBE","WMT","MCD","CSCO","CRM","BAC","ACN","TMO","NFLX","LIN","ORCL","AMD","DIS","QCOM","TXN","INTC","INTU","CAT","VZ","AMGN","IBM","PM","HON","GE","UNP","NOW","AMAT","GS","LOW","SPGI","BKNG","ISRG","LRCX","MDLZ","ADI","VRTX","REGN","MU","PANW","KLAC","SNPS","CDNS","MELI","CRWD","FTNT","SMCI","PLTR","COIN"])
-        
-        try:
-            nasdaq = pd.read_html("https://en.wikipedia.org/wiki/Nasdaq-100")[4]
-            tickers.extend(nasdaq["Ticker"].str.replace(".", "-", regex=False).tolist())
-        except Exception:
-            pass
-            
-    elif market == "CN":
-        print("📥 正在拉取 A 股核心品种列表...")
-        # 沪深300 / 行业龙头代表股票池
-        tickers = [
-            "600519.SS", "601398.SS", "601288.SS", "601939.SS", "601857.SS", "600036.SS", "601988.SS",
-            "601088.SS", "600900.SS", "601628.SS", "600028.SS", "601899.SS", "601166.SS", "600309.SS",
-            "600887.SS", "601318.SS", "600030.SS", "600000.SS", "600104.SS", "600276.SS", "601766.SS",
-            "000858.SZ", "000333.SZ", "002594.SZ", "300750.SZ", "000001.SZ", "002415.SZ", "000568.SZ",
-            "000651.SZ", "002714.SZ", "300059.SZ", "002475.SZ", "000725.SZ", "002352.SZ", "002460.SZ",
-            "300760.SZ", "002027.SZ", "002142.SZ", "300124.SZ", "002230.SZ", "002371.SZ", "300498.SZ"
-        ]
-        
-    # 去重并格式化
-    unique_tickers = list(dict.fromkeys([t.strip().upper() for t in tickers if t and isinstance(t, str)]))
-    print(f"✅ 股票池准备完成，共 {len(unique_tickers)} 只标的。")
-    return unique_tickers
+# 📊 从系统内置品种库中提取的股票池代码列表 (无需重复拉取)
+SCAN_TICKERS = {tickers_json}
 
 
 # ------------------------------------------------------------------------------
@@ -140,12 +101,12 @@ def classify_triple(low1, low2, low3, mid_high_12, mid_high_23, broke_support_23
     flat_all = d12 <= flat_tol and d23 <= flat_tol
 
     if flat_all:
-        return "完美三重底 (Perfect Triple Bottom)", 0.9, f"三低点差异 {max(d12, d23):.2%}，接近持平"
+        return "完美三重底 (Perfect Triple Bottom)", 0.9, f"三低点差异 {{max(d12, d23):.2%}}，接近持平"
 
     if low2 < low1 and low2 < low3 and d12 > flat_tol and d23 > flat_tol:
         shoulder_diff = _pct_diff(low1, low3)
         conf = 0.85 if shoulder_diff < 0.02 else 0.65
-        return "头肩底/截断楔形 (Head & Shoulders Bottom)", conf, f"中间低点更低(头部)，两肩差异 {shoulder_diff:.2%}"
+        return "头肩底/截断楔形 (Head & Shoulders Bottom)", conf, f"中间低点更低(头部)，两肩差异 {{shoulder_diff:.2%}}"
 
     if ascending and broke_support_23:
         return "抬高双底失败突破型 (Failed BO below HL DB)", 0.8, "低点逐级抬高(HL)，且第3次出现跌破支撑后被拉回"
@@ -157,7 +118,7 @@ def classify_triple(low1, low2, low3, mid_high_12, mid_high_23, broke_support_23
             return "双底跌破失败型 (Failed BO below DB)", 0.75, "价格短暂跌破前低支撑但迅速拉回"
 
     if descending and not flat_all:
-        return "楔形三重底 (Wedge)", 0.7, f"低点依次降低 low1>{low1:.4f} > low2>{low2:.4f} > low3>{low3:.4f}"
+        return "楔形三重底 (Wedge)", 0.7, f"低点依次降低 low1>{{low1:.4f}} > low2>{{low2:.4f}} > low3>{{low3:.4f}}"
 
     if ascending and mid_high_12 > mid_high_23:
         return "三角形三重底 (Triangle)", 0.65, "低点抬高，同时中间高点走低，形成收敛三角形"
@@ -216,7 +177,7 @@ def scan_triple_bottoms(df, symbol="", swing_window=3, lookback_bars=150, max_sp
                 bars_since_low3 = len(df_sw) - 1 - global_pos3
                 latest_close = float(df_sw.iloc[-1]["close"])
 
-                results.append({
+                results.append({{
                     "symbol": symbol,
                     "pattern": pattern_name,
                     "confidence": round(float(confidence), 4),
@@ -232,19 +193,19 @@ def scan_triple_bottoms(df, symbol="", swing_window=3, lookback_bars=150, max_sp
                     "status_reason": "",
                     "bars_since_low3": int(bars_since_low3),
                     "latest_close": round(latest_close, 4),
-                })
+                }})
     return results
 
 
 # ------------------------------------------------------------------------------
-# 🚀 批量多周期并发扫描主程序
+# 🚀 批量多周期扫描主程序
 # ------------------------------------------------------------------------------
 def run_scanner():
-    tickers = get_stock_universe(MARKET)
+    tickers = SCAN_TICKERS
     all_results = []
     
     total_tickers = len(tickers)
-    print(f"\n🚀 开始执行扫描任务 (共 {total_tickers} 只股票, 周期: {list(TIMEFRAMES.keys())})...\n")
+    print(f"\\n🚀 开始执行扫描任务 (共 {{total_tickers}} 只股票, 周期: {{list(TIMEFRAMES.keys())}})...\\n")
     
     start_time = time.time()
     for idx, ticker in enumerate(tickers, 1):
@@ -252,7 +213,7 @@ def run_scanner():
             elapsed = time.time() - start_time
             rate = idx / elapsed if elapsed > 0 else 1
             rem = (total_tickers - idx) / rate
-            print(f"[{idx}/{total_tickers}] 正在扫描: {ticker} (已发现 {len(all_results)} 个形态, 预计剩余 {int(rem//60)}分{int(rem%60)}秒)")
+            print(f"[{{idx}}/{{total_tickers}}] 正在扫描: {{ticker}} (已发现 {{len(all_results)}} 个形态, 预计剩余 {{int(rem//60)}}分{{int(rem%60)}}秒)")
             
         for period_key, (yf_interval, yf_period) in TIMEFRAMES.items():
             try:
@@ -288,11 +249,10 @@ def run_scanner():
                 pass
                 
     # 汇总并输出
-    print(f"\n🎉 扫描完成！共耗时 {int((time.time()-start_time)//60)} 分钟，匹配到 {len(all_results)} 条三重底形态！")
+    print(f"\\n🎉 扫描完成！共耗时 {{int((time.time()-start_time)//60)}} 分钟，匹配到 {{len(all_results)}} 条三重底形态！")
     
     if all_results:
         out_df = pd.DataFrame(all_results)
-        # 字段顺序统一
         cols = [
             "symbol", "period", "pattern", "confidence", "idx1", "idx2", "idx3",
             "low1", "low2", "low3", "mid_high", "note", "status", "status_reason",
@@ -300,9 +260,9 @@ def run_scanner():
         ]
         out_df = out_df[[c for c in cols if c in out_df.columns]]
         
-        csv_filename = f"colab_triple_bottom_results_{MARKET.lower()}.csv"
+        csv_filename = "colab_triple_bottom_results.csv"
         out_df.to_csv(csv_filename, index=False, encoding="utf-8-sig")
-        print(f"💾 结果已保存至: {csv_filename}")
+        print(f"💾 结果已保存至: {{csv_filename}}")
         
         # 尝试自动触发浏览器下载
         try:
@@ -310,11 +270,12 @@ def run_scanner():
             print("⬇️ 正在触发自动下载到本地...")
             files.download(csv_filename)
         except Exception:
-            print(f"💡 可在 Colab 左侧文件树中右键下载 `{csv_filename}`")
+            print(f"💡 可在 Colab 左侧文件树中右键下载 `{{csv_filename}}`")
     else:
         print("⚠️ 未发现符合条件的三重底形态。")
 
-# 执行主函数
+# 执行主程序
 if __name__ == "__main__":
     run_scanner()
 '''
+    return script
