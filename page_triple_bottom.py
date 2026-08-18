@@ -1012,40 +1012,8 @@ def render_triple_bottom_page():
                     else:
                         click_badge_html = ' <span style="font-size:11px;color:#64748b;font-weight:500;">(0/0)</span>'
                     tv_url_val = _tv_link(ticker, period)
-                    # 🚀 内联直连上报：多通道(fetch+sendBeacon+iframe)保障上报，同时更新当前卡片及全局同ticker徽章
-                    onclick_js = (
-                        f"(function(el){{"
-                        f"var tk='{ticker}'.trim().toUpperCase();"
-                        f"var origin=(window.location.origin||(window.location.protocol+'//'+window.location.host));"
-                        f"var cbUrl=origin+'/?_tv_click='+encodeURIComponent(tk)+'&_cb='+Date.now()+'_'+Math.floor(Math.random()*10000);"
-                        f"try{{if(navigator.sendBeacon){{navigator.sendBeacon(cbUrl);}}}}catch(e){{}}"
-                        f"try{{fetch(cbUrl,{{mode:'no-cors',cache:'no-store'}});}}catch(e){{}}"
-                        f"try{{"
-                        f"var pDoc=(window.parent&&window.parent.document)?window.parent.document:document;"
-                        f"var f=pDoc.createElement('iframe');f.style.display='none';f.src=cbUrl;pDoc.body.appendChild(f);"
-                        f"setTimeout(function(){{try{{f.remove();}}catch(err){{}}}},6000);"
-                        f"}}catch(e){{}}"
-                        f"try{{"
-                        f"var pDoc=(window.parent&&window.parent.document)?window.parent.document:document;"
-                        f"var allBtns=pDoc.querySelectorAll('.tv-btn, .sina-btn');"
-                        f"for(var i=0;i<allBtns.length;i++){{"
-                        f"var b=allBtns[i];"
-                        f"var bTk=b.getAttribute('data-ticker');"
-                        f"if(bTk&&bTk.trim().toUpperCase()===tk){{"
-                        f"var spans=b.getElementsByTagName('span');"
-                        f"if(spans&&spans.length>0){{"
-                        f"var sp=spans[spans.length-1];"
-                        f"var txt=sp.innerText||sp.textContent||'';"
-                        f"var m=txt.match(/\\((\\d+)\\/(\\d+)\\)/);"
-                        f"if(m){{var td=parseInt(m[1],10)+1;var tt=parseInt(m[2],10)+1;sp.innerText='('+td+'/'+tt+')';sp.style.color='#4ade80';sp.style.fontWeight='600';}}"
-                        f"}}"
-                        f"}}"
-                        f"}}"
-                        f"}}catch(e){{}}"
-                        f"}})(this);"
-                    )
                     st.markdown(
-                        f'<a href="{tv_url_val}" target="_blank" class="tv-btn" data-ticker="{ticker}" onclick="{onclick_js}" '
+                        f'<a href="{tv_url_val}" target="_blank" class="tv-btn" data-ticker="{ticker}" '
                         f'style="display:block;text-align:center;padding:6px 0;background:rgba(30,144,255,0.15);'
                         f'color:#38bdf8;border-radius:4px;text-decoration:none;font-weight:600;font-size:13px;'
                         f'border:1px solid rgba(30,144,255,0.3);">📈 TV{click_badge_html}</a>',
@@ -1283,8 +1251,5 @@ def render_triple_bottom_page():
     })();
     </script>
     """
-    if hasattr(st, "html"):
-        st.html(_js_code)
-    else:
-        import streamlit.components.v1 as _components
-        _components.html(_js_code, height=0)
+    import streamlit.components.v1 as _components
+    _components.html(_js_code, height=0)
