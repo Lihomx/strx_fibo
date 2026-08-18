@@ -53,11 +53,17 @@ def generate_colab_script_for_tickers(tickers: list[str], pool_name: str = "系�
 import os
 import time
 import json
+import warnings
+import logging
 from datetime import datetime
 from dataclasses import dataclass
 import pandas as pd
 import numpy as np
 import yfinance as yf
+
+# 🤫 静音 yfinance 的无用黄色警告和红色退市报错，保持终端清爽
+warnings.filterwarnings('ignore')
+logging.getLogger('yfinance').setLevel(logging.CRITICAL)
 
 # ------------------------------------------------------------------------------
 # ⚙️ 扫描配置
@@ -254,7 +260,7 @@ def _scan_single_ticker(ticker):
     results = []
     try:
         # ⚡ 核心优化：只发起 1 次日线全量下载 (10y)，日线/周线/月线全部在本地内存瞬间计算完成
-        df_daily = yf.download(ticker, period="10y", interval="1d", progress=False, timeout=10)
+        df_daily = yf.download(ticker, period="10y", interval="1d", auto_adjust=False, progress=False, timeout=10)
         if df_daily is None or df_daily.empty:
             return []
             
@@ -349,7 +355,7 @@ def run_scanner():
             except Exception:
                 pass
                 
-            if completed % 100 == 0 or completed == total_tickers:
+            if completed % 50 == 0 or completed == total_tickers:
                 elapsed = time.time() - start_time
                 rate = completed / elapsed if elapsed > 0 else 1
                 rem = (total_tickers - completed) / rate
