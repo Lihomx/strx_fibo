@@ -210,6 +210,9 @@ if (!document.querySelector('meta[name="theme-color"]')) {
     var _obsBody = new MutationObserver(function() { _clearSaved(); });
     try {
         _obsBody.observe(_mainDoc().body, { childList: true, subtree: false });
+    } catch(e) {}
+})();
+
 // ── 全局行情链接点击计数监听器 (保障所有页面、任何方式打开 TV 均能落盘并即时响应) ──
 (function() {
     try {
