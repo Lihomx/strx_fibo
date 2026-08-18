@@ -1251,5 +1251,8 @@ def render_triple_bottom_page():
     })();
     </script>
     """
-    import streamlit.components.v1 as _components
-    _components.html(_js_code, height=0)
+    if hasattr(st, "html"):
+        st.html(_js_code)
+    else:
+        import streamlit.components.v1 as _components
+        _components.html(_js_code, height=0)
