@@ -1014,14 +1014,20 @@ def render_triple_bottom_page():
                     tv_url_val = _tv_link(ticker, period)
                     # 🚀 内联直连上报：点击时直接通过 JS 递增数字并静音推送后台，绝不受任何事件委托失效影响
                     onclick_js = (
-                        f"var f=window.top.document.createElement('iframe');"
-                        f"f.style.display='none';"
-                        f"f.src='/?_tv_click={ticker}&_cb='+Date.now();"
-                        f"window.top.document.body.appendChild(f);"
-                        f"setTimeout(function(){{try{{f.remove();}}catch(e){{}}}},6000);"
-                        f"var sp=this.querySelector('span');"
-                        f"if(sp){{var m=(sp.innerText||'').match(/\\((\\d+)\\/(\\d+)\\)/);"
-                        f"if(m){{sp.innerText='('+(parseInt(m[1])+1)+'/'+(parseInt(m[2])+1)+')';sp.style.color='#4ade80';sp.style.fontWeight='700';}}}}"
+                        f"(function(el){{"
+                        f"var tk='{ticker}';"
+                        f"var cbUrl='/?_tv_click='+encodeURIComponent(tk)+'&_cb='+Date.now();"
+                        f"try{{if(navigator.sendBeacon){{navigator.sendBeacon(cbUrl);}}else{{fetch(cbUrl,{{mode:'no-cors',cache:'no-store'}});}}}}catch(e){{}}"
+                        f"try{{"
+                        f"var spans=el.getElementsByTagName('span');"
+                        f"if(spans&&spans.length>0){{"
+                        f"var sp=spans[spans.length-1];"
+                        f"var txt=sp.innerText||sp.textContent||'';"
+                        f"var m=txt.match(/\\((\\d+)\\/(\\d+)\\)/);"
+                        f"if(m){{var td=parseInt(m[1])+1;var tt=parseInt(m[2])+1;sp.innerText='('+td+'/'+tt+')';sp.style.color='#4ade80';sp.style.fontWeight='bold';}}"
+                        f"}}"
+                        f"}}catch(e){{}}"
+                        f"}})(this);"
                     )
                     st.markdown(
                         f'<a href="{tv_url_val}" target="_blank" class="tv-btn" data-ticker="{ticker}" onclick="{onclick_js}" '
