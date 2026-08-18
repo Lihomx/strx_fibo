@@ -782,19 +782,22 @@ def render_triple_bottom_page():
                             
                         st.markdown(f"📊 **检测到有效形态记录**: `{len(valid_items)}` 条")
                         if st.button("📥 确认增量导入并合并", key="tb_colab_confirm_import_btn", type="primary", use_container_width=True):
-                            ok = storage.append_triple_bottom_results(valid_items, with_backup=True)
-                            if ok:
-                                try:
-                                    import cloud_sync
-                                    if cloud_sync.is_configured():
-                                        cloud_sync.push_triple_bottom()
-                                except Exception:
-                                    pass
-                                st.toast(f"✅ 成功导入 {len(valid_items)} 条来自 Google Colab 的扫描结果！", icon="🎉")
-                                time.sleep(1.0)
-                                st.rerun()
-                            else:
-                                st.error("❌ 写入存储失败，请重试。")
+                            try:
+                                ok = storage.append_triple_bottom_results(valid_items, with_backup=True)
+                                if ok:
+                                    try:
+                                        import cloud_sync
+                                        if cloud_sync.is_configured():
+                                            cloud_sync.push_triple_bottom()
+                                    except Exception:
+                                        pass
+                                    st.toast(f"✅ 成功导入 {len(valid_items)} 条来自 Google Colab 的扫描结果！", icon="🎉")
+                                    time.sleep(1.0)
+                                    st.rerun()
+                                else:
+                                    st.error("❌ 写入存储失败: storage.save_triple_bottom 返回 False。")
+                            except Exception as save_err:
+                                st.error(f"❌ 写入存储异常: {save_err}")
                 except Exception as ex:
                     st.error(f"❌ 解析 CSV 文件失败: {ex}")
 

@@ -1677,9 +1677,8 @@ def import_hotlist_json(json_str: str, merge: bool = True):
         return ok, f"替换完成：导入 {len(imported_items)} 个品种"
 
 
-# ── 三重底扫描数据 ──────────────────────────────────────────────────
 def load_triple_bottom() -> List[Dict]:
-    """返回三重底扫描结果，自动去重并限制极端最大条数，保证极速读取"""
+    """返回三重底扫描结果，自动去重并限制最大条数，保证极速读取"""
     res = _load(F_TRIPLE_BOTTOM, [])
     if not isinstance(res, list):
         return []
@@ -1692,11 +1691,15 @@ def load_triple_bottom() -> List[Dict]:
             seen[k] = r
     deduped = list(seen.values())
     deduped.sort(key=lambda x: float(x.get("confidence", 0.0)), reverse=True)
-    return deduped[:3000]
+    return deduped[:5000]
 
 
 def save_triple_bottom(items: List[Dict], with_backup: bool = True) -> bool:
     """保存三重底扫描结果"""
+    # 限制最大保存条数，按置信度排序保留头部高质量形态，防止 JSON 文件过大卡死
+    if isinstance(items, list) and len(items) > 5000:
+        items = sorted(items, key=lambda x: float(x.get("confidence", 0.0)), reverse=True)[:5000]
+        
     if with_backup:
         ok = _save_with_backup(F_TRIPLE_BOTTOM, items)
     else:
@@ -1708,19 +1711,25 @@ def save_triple_bottom(items: List[Dict], with_backup: bool = True) -> bool:
                 _async_push(cloud_sync.push_triple_bottom)
         except Exception:
             pass
+    return ok
+
+
 def append_triple_bottom_results(new_items: List[Dict], with_backup: bool = True) -> bool:
-    """增量合并三重底扫描结果：按 (symbol, period) 去重合并，保留最新的结果"""
+    """增量合并三重底扫描结果：按 (symbol, period, pattern) 去重合并，保留最高置信度结果"""
     if not new_items:
         return True
     current = load_triple_bottom()
     item_map = {}
     for it in current:
-        k = (str(it.get("symbol", "")).upper(), str(it.get("period", "")).lower())
+        k = (str(it.get("symbol", "")).upper(), str(it.get("period", "")).lower(), str(it.get("pattern", "")))
         item_map[k] = it
     for it in new_items:
-        k = (str(it.get("symbol", "")).upper(), str(it.get("period", "")).lower())
-        item_map[k] = it
+        k = (str(it.get("symbol", "")).upper(), str(it.get("period", "")).lower(), str(it.get("pattern", "")))
+        if k not in item_map or float(it.get("confidence", 0.0)) >= float(item_map[k].get("confidence", 0.0)):
+            item_map[k] = it
+            
     merged = list(item_map.values())
+    merged.sort(key=lambda x: float(x.get("confidence", 0.0)), reverse=True)
     return save_triple_bottom(merged, with_backup=with_backup)
 
 def clear_triple_bottom_results() -> bool:
