@@ -1007,18 +1007,22 @@ def render_triple_bottom_page():
                     by_date_map = click_entry.get("by_date", {}) if isinstance(click_entry, dict) else {}
                     today_c = by_date_map.get(today_str_val, 0) if isinstance(by_date_map, dict) else 0
 
-                    if total_c > 0:
-                        click_badge_html = f' <span style="font-size:11px;color:#4ade80;font-weight:600;">({today_c}/{total_c})</span>'
-                    else:
-                        click_badge_html = ' <span style="font-size:11px;color:#64748b;font-weight:500;">(0/0)</span>'
+                    # ── 用原生 st.button + Python 直接落盘，绝不依赖 JS 事件捕获 ──
+                    # 按钮标签显示计数
+                    tv_btn_label = f"📈 TV ({today_c}/{total_c})"
                     tv_url_val = _tv_link(ticker, period)
-                    st.markdown(
-                        f'<a href="{tv_url_val}" target="_blank" class="tv-btn" data-ticker="{ticker}" '
-                        f'style="display:block;text-align:center;padding:6px 0;background:rgba(30,144,255,0.15);'
-                        f'color:#38bdf8;border-radius:4px;text-decoration:none;font-weight:600;font-size:13px;'
-                        f'border:1px solid rgba(30,144,255,0.3);">📈 TV{click_badge_html}</a>',
-                        unsafe_allow_html=True
-                    )
+                    tv_btn_key = f"tb_tv_btn_{item_idx}"
+                    if st.button(tv_btn_label, key=tv_btn_key, use_container_width=True):
+                        # 1. 直接在 Python 里落盘计数（100% 可靠）
+                        try:
+                            storage.increment_link_click(ticker, "tv")
+                        except Exception:
+                            pass
+                        # 2. 用 components.html 打开新标签页（不触发页面跳转）
+                        import streamlit.components.v1 as _c
+                        _c.html(f'<script>window.open({repr(tv_url_val)}, "_blank");</script>', height=0)
+                        # 3. 立即 rerun 让计数数字刷新
+                        st.rerun()
 
 
                 with btn_col3:
