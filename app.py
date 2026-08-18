@@ -143,83 +143,63 @@ div[data-testid="stSidebar"] .stButton>button:hover{background:var(--secondary-b
 </style>
 """, unsafe_allow_html=True)
 
-# ── 移动端 viewport meta 与 PWA manifest 注入 ───────────────────────
-st.markdown("""<script>
-if (!document.querySelector('meta[name="viewport"]')) {
-    var m = document.createElement('meta');
-    m.name = 'viewport';
-    m.content = 'width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes';
-    document.head.appendChild(m);
-}
-if (!document.querySelector('link[rel="manifest"]')) {
-    var l = document.createElement('link');
-    l.rel = 'manifest';
-    l.href = '/manifest.json';
-    document.head.appendChild(l);
-}
-if (!document.querySelector('meta[name="apple-mobile-web-app-capable"]')) {
-    var cap = document.createElement('meta');
-    cap.name = 'apple-mobile-web-app-capable';
-    cap.content = 'yes';
-    document.head.appendChild(cap);
-}
-if (!document.querySelector('meta[name="theme-color"]')) {
-    var tc = document.createElement('meta');
-    tc.name = 'theme-color';
-    tc.content = '#e85d04';
-    document.head.appendChild(tc);
-}
-
-// ── 禁止 Streamlit rerun 后自动滚动到触发按钮位置 ──────────────
+# ── 移动端 viewport meta / PWA / 点击与滚动监听器 ───────────────────────
+import streamlit.components.v1 as _st_components
+_st_components.html("""<script>
 (function() {
-    var _lastY = 0;
-    // 每次页面变化前记录滚动位置
     var _mainDoc = function() {
         try { return window.parent.document; } catch(e) { return document; }
     };
-    var _getMain = function() {
-        var d = _mainDoc();
-        return d.querySelector('.main') || d.querySelector('[data-testid="stAppViewContainer"]') || d.scrollingElement || d.documentElement;
-    };
-    // MutationObserver 监听 Streamlit 的 rerun 动作（DOM 更新）
-    // rerun 开始时保存 Y，rerun 结束后恢复 Y
-    var _saved = null;
-    var _obs = new MutationObserver(function(mutations) {
-        var el = _getMain();
-        if (_saved !== null) {
-            el.scrollTop = _saved;
-        }
-    });
-    // 监听按钮点击：点击前保存滚动位置
-    _mainDoc().addEventListener('click', function(e) {
-        if (e.target && (e.target.tagName === 'BUTTON' || e.target.closest('button'))) {
-            _saved = _getMain().scrollTop;
-        }
-    }, true);
-    // 500ms 后清除保存的位置（rerun应已完成）
-    var _clearSaved = function() {
-        setTimeout(function() { _saved = null; }, 500);
-    };
-    // 监听 Streamlit 的 stale/fresh 状态切换
-    var _appEl = _mainDoc().querySelector('[data-testid="stApp"]');
-    if (_appEl) {
-        _obs.observe(_appEl, { attributes: true, attributeFilter: ['data-st-state'] });
-        _appEl.addEventListener('DOMAttrModified', _clearSaved);
-    }
-    // 兜底：监听全局 DOM 子树变化，rerun 完成后 500ms 清除
-    var _obsBody = new MutationObserver(function() { _clearSaved(); });
-    try {
-        _obsBody.observe(_mainDoc().body, { childList: true, subtree: false });
-    } catch(e) {}
-})();
+    var pDoc = _mainDoc();
 
-// ── 全局行情链接点击计数监听器 (保障所有页面、任何方式打开 TV 均能落盘并即时响应) ──
-(function() {
+    // 1. 注入 Viewport / Meta
     try {
-        var _mainDoc = function() {
-            try { return window.parent.document; } catch(e) { return document; }
+        if (!pDoc.querySelector('meta[name="viewport"]')) {
+            var m = pDoc.createElement('meta');
+            m.name = 'viewport';
+            m.content = 'width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes';
+            pDoc.head.appendChild(m);
+        }
+        if (!pDoc.querySelector('link[rel="manifest"]')) {
+            var l = pDoc.createElement('link');
+            l.rel = 'manifest';
+            l.href = '/manifest.json';
+            pDoc.head.appendChild(l);
+        }
+        if (!pDoc.querySelector('meta[name="theme-color"]')) {
+            var tc = pDoc.createElement('meta');
+            tc.name = 'theme-color';
+            tc.content = '#e85d04';
+            pDoc.head.appendChild(tc);
+        }
+    } catch(e) {}
+
+    // 2. 禁止 Streamlit rerun 后自动跳滚
+    try {
+        var _saved = null;
+        var _getMain = function() {
+            return pDoc.querySelector('.main') || pDoc.querySelector('[data-testid="stAppViewContainer"]') || pDoc.scrollingElement || pDoc.documentElement;
         };
-        var pDoc = _mainDoc();
+        var _obs = new MutationObserver(function(mutations) {
+            var el = _getMain();
+            if (_saved !== null && el) { el.scrollTop = _saved; }
+        });
+        pDoc.addEventListener('click', function(e) {
+            if (e.target && (e.target.tagName === 'BUTTON' || e.target.closest('button'))) {
+                var el = _getMain();
+                if (el) { _saved = el.scrollTop; }
+            }
+        }, true);
+        var _clearSaved = function() { setTimeout(function() { _saved = null; }, 500); };
+        var _appEl = pDoc.querySelector('[data-testid="stApp"]');
+        if (_appEl) {
+            _obs.observe(_appEl, { attributes: true, attributeFilter: ['data-st-state'] });
+            _appEl.addEventListener('DOMAttrModified', _clearSaved);
+        }
+    } catch(e) {}
+
+    // 3. 全局行情链接点击计数监听器 (捕获所有页面中的 .tv-btn, .sina-btn 点击)
+    try {
         if (pDoc._global_tv_click_handler) {
             pDoc.removeEventListener('click', pDoc._global_tv_click_handler, true);
         }
@@ -229,26 +209,20 @@ if (!document.querySelector('meta[name="theme-color"]')) {
                 var tk = btn.getAttribute('data-ticker');
                 if (tk) {
                     tk = tk.trim().toUpperCase();
-                    var cbUrl = '/?_tv_click=' + encodeURIComponent(tk) + '&_cb=' + Date.now() + '_' + Math.floor(Math.random()*10000);
+                    var origin = window.location.origin || (window.location.protocol + '//' + window.location.host);
+                    var cbUrl = origin + '/?_tv_click=' + encodeURIComponent(tk) + '&_cb=' + Date.now() + '_' + Math.floor(Math.random()*10000);
 
-                    // 1. fetch 强制 no-store 穿透所有浏览器/CDN 缓存
                     try { fetch(cbUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
-
-                    // 2. sendBeacon 后台保障发送
                     try { if (navigator.sendBeacon) { navigator.sendBeacon(cbUrl); } } catch(err) {}
-
-                    // 3. IFrame 静音发送
                     try {
                         var f = pDoc.createElement('iframe');
                         f.style.display = 'none';
                         f.src = cbUrl;
                         pDoc.body.appendChild(f);
-                        setTimeout(function() {
-                            try { f.remove(); } catch(err) {}
-                        }, 6000);
+                        setTimeout(function() { try { f.remove(); } catch(err) {} }, 6000);
                     } catch(err) {}
 
-                    // 4. 前台 DOM 瞬间更新该 ticker 所有对应按钮数值 (秒级反馈)
+                    // 前台 DOM 瞬间更新该 ticker 的所有徽章
                     try {
                         var allBtns = pDoc.querySelectorAll('.tv-btn, .sina-btn');
                         for (var i = 0; i < allBtns.length; i++) {
@@ -260,7 +234,6 @@ if (!document.querySelector('meta[name="theme-color"]')) {
                                     var span = spans[spans.length - 1];
                                     var txt = span.innerText || span.textContent || "";
                                     var m = txt.match(/\\((\\d+)\\/(\\d+)\\)/);
-
                                     if (m) {
                                         var today = parseInt(m[1], 10) + 1;
                                         var total = parseInt(m[2], 10) + 1;
@@ -278,7 +251,7 @@ if (!document.querySelector('meta[name="theme-color"]')) {
         pDoc.addEventListener('click', pDoc._global_tv_click_handler, true);
     } catch(e) {}
 })();
-</script>""", unsafe_allow_html=True)
+</script>""", height=0)
 
 # ── 导入页面模块（直接 import，无子文件夹）──────────────────────────
 import storage
