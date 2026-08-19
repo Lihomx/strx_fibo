@@ -954,7 +954,22 @@ def pull_all() -> Dict[str, Any]:
         results["scan_groups"] = (False, "无云端数据")
 
     cloud_alerts = _download_latest("alerts")
-    if isinstance(cloud_alerts, list):
+    if not isinstance(cloud_alerts, list) or len(cloud_alerts) == 0:
+        # 降级尝试从 backups/ 历史快照拉取最新的 alerts 快照
+        try:
+            snaps = list_backup_snapshots()
+            alert_snaps = [s for s in snaps if s.get("file_key") == "alerts"]
+            if alert_snaps:
+                latest_snap_path = alert_snaps[0].get("path")
+                snap_data = _download_path(latest_snap_path)
+                if isinstance(snap_data, list) and len(snap_data) > 0:
+                    cloud_alerts = snap_data
+                    # 同时将快照内容回写至 latest/alerts.json 修复云端最新主指针
+                    _upload_latest("alerts", cloud_alerts)
+        except Exception as e:
+            logger.debug(f"alerts snapshot fallback failed: {e}")
+
+    if isinstance(cloud_alerts, list) and len(cloud_alerts) > 0:
         local_alerts = loc._load(loc.F_ALERTS, []) or []
         seen = set()
         for a in local_alerts:
@@ -971,7 +986,7 @@ def pull_all() -> Dict[str, Any]:
                     seen.add(k)
                     added += 1
         
-        if added or not os.path.exists(loc.F_ALERTS):
+        if added or not os.path.exists(loc.F_ALERTS) or len(local_alerts) == 0:
             def parse_time(x):
                 try:
                     return x.get("time", "")
@@ -981,7 +996,7 @@ def pull_all() -> Dict[str, Any]:
             if len(local_alerts) > loc._MAX_ALERTS:
                 local_alerts = local_alerts[-loc._MAX_ALERTS:]
             loc._save(loc.F_ALERTS, local_alerts)
-        results["alerts"] = (True, f"补充 {added} 条，共 {len(local_alerts)} 条")
+        results["alerts"] = (True, f"恢复/补充 {added} 条，共 {len(local_alerts)} 条")
     else:
         results["alerts"] = (False, "无云端数据")
 
