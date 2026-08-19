@@ -1109,25 +1109,40 @@ def render_triple_bottom_page():
     total_items = len(filtered)
     total_pages = max(1, (total_items + page_size - 1) // page_size)
 
-    # 页码状态管理
-    if "tb_current_page" not in st.session_state:
-        st.session_state.tb_current_page = 1
-    if st.session_state.tb_current_page > total_pages:
-        st.session_state.tb_current_page = total_pages
-    if st.session_state.tb_current_page < 1:
-        st.session_state.tb_current_page = 1
+    # 页码状态管理 (优先从 URL 参数 _p 或 p 中读取，实现修改 URL 参数直接切换页面)
+    url_p_raw = st.query_params.get("_p", "") or st.query_params.get("p", "")
+    target_page = 1
+    if url_p_raw:
+        try:
+            target_page = int(str(url_p_raw).strip())
+        except Exception:
+            target_page = 1
+    elif "tb_current_page" in st.session_state:
+        target_page = st.session_state.tb_current_page
 
-    current_page = st.session_state.tb_current_page
+    target_page = max(1, min(total_pages, target_page))
+    st.session_state.tb_current_page = target_page
+    current_page = target_page
+    
+    # 保证 URL 中的 _p 参数与当前页码始终双向同步
+    if st.query_params.get("_p") != str(current_page):
+        try:
+            st.query_params["_p"] = str(current_page)
+        except Exception:
+            pass
 
     # 分页导航条（顶部）
     col_p1, col_p2, col_p3, col_p4, col_p5 = st.columns([1, 1.2, 3, 1.2, 1])
     with col_p1:
         if st.button("⏮ 首页", disabled=(current_page == 1), key="tb_first_page_top", use_container_width=True):
             st.session_state.tb_current_page = 1
+            st.query_params["_p"] = "1"
             st.rerun()
     with col_p2:
         if st.button("◀ 上一页", disabled=(current_page == 1), key="tb_prev_page_top", use_container_width=True):
-            st.session_state.tb_current_page = max(1, current_page - 1)
+            new_p = max(1, current_page - 1)
+            st.session_state.tb_current_page = new_p
+            st.query_params["_p"] = str(new_p)
             st.rerun()
     with col_p3:
         st.markdown(
@@ -1139,11 +1154,14 @@ def render_triple_bottom_page():
         )
     with col_p4:
         if st.button("下一页 ▶", disabled=(current_page == total_pages), key="tb_next_page_top", use_container_width=True):
-            st.session_state.tb_current_page = min(total_pages, current_page + 1)
+            new_p = min(total_pages, current_page + 1)
+            st.session_state.tb_current_page = new_p
+            st.query_params["_p"] = str(new_p)
             st.rerun()
     with col_p5:
         if st.button("末页 ⏭", disabled=(current_page == total_pages), key="tb_last_page_top", use_container_width=True):
             st.session_state.tb_current_page = total_pages
+            st.query_params["_p"] = str(total_pages)
             st.rerun()
 
     # 切片当前页数据
@@ -1378,10 +1396,13 @@ def render_triple_bottom_page():
         with col_pb1:
             if st.button("⏮ 首页", disabled=(current_page == 1), key="tb_first_page_bot", use_container_width=True):
                 st.session_state.tb_current_page = 1
+                st.query_params["_p"] = "1"
                 st.rerun()
         with col_pb2:
             if st.button("◀ 上一页", disabled=(current_page == 1), key="tb_prev_page_bot", use_container_width=True):
-                st.session_state.tb_current_page = max(1, current_page - 1)
+                new_p = max(1, current_page - 1)
+                st.session_state.tb_current_page = new_p
+                st.query_params["_p"] = str(new_p)
                 st.rerun()
         with col_pb3:
             st.markdown(
@@ -1393,11 +1414,14 @@ def render_triple_bottom_page():
             )
         with col_pb4:
             if st.button("下一页 ▶", disabled=(current_page == total_pages), key="tb_next_page_bot", use_container_width=True):
-                st.session_state.tb_current_page = min(total_pages, current_page + 1)
+                new_p = min(total_pages, current_page + 1)
+                st.session_state.tb_current_page = new_p
+                st.query_params["_p"] = str(new_p)
                 st.rerun()
         with col_pb5:
             if st.button("末页 ⏭", disabled=(current_page == total_pages), key="tb_last_page_bot", use_container_width=True):
                 st.session_state.tb_current_page = total_pages
+                st.query_params["_p"] = str(total_pages)
                 st.rerun()
 
     # 💡 隐形事件监听组件：捕捉原链接点击，能在后台落盘计数，同时在前台秒级实时更新 (今日/总) 数字
