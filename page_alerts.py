@@ -454,6 +454,25 @@ def render():
         else:
             st.markdown(js_notify_ui, unsafe_allow_html=True)
         
+        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+        col_t1, col_t2 = st.columns([1, 1])
+        with col_t1:
+            if st.button("📢 模拟生成新告警（广播测试所有浏览器）", use_container_width=True, help="向系统写入一条新的测试告警日志，所有已打开网页的浏览器将在心跳周期内自动弹出通知"):
+                storage.log_alert(
+                    ticker_or_entry="TEST.DEMO",
+                    name="全端测试品种",
+                    timeframe="1d",
+                    channel="browser",
+                    status="ok",
+                    message="这是一条广播测试告警，验证多浏览器桌面通知是否正常触发",
+                    scanner="fibo",
+                    label="多头黄金区"
+                )
+                st.toast("📢 已成功广播一条测试告警！所有开着网页的浏览器将在数秒内弹出桌面通知。", icon="🚀")
+                st.rerun()
+        with col_t2:
+            pass
+
         # 后台依然保存静音/非静音设置
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
         with st.form("browser_sound_config_form"):
