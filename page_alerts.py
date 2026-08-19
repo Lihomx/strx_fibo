@@ -418,15 +418,17 @@ def render():
         """, unsafe_allow_html=True)
         
         # 使用自定义的 HTML 组件在前端处理权限申请与测试，彻底规避现代浏览器安全限制
-        js_notify_ui = f"""
+        js_notify_ui = """
         <div style="background-color: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; font-family: sans-serif; color: #f3f4f6;">
             <div style="margin-bottom: 20px;">
                 <h5 style="margin: 0 0 10px 0; font-size: 14px; color: #38bdf8;">🔑 第一步：授权浏览器通知</h5>
                 <p style="margin: 0 0 10px 0; font-size: 12px; color: #94a3b8;">点击下方按钮以唤醒浏览器的通知权限申请弹窗（若已授权，会显示当前状态为已允许）：</p>
-                <button id="btn-request" onclick="requestNotificationPermission()" style="background-color: #0284c7; color: white; border: none; padding: 8px 16px; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s;">
-                    🔔 申请授权浏览器通知
-                </button>
-                <span id="permission-status" style="margin-left: 15px; font-size: 13px; font-weight: bold; color: #f59e0b;">检查中...</span>
+                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <button id="btn-request" onclick="requestNotificationPermission()" style="background-color: #0284c7; color: white; border: none; padding: 8px 16px; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s;">
+                        🔔 申请授权浏览器通知
+                    </button>
+                    <span id="permission-status" style="font-size: 13px; font-weight: bold; color: #f59e0b;">检查中...</span>
+                </div>
             </div>
             
             <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.05); margin: 20px 0;" />
@@ -451,46 +453,106 @@ def render():
         </div>
 
         <script>
-            function updatePermissionUI() {{
-                const statusSpan = document.getElementById("permission-status");
-                if (!("Notification" in window)) {{
-                    statusSpan.innerText = "❌ 您的浏览器不支持桌面通知";
-                    statusSpan.style.color = "#ef4444";
-                    document.getElementById("btn-request").disabled = true;
-                    return;
-                }}
-                
-                const perm = Notification.permission;
-                if (perm === "granted") {{
-                    statusSpan.innerText = "✅ 已授权允许通知";
-                    statusSpan.style.color = "#22c55e";
-                }} else if (perm === "denied") {{
-                    statusSpan.innerText = "❌ 已拒绝通知（请在浏览器地址栏左侧解锁）";
-                    statusSpan.style.color = "#ef4444";
-                }} else {{
-                    statusSpan.innerText = "❔ 尚未授权（请点击左侧按钮申请）";
-                    statusSpan.style.color = "#f59e0b";
-                }}
-            }}
+            function getNotif() {
+                try {
+                    if (window.parent && window.parent.Notification) return window.parent.Notification;
+                } catch(e) {}
+                try {
+                    if (window.Notification) return window.Notification;
+                } catch(e) {}
+                return null;
+            }
 
-            function requestNotificationPermission() {{
-                if (!("Notification" in window)) return;
-                Notification.requestPermission().then(function(perm) {{
-                    updatePermissionUI();
-                    if (perm === "granted") {{
-                        alert("🎉 浏览器通知授权成功！");
-                    }}
-                }});
-            }}
-
-            function playBeepSound() {{
-                try {{
-                    const AudioContext = window.AudioContext || window.webkitAudioContext || window.parent.AudioContext || window.parent.webkitAudioContext;
-                    const ctx = new AudioContext();
+            function updatePermissionUI() {
+                try {
+                    var statusSpan = document.getElementById("permission-status");
+                    if (!statusSpan) return;
                     
-                    // Beep 1
-                    const osc1 = ctx.createOscillator();
-                    const gain1 = ctx.createGain();
+                    var Notif = getNotif();
+                    if (!Notif) {
+                        statusSpan.innerText = "❌ 您的浏览器环境不支持桌面通知";
+                        statusSpan.style.color = "#ef4444";
+                        var reqBtn = document.getElementById("btn-request");
+                        if (reqBtn) reqBtn.disabled = true;
+                        return;
+                    }
+                    
+                    var perm = "default";
+                    try {
+                        perm = Notif.permission || "default";
+                    } catch(e) {
+                        perm = "default";
+                    }
+                    
+                    if (perm === "granted") {
+                        statusSpan.innerText = "✅ 已授权允许通知 (将在检测到告警时弹出桌面通知)";
+                        statusSpan.style.color = "#22c55e";
+                        var reqBtn = document.getElementById("btn-request");
+                        if (reqBtn) {
+                            reqBtn.innerText = "✅ 已授权通知";
+                            reqBtn.style.backgroundColor = "#059669";
+                        }
+                    } else if (perm === "denied") {
+                        statusSpan.innerText = "❌ 已拒绝通知（请点击浏览器地址栏左侧 🔒 开启）";
+                        statusSpan.style.color = "#ef4444";
+                    } else {
+                        statusSpan.innerText = "❔ 尚未授权（请点击左侧按钮申请）";
+                        statusSpan.style.color = "#f59e0b";
+                    }
+                } catch(err) {
+                    var s = document.getElementById("permission-status");
+                    if (s) {
+                        s.innerText = "❔ 尚未授权（请点击左侧按钮申请）";
+                        s.style.color = "#f59e0b";
+                    }
+                }
+            }
+
+            function requestNotificationPermission() {
+                var Notif = getNotif();
+                if (!Notif) {
+                    alert("您的浏览器环境不支持桌面通知。");
+                    return;
+                }
+                try {
+                    var res = Notif.requestPermission();
+                    if (res && res.then) {
+                        res.then(function(perm) {
+                            updatePermissionUI();
+                            if (perm === "granted") {
+                                alert("🎉 浏览器通知授权成功！");
+                            } else if (perm === "denied") {
+                                alert("❌ 授权被拒绝。请在浏览器地址栏左侧的 🔒 / ⚙️ 图标中将通知权限改为「允许」。");
+                            }
+                        }).catch(function(err) {
+                            try {
+                                Notif.requestPermission(function(perm) {
+                                    updatePermissionUI();
+                                });
+                            } catch(e2) {}
+                        });
+                    } else {
+                        Notif.requestPermission(function(perm) {
+                            updatePermissionUI();
+                            if (perm === "granted") {
+                                alert("🎉 浏览器通知授权成功！");
+                            }
+                        });
+                    }
+                } catch(err) {
+                    alert("无法自动唤醒弹窗。请直接在浏览器地址栏左侧的 🔒 图标中将「通知」设为允许。");
+                }
+                setTimeout(updatePermissionUI, 500);
+            }
+
+            function playBeepSound() {
+                try {
+                    var AudioCtx = window.AudioContext || window.webkitAudioContext || (window.parent && (window.parent.AudioContext || window.parent.webkitAudioContext));
+                    if (!AudioCtx) return;
+                    var ctx = new AudioCtx();
+                    
+                    var osc1 = ctx.createOscillator();
+                    var gain1 = ctx.createGain();
                     osc1.connect(gain1);
                     gain1.connect(ctx.destination);
                     osc1.frequency.setValueAtTime(880, ctx.currentTime);
@@ -499,9 +561,8 @@ def render():
                     osc1.start(ctx.currentTime);
                     osc1.stop(ctx.currentTime + 0.12);
                     
-                    // Beep 2
-                    const osc2 = ctx.createOscillator();
-                    const gain2 = ctx.createGain();
+                    var osc2 = ctx.createOscillator();
+                    var gain2 = ctx.createGain();
                     osc2.connect(gain2);
                     gain2.connect(ctx.destination);
                     osc2.frequency.setValueAtTime(1046.5, ctx.currentTime + 0.15);
@@ -509,48 +570,47 @@ def render():
                     gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.32);
                     osc2.start(ctx.currentTime + 0.15);
                     osc2.stop(ctx.currentTime + 0.32);
-                }} catch (e) {{
-                    console.error("AudioContext play failed", e);
-                }}
-            }}
+                } catch (e) {}
+            }
 
-            function sendTestNotification() {{
-                if (!("Notification" in window)) {{
+            function sendTestNotification() {
+                playBeepSound();
+                var Notif = getNotif();
+                if (!Notif) {
                     alert("您的浏览器不支持桌面通知。");
                     return;
-                }}
+                }
                 
-                const titleInput = document.getElementById("test-title").value;
-                const bodyInput = document.getElementById("test-body").value;
+                var titleInput = (document.getElementById("test-title") ? document.getElementById("test-title").value : "") || "📐 Fibo 信号发现";
+                var bodyInput = (document.getElementById("test-body") ? document.getElementById("test-body").value : "") || "贵州茅台 (600519.SS) 触及日线黄金区";
                 
-                playBeepSound();
+                var perm = "default";
+                try { perm = Notif.permission || "default"; } catch(e) {}
 
-                if (Notification.permission === "granted") {{
-                    new Notification(titleInput, {{
-                        body: bodyInput
-                    }});
-                }} else {{
-                    Notification.requestPermission().then(function(perm) {{
-                        updatePermissionUI();
-                        if (perm === "granted") {{
-                            new Notification(titleInput, {{
-                                body: bodyInput
-                            }});
-                        }} else {{
-                            alert("❌ 无法发送通知：未获得浏览器授权。请先点击第一步按钮进行授权。");
-                        }}
-                    }});
-                }}
-            }}
+                if (perm === "granted") {
+                    try {
+                        var n = new Notif(titleInput, {
+                            body: bodyInput,
+                            icon: "https://strxfibo.streamlit.app/favicon.ico"
+                        });
+                        setTimeout(function() { try { n.close(); } catch(e) {} }, 8000);
+                    } catch(e) {
+                        alert("❌ 发送通知出错：" + e.message);
+                    }
+                } else {
+                    requestNotificationPermission();
+                }
+            }
 
-            // 页面加载完成后自动更新一次UI状态
+            // 初始化与延时多次探测
+            updatePermissionUI();
+            setTimeout(updatePermissionUI, 100);
             setTimeout(updatePermissionUI, 500);
+            setTimeout(updatePermissionUI, 1500);
         </script>
         """
-        if hasattr(st, "html"):
-            st.html(js_notify_ui)
-        else:
-            st.components.v1.html(js_notify_ui, height=360, scrolling=False)
+        import streamlit.components.v1 as _st_components
+        _st_components.html(js_notify_ui, height=380, scrolling=False)
         
         # 后台依然保存静音/非静音设置
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
