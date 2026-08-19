@@ -1093,16 +1093,16 @@ def render_alert_log_table(full_page: bool = True):
                     p_param = f"&_p={curr_p}" if curr_p else ""
                     star_op_val = "unstar" if is_starred else "star"
                     star_href = f"/?_page={curr_page}&_t={now_t}{p_param}&_toggle_star={ticker}&_star_op={star_op_val}"
-                    star_html = f'<a href="{star_href}" target="_top" class="star-btn {star_class}" data-ticker="{ticker}" data-star-op="{star_op_val}" title="标记重点关注">{star_icon}</a>'
+                    star_html = f'<a href="{star_href}" target="_blank" class="star-btn {star_class}" data-ticker="{ticker}" data-star-op="{star_op_val}" title="标记重点关注（在新标签页打开生效）">{star_icon}</a>'
 
                     import urllib.parse
                     encoded_name = urllib.parse.quote(name)
                     if is_in_watchlist:
                         fav_href = f"/?_page={curr_page}&_t={now_t}{p_param}&_fav=del%7C{ticker}%7C{encoded_name}"
-                        tv_html += f'<a href="{fav_href}" target="_top" class="unfav-btn" title="从自选表移除并取消重点关注">🗑️ 取消自选</a>'
+                        tv_html += f'<a href="{fav_href}" target="_blank" class="unfav-btn" title="从自选表移除并取消重点关注">🗑️ 取消自选</a>'
                     else:
                         fav_href = f"/?_page={curr_page}&_t={now_t}{p_param}&_fav=add%7C{ticker}%7C{encoded_name}"
-                        tv_html += f'<a href="{fav_href}" target="_top" class="fav-btn" title="添加到自选表">➕ 加入自选</a>'
+                        tv_html += f'<a href="{fav_href}" target="_blank" class="fav-btn" title="添加到自选表">➕ 加入自选</a>'
 
                     # 点击统计 HTML
                     click_entry = all_clicks_data.get(f"{ticker.upper()}:tv", {}) if isinstance(all_clicks_data, dict) else {}
