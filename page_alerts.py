@@ -581,7 +581,7 @@ def _get_symbol_name_map():
 def render_alert_log_table(full_page: bool = True):
     """单独渲染告警日志表格，可嵌入任何页面。"""
     cfg = storage.load_config()
-    logs = storage.load_alerts()
+    logs = storage.load_alerts(limit=0 if full_page else 100)
     if not logs:
         st.info("尚无告警记录。运行扫描引擎检测到信号后，告警记录将显示在这里。")
         return

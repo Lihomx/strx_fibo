@@ -55,7 +55,7 @@ _LATEST_FILES = {
 }
 
 
-_SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "config", "hotlist", "hotlist_archive", "starred", "ticker_notes"]
+_SNAPSHOT_KEYS = ["watchlist", "watchlist_archive", "config", "hotlist", "hotlist_archive", "starred", "ticker_notes", "alerts"]
 _APP_BOOT_TS = time.time()
 _CLOUD_FILES   = _LATEST_FILES  # 兼容旧接口
 

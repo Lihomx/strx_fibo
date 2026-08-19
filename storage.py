@@ -576,7 +576,15 @@ def log_alert(ticker_or_entry, name=None, timeframe=None, channel=None, status=N
     logs.append(entry)
     if len(logs) > _MAX_ALERTS:
         logs = logs[-_MAX_ALERTS:]
-    return _save(F_ALERTS, logs)
+    ok = _save(F_ALERTS, logs)
+    if ok:
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                cloud_sync._upload_latest("alerts", logs)
+        except Exception:
+            pass
+    return ok
 
 
 def load_alerts(limit: int = 100) -> List[Dict]:
