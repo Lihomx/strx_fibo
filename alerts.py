@@ -292,30 +292,29 @@ def send_browser_notification(title: str, body: str, target_url: str = "", timeo
     if sound_enabled:
         sound_js = """
         try {
-            const AudioContext = window.AudioContext || window.webkitAudioContext || window.parent.AudioContext || window.parent.webkitAudioContext;
-            const ctx = new AudioContext();
-            
-            // Beep 1
-            const osc1 = ctx.createOscillator();
-            const gain1 = ctx.createGain();
-            osc1.connect(gain1);
-            gain1.connect(ctx.destination);
-            osc1.frequency.setValueAtTime(880, ctx.currentTime);
-            gain1.gain.setValueAtTime(0.08, ctx.currentTime);
-            gain1.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
-            osc1.start(ctx.currentTime);
-            osc1.stop(ctx.currentTime + 0.12);
-            
-            // Beep 2
-            const osc2 = ctx.createOscillator();
-            const gain2 = ctx.createGain();
-            osc2.connect(gain2);
-            gain2.connect(ctx.destination);
-            osc2.frequency.setValueAtTime(1046.5, ctx.currentTime + 0.15);
-            gain2.gain.setValueAtTime(0.08, ctx.currentTime + 0.15);
-            gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.32);
-            osc2.start(ctx.currentTime + 0.15);
-            osc2.stop(ctx.currentTime + 0.32);
+            var AudioCtx = window.AudioContext || window.webkitAudioContext || (window.parent && (window.parent.AudioContext || window.parent.webkitAudioContext));
+            if (AudioCtx) {
+                var ctx = new AudioCtx();
+                var osc1 = ctx.createOscillator();
+                var gain1 = ctx.createGain();
+                osc1.connect(gain1);
+                gain1.connect(ctx.destination);
+                osc1.frequency.setValueAtTime(880, ctx.currentTime);
+                gain1.gain.setValueAtTime(0.08, ctx.currentTime);
+                gain1.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
+                osc1.start(ctx.currentTime);
+                osc1.stop(ctx.currentTime + 0.12);
+                
+                var osc2 = ctx.createOscillator();
+                var gain2 = ctx.createGain();
+                osc2.connect(gain2);
+                gain2.connect(ctx.destination);
+                osc2.frequency.setValueAtTime(1046.5, ctx.currentTime + 0.15);
+                gain2.gain.setValueAtTime(0.08, ctx.currentTime + 0.15);
+                gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.32);
+                osc2.start(ctx.currentTime + 0.15);
+                osc2.stop(ctx.currentTime + 0.32);
+            }
         } catch (e) {
             console.error("AudioContext play failed", e);
         }
@@ -324,37 +323,39 @@ def send_browser_notification(title: str, body: str, target_url: str = "", timeo
     click_js = ""
     if u_esc:
         click_js = f"""
-                    notification.onclick = function() {{
-                        try {{
-                            const win = window.parent || window;
-                            win.focus();
-                            win.location.href = "{u_esc}";
-                        }} catch (e) {{
-                            try {{
-                                window.top.location.href = "{u_esc}";
-                            }} catch (err) {{
-                                window.location.href = "{u_esc}";
-                            }}
-                        }}
-                    }};
+        notification.onclick = function() {{
+            try {{
+                var win = window.parent || window;
+                win.focus();
+                win.location.href = "{u_esc}";
+            }} catch (e) {{
+                try {{
+                    window.top.location.href = "{u_esc}";
+                }} catch (err) {{
+                    window.location.href = "{u_esc}";
+                }}
+            }}
+        }};
         """
 
     js_code = f"""
     <script>
     (function() {{
         {sound_js}
-        if ("Notification" in window) {{
-            Notification.requestPermission().then(perm => {{
-                if (perm === 'granted') {{
-                    const notification = new Notification("{t_esc}", {{
-                        body: "{b_esc}"
-                    }});
-                    {click_js}
-                    setTimeout(() => {{
-                        notification.close();
-                    }}, {timeout_seconds * 1000});
-                }}
-            }});
+        var Notif = (window.parent && window.parent.Notification) || window.Notification;
+        if (Notif && Notif.permission === 'granted') {{
+            try {{
+                var notification = new Notif("{t_esc}", {{
+                    body: "{b_esc}",
+                    icon: "https://strxfibo.streamlit.app/favicon.ico"
+                }});
+                {click_js}
+                setTimeout(function() {{
+                    try {{ notification.close(); }} catch(e) {{}}
+                }}, {timeout_seconds * 1000});
+            }} catch(eNotif) {{
+                console.error("Browser notification failed:", eNotif);
+            }}
         }}
     }})();
     </script>
@@ -396,6 +397,12 @@ def dispatch_alerts(ticker: str, name: str, timeframe: str,
                           "ok" if ok else "fail", msg, scanner="fibo", label=conf.get("label", ""))
         sent = sent or ok
 
+    # 若未开启钉钉和 Telegram，依然记录系统/浏览器告警日志并触发桌面通知
+    if not cfg.get("dingtalk_enabled") and not cfg.get("telegram_enabled"):
+        storage.log_alert(ticker, name, timeframe, "browser",
+                          "ok", text, scanner="fibo", label=conf.get("label", ""))
+        sent = True
+
     # Also send browser notification to the active Streamlit app session
     try:
         title = f"📐 Fibo 信号: {conf.get('label', '')}"
@@ -432,6 +439,12 @@ def dispatch_alerts_ema_pivot(ticker: str, name: str, timeframe: str,
                           "ok" if ok else "fail", msg, scanner="ema_pivot", label=label)
         sent = sent or ok
 
+    # 若未开启钉钉和 Telegram，依然记录系统/浏览器告警日志并触发桌面通知
+    if not cfg.get("dingtalk_enabled") and not cfg.get("telegram_enabled"):
+        storage.log_alert(ticker, name, timeframe, "browser",
+                          "ok", text, scanner="ema_pivot", label=label)
+        sent = True
+
     # Also send browser notification to the active Streamlit app session
     try:
         title = f"{icon} EMA + Pivot 信号: {label}"
@@ -467,6 +480,12 @@ def dispatch_alerts_chartink(ticker: str, name: str, timeframe: str,
         storage.log_alert(ticker, name, timeframe, "telegram",
                           "ok" if ok else "fail", msg, scanner="chartink", label=label)
         sent = sent or ok
+
+    # 若未开启钉钉和 Telegram，依然记录系统/浏览器告警日志并触发桌面通知
+    if not cfg.get("dingtalk_enabled") and not cfg.get("telegram_enabled"):
+        storage.log_alert(ticker, name, timeframe, "browser",
+                          "ok", text, scanner="chartink", label=label)
+        sent = True
 
     try:
         title = f"📈 Chartink 突破: {label}"

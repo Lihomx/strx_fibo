@@ -1451,13 +1451,10 @@ def main():
     except Exception as e:
         pass
 
-    # ── 非扫描页面启用全局 60 秒轮询（保持页面活跃及通知更新） ──
+    # ── 全局启用后台 25 秒轻量心跳轮询（保证有新告警时网页能自动发现并弹出通知） ──
     try:
-        current_p = st.session_state.get("page", "scanner")
-        refresh_pages = {"scanner", "triple_bottom", "chartink", "universe", "alerts", "alert_logs"}
-        if current_p not in refresh_pages:
-            from streamlit_autorefresh import st_autorefresh
-            st_autorefresh(interval=60000, key="global_notification_autorefresh")
+        from streamlit_autorefresh import st_autorefresh
+        st_autorefresh(interval=25000, key="global_notification_autorefresh")
     except Exception:
         pass
 
