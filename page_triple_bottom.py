@@ -662,7 +662,7 @@ def render_triple_bottom_page():
     st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
 
     # ── 🌐 Google Colab 独立大规模扫描渠道 ──
-    with st.expander("☁️ Google Colab 算力扫描渠道 (全美股 / 全A股 极速扫描与结果导入)", expanded=True):
+    with st.expander("☁️ Google Colab 算力扫描渠道 (全美股 / 全A股 极速扫描与结果导入)", expanded=False):
         colab_c1, colab_c2 = st.columns([1.2, 1], gap="medium")
         with colab_c1:
             st.markdown("##### 1. 选择股票池并获取专属 Colab 脚本")

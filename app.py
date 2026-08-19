@@ -1251,6 +1251,16 @@ def main():
         st.stop()
         return
 
+    # ── 启动时：从云端自动恢复所有数据（优先拉取，保证 theme_style 即刻生效） ────
+    if not st.session_state.get("_cloud_pulled"):
+        try:
+            ok, msg = cloud_sync.auto_pull_on_startup()
+            if ok and "成功" in msg:
+                st.toast(f"☁️ 云端数据已恢复：{msg}", icon="✅")
+        except Exception:
+            pass
+        st.session_state["_cloud_pulled"] = True
+
     # ── 应用显示风格和字体大小设置 ──────────────────────────────
     inject_custom_theme()
 
@@ -1309,14 +1319,6 @@ def main():
 
 
 
-    # ── 启动时：从云端自动恢复所有数据 ──────────────────────────
-    if not st.session_state.get("_cloud_pulled"):
-        try:
-            ok, msg = cloud_sync.auto_pull_on_startup()
-            if ok and "成功" in msg:
-                st.toast(f"☁️ 云端数据已恢复：{msg}", icon="✅")
-        except Exception:
-            pass
 
     # ── 旧 Secrets 收藏夹恢复（兼容旧版本）────────────────────────
     if not st.session_state.get("_secrets_restored"):
