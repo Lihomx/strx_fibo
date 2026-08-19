@@ -260,8 +260,126 @@ _st_components.html(r"""<script>
                 }
                 return;
             }
+
+            // (C) 🔔 申请浏览器通知权限 (#btn-request-notif)
+            var reqNotifBtn = target.closest ? target.closest('#btn-request-notif') : null;
+            if (reqNotifBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!("Notification" in window)) {
+                    alert("您的浏览器环境不支持桌面通知 API。");
+                    return;
+                }
+                try {
+                    Notification.requestPermission().then(function(perm) {
+                        _updateNotifUI(pDoc);
+                        if (perm === "granted") {
+                            alert("🎉 浏览器通知授权成功！");
+                        } else if (perm === "denied") {
+                            alert("❌ 授权被拒绝。请在浏览器地址栏左侧的 🔒 / ⚙️ 图标中将通知权限设为「允许」。");
+                        }
+                    }).catch(function() {
+                        try {
+                            Notification.requestPermission(function(perm) {
+                                _updateNotifUI(pDoc);
+                            });
+                        } catch(e2) {}
+                    });
+                } catch(eNotif) {
+                    alert("无法自动唤醒弹窗。请直接在浏览器地址栏左侧 🔒 图标中将「通知」权限设为允许。");
+                }
+                return;
+            }
+
+            // (D) 🧪 测试桌面通知发送 (#btn-test-notif)
+            var testNotifBtn = target.closest ? target.closest('#btn-test-notif') : null;
+            if (testNotifBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                // 播放提示音
+                try {
+                    var AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    if (AudioCtx) {
+                        var ctx = new AudioCtx();
+                        var osc = ctx.createOscillator();
+                        var gain = ctx.createGain();
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.frequency.setValueAtTime(880, ctx.currentTime);
+                        gain.gain.setValueAtTime(0.08, ctx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.18);
+                        osc.start(ctx.currentTime);
+                        osc.stop(ctx.currentTime + 0.18);
+                    }
+                } catch(eAudio) {}
+
+                if (!("Notification" in window)) {
+                    alert("您的浏览器不支持桌面通知。");
+                    return;
+                }
+
+                var titleEl = pDoc.getElementById("notif-test-title");
+                var bodyEl = pDoc.getElementById("notif-test-body");
+                var titleText = titleEl ? titleEl.value : "📐 Fibo 信号发现";
+                var bodyText = bodyEl ? bodyEl.value : "贵州茅台 (600519.SS) 触及日线黄金区";
+
+                if (Notification.permission === "granted") {
+                    try {
+                        var n = new Notification(titleText, {
+                            body: bodyText,
+                            icon: "/favicon.ico"
+                        });
+                        setTimeout(function() { try { n.close(); } catch(e) {} }, 8000);
+                    } catch(eNotif) {
+                        alert("❌ 发送通知出错：" + eNotif.message);
+                    }
+                } else {
+                    Notification.requestPermission().then(function(perm) {
+                        _updateNotifUI(pDoc);
+                        if (perm === "granted") {
+                            new Notification(titleText, { body: bodyText, icon: "/favicon.ico" });
+                        } else {
+                            alert("❌ 未获得授权。请先点击第一步按钮进行授权。");
+                        }
+                    });
+                }
+                return;
+            }
         };
         pDoc.addEventListener('click', pDoc._global_click_handler, true);
+
+        // 4. 浏览器通知状态实时更新器
+        var _updateNotifUI = function(doc) {
+            try {
+                var span = doc.getElementById("notif-permission-status");
+                var btn = doc.getElementById("btn-request-notif");
+                if (!span) return;
+                if (!("Notification" in window)) {
+                    span.innerText = "❌ 您的浏览器环境不支持桌面通知";
+                    span.style.color = "#ef4444";
+                    if (btn) btn.disabled = true;
+                    return;
+                }
+                var perm = Notification.permission;
+                if (perm === "granted") {
+                    span.innerText = "✅ 已授权允许通知 (将在检测到告警时弹出桌面通知)";
+                    span.style.color = "#22c55e";
+                    if (btn) {
+                        btn.innerText = "✅ 已授权通知";
+                        btn.style.backgroundColor = "#059669";
+                    }
+                } else if (perm === "denied") {
+                    span.innerText = "❌ 已拒绝通知（请点击浏览器地址栏左侧 🔒 开启）";
+                    span.style.color = "#ef4444";
+                } else {
+                    span.innerText = "❔ 尚未授权（请点击左侧按钮申请）";
+                    span.style.color = "#f59e0b";
+                }
+            } catch(e) {}
+        };
+        _updateNotifUI(pDoc);
+        setInterval(function() { _updateNotifUI(pDoc); }, 1000);
     } catch(e) {}
 })();
 </script>""", height=0)

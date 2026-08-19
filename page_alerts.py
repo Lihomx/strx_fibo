@@ -417,21 +417,21 @@ def render():
         </div>
         """, unsafe_allow_html=True)
         
-        # 使用自定义的 HTML 组件在前端处理权限申请与测试，彻底规避现代浏览器安全限制
+        # 使用顶层 DOM 渲染权限申请与测试面板，彻底规避 Iframe 沙箱权限限制
         js_notify_ui = """
-        <div style="background-color: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; font-family: sans-serif; color: #f3f4f6;">
+        <div style="background-color: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08); padding: 20px; border-radius: 8px; font-family: sans-serif; color: #f3f4f6;">
             <div style="margin-bottom: 20px;">
                 <h5 style="margin: 0 0 10px 0; font-size: 14px; color: #38bdf8;">🔑 第一步：授权浏览器通知</h5>
                 <p style="margin: 0 0 10px 0; font-size: 12px; color: #94a3b8;">点击下方按钮以唤醒浏览器的通知权限申请弹窗（若已授权，会显示当前状态为已允许）：</p>
                 <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                    <button id="btn-request" onclick="requestNotificationPermission()" style="background-color: #0284c7; color: white; border: none; padding: 8px 16px; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s;">
+                    <button id="btn-request-notif" type="button" style="background-color: #0284c7; color: white; border: none; padding: 8px 16px; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s;">
                         🔔 申请授权浏览器通知
                     </button>
-                    <span id="permission-status" style="font-size: 13px; font-weight: bold; color: #f59e0b;">检查中...</span>
+                    <span id="notif-permission-status" style="font-size: 13px; font-weight: bold; color: #f59e0b;">❔ 尚未授权（请点击左侧按钮申请）</span>
                 </div>
             </div>
             
-            <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.05); margin: 20px 0;" />
+            <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.08); margin: 20px 0;" />
             
             <div>
                 <h5 style="margin: 0 0 10px 0; font-size: 14px; color: #38bdf8;">🧪 第二步：直接在当前浏览器测试发送</h5>
@@ -439,178 +439,20 @@ def render():
                 
                 <div style="margin-bottom: 12px;">
                     <label style="display: block; font-size: 12px; color: #cbd5e1; margin-bottom: 4px;">测试标题</label>
-                    <input type="text" id="test-title" value="📐 Fibo 信号发现" style="width: 100%; max-width: 400px; background: #1e293b; border: 1px solid #475569; padding: 6px 10px; border-radius: 4px; color: white; font-size: 13px;" />
+                    <input type="text" id="notif-test-title" value="📐 Fibo 信号发现" style="width: 100%; max-width: 400px; background: #1e293b; border: 1px solid #475569; padding: 6px 10px; border-radius: 4px; color: white; font-size: 13px;" />
                 </div>
                 <div style="margin-bottom: 15px;">
                     <label style="display: block; font-size: 12px; color: #cbd5e1; margin-bottom: 4px;">测试内容</label>
-                    <input type="text" id="test-body" value="贵州茅台 (600519.SS) 触及日线黄金区" style="width: 100%; max-width: 400px; background: #1e293b; border: 1px solid #475569; padding: 6px 10px; border-radius: 4px; color: white; font-size: 13px;" />
+                    <input type="text" id="notif-test-body" value="贵州茅台 (600519.SS) 触及日线黄金区" style="width: 100%; max-width: 400px; background: #1e293b; border: 1px solid #475569; padding: 6px 10px; border-radius: 4px; color: white; font-size: 13px;" />
                 </div>
                 
-                <button id="btn-test" onclick="sendTestNotification()" style="background-color: #10b981; color: white; border: none; padding: 8px 16px; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s;">
+                <button id="btn-test-notif" type="button" style="background-color: #10b981; color: white; border: none; padding: 8px 16px; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s;">
                     🧪 发送测试桌面通知
                 </button>
             </div>
         </div>
-
-        <script>
-            function getNotif() {
-                try {
-                    if (window.parent && window.parent.Notification) return window.parent.Notification;
-                } catch(e) {}
-                try {
-                    if (window.Notification) return window.Notification;
-                } catch(e) {}
-                return null;
-            }
-
-            function updatePermissionUI() {
-                try {
-                    var statusSpan = document.getElementById("permission-status");
-                    if (!statusSpan) return;
-                    
-                    var Notif = getNotif();
-                    if (!Notif) {
-                        statusSpan.innerText = "❌ 您的浏览器环境不支持桌面通知";
-                        statusSpan.style.color = "#ef4444";
-                        var reqBtn = document.getElementById("btn-request");
-                        if (reqBtn) reqBtn.disabled = true;
-                        return;
-                    }
-                    
-                    var perm = "default";
-                    try {
-                        perm = Notif.permission || "default";
-                    } catch(e) {
-                        perm = "default";
-                    }
-                    
-                    if (perm === "granted") {
-                        statusSpan.innerText = "✅ 已授权允许通知 (将在检测到告警时弹出桌面通知)";
-                        statusSpan.style.color = "#22c55e";
-                        var reqBtn = document.getElementById("btn-request");
-                        if (reqBtn) {
-                            reqBtn.innerText = "✅ 已授权通知";
-                            reqBtn.style.backgroundColor = "#059669";
-                        }
-                    } else if (perm === "denied") {
-                        statusSpan.innerText = "❌ 已拒绝通知（请点击浏览器地址栏左侧 🔒 开启）";
-                        statusSpan.style.color = "#ef4444";
-                    } else {
-                        statusSpan.innerText = "❔ 尚未授权（请点击左侧按钮申请）";
-                        statusSpan.style.color = "#f59e0b";
-                    }
-                } catch(err) {
-                    var s = document.getElementById("permission-status");
-                    if (s) {
-                        s.innerText = "❔ 尚未授权（请点击左侧按钮申请）";
-                        s.style.color = "#f59e0b";
-                    }
-                }
-            }
-
-            function requestNotificationPermission() {
-                var Notif = getNotif();
-                if (!Notif) {
-                    alert("您的浏览器环境不支持桌面通知。");
-                    return;
-                }
-                try {
-                    var res = Notif.requestPermission();
-                    if (res && res.then) {
-                        res.then(function(perm) {
-                            updatePermissionUI();
-                            if (perm === "granted") {
-                                alert("🎉 浏览器通知授权成功！");
-                            } else if (perm === "denied") {
-                                alert("❌ 授权被拒绝。请在浏览器地址栏左侧的 🔒 / ⚙️ 图标中将通知权限改为「允许」。");
-                            }
-                        }).catch(function(err) {
-                            try {
-                                Notif.requestPermission(function(perm) {
-                                    updatePermissionUI();
-                                });
-                            } catch(e2) {}
-                        });
-                    } else {
-                        Notif.requestPermission(function(perm) {
-                            updatePermissionUI();
-                            if (perm === "granted") {
-                                alert("🎉 浏览器通知授权成功！");
-                            }
-                        });
-                    }
-                } catch(err) {
-                    alert("无法自动唤醒弹窗。请直接在浏览器地址栏左侧的 🔒 图标中将「通知」设为允许。");
-                }
-                setTimeout(updatePermissionUI, 500);
-            }
-
-            function playBeepSound() {
-                try {
-                    var AudioCtx = window.AudioContext || window.webkitAudioContext || (window.parent && (window.parent.AudioContext || window.parent.webkitAudioContext));
-                    if (!AudioCtx) return;
-                    var ctx = new AudioCtx();
-                    
-                    var osc1 = ctx.createOscillator();
-                    var gain1 = ctx.createGain();
-                    osc1.connect(gain1);
-                    gain1.connect(ctx.destination);
-                    osc1.frequency.setValueAtTime(880, ctx.currentTime);
-                    gain1.gain.setValueAtTime(0.08, ctx.currentTime);
-                    gain1.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
-                    osc1.start(ctx.currentTime);
-                    osc1.stop(ctx.currentTime + 0.12);
-                    
-                    var osc2 = ctx.createOscillator();
-                    var gain2 = ctx.createGain();
-                    osc2.connect(gain2);
-                    gain2.connect(ctx.destination);
-                    osc2.frequency.setValueAtTime(1046.5, ctx.currentTime + 0.15);
-                    gain2.gain.setValueAtTime(0.08, ctx.currentTime + 0.15);
-                    gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.32);
-                    osc2.start(ctx.currentTime + 0.15);
-                    osc2.stop(ctx.currentTime + 0.32);
-                } catch (e) {}
-            }
-
-            function sendTestNotification() {
-                playBeepSound();
-                var Notif = getNotif();
-                if (!Notif) {
-                    alert("您的浏览器不支持桌面通知。");
-                    return;
-                }
-                
-                var titleInput = (document.getElementById("test-title") ? document.getElementById("test-title").value : "") || "📐 Fibo 信号发现";
-                var bodyInput = (document.getElementById("test-body") ? document.getElementById("test-body").value : "") || "贵州茅台 (600519.SS) 触及日线黄金区";
-                
-                var perm = "default";
-                try { perm = Notif.permission || "default"; } catch(e) {}
-
-                if (perm === "granted") {
-                    try {
-                        var n = new Notif(titleInput, {
-                            body: bodyInput,
-                            icon: "https://strxfibo.streamlit.app/favicon.ico"
-                        });
-                        setTimeout(function() { try { n.close(); } catch(e) {} }, 8000);
-                    } catch(e) {
-                        alert("❌ 发送通知出错：" + e.message);
-                    }
-                } else {
-                    requestNotificationPermission();
-                }
-            }
-
-            // 初始化与延时多次探测
-            updatePermissionUI();
-            setTimeout(updatePermissionUI, 100);
-            setTimeout(updatePermissionUI, 500);
-            setTimeout(updatePermissionUI, 1500);
-        </script>
         """
-        import streamlit.components.v1 as _st_components
-        _st_components.html(js_notify_ui, height=380, scrolling=False)
+        st.markdown(js_notify_ui, unsafe_allow_html=True)
         
         # 后台依然保存静音/非静音设置
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
