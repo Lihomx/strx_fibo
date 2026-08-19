@@ -611,8 +611,53 @@ def render_triple_bottom_page():
             flex: 1;
             min-width: 120px;
         }
-        .tb-metric-chip b {
-            color: #f59e0b;
+        /* ── TV 按钮与点击统计 Badge 专属高亮样式 ── */
+        .tv-btn {
+            display: block !important;
+            text-align: center !important;
+            padding: 6px 0 !important;
+            background: rgba(30, 144, 255, 0.15) !important;
+            border: 1px solid rgba(30, 144, 255, 0.3) !important;
+            color: #38bdf8 !important;
+            border-radius: 4px !important;
+            text-decoration: none !important;
+            font-weight: 600 !important;
+            font-size: 13px !important;
+        }
+        .tv-btn:hover {
+            background: rgba(30, 144, 255, 0.28) !important;
+            border-color: rgba(30, 144, 255, 0.6) !important;
+            color: #7dd3fc !important;
+        }
+        .click-count-badge.today-active {
+            color: #fde047 !important;
+            background: rgba(245, 158, 11, 0.25) !important;
+            border: 1px solid rgba(245, 158, 11, 0.5) !important;
+            padding: 1px 6px !important;
+            border-radius: 10px !important;
+            font-size: 11px !important;
+            font-weight: 800 !important;
+            display: inline-block !important;
+            margin-left: 4px !important;
+            box-shadow: 0 0 8px rgba(245, 158, 11, 0.4) !important;
+        }
+        .click-count-badge.history-active {
+            color: #4ade80 !important;
+            background: rgba(34, 197, 94, 0.15) !important;
+            border: 1px solid rgba(34, 197, 94, 0.3) !important;
+            padding: 1px 5px !important;
+            border-radius: 10px !important;
+            font-size: 11px !important;
+            font-weight: 600 !important;
+            display: inline-block !important;
+            margin-left: 4px !important;
+        }
+        .click-count-badge.no-clicks {
+            color: #64748b !important;
+            font-size: 11px !important;
+            font-weight: 500 !important;
+            display: inline-block !important;
+            margin-left: 4px !important;
         }
         </style>
         """,
@@ -1171,14 +1216,14 @@ def render_triple_bottom_page():
                     today_c = by_date_map.get(today_str_val, 0) if isinstance(by_date_map, dict) else 0
 
                     if today_c > 0:
-                        # 🌟 今日有点击：极致醒目的亮金黄 (Amber Gold)
-                        click_badge_html = f' <span class="click-count-badge" style="font-size:12px;color:#fde047 !important;font-weight:800;text-shadow:0 0 8px rgba(253,224,71,0.6);">({today_c}/{total_c})</span>'
+                        # 🌟 今日有点击：极致醒目的亮金黄胶囊 Badge (Amber Gold)
+                        click_badge_html = f'<span class="click-count-badge today-active">({today_c}/{total_c})</span>'
                     elif total_c > 0:
-                        # 🌿 历史有点击（无论哪天）：醒目的鲜亮翡翠绿 (Emerald Green)
-                        click_badge_html = f' <span class="click-count-badge" style="font-size:12px;color:#4ade80 !important;font-weight:700;text-shadow:0 0 6px rgba(74,222,128,0.5);">({today_c}/{total_c})</span>'
+                        # 🌿 历史有点击（无论哪天）：醒目的鲜亮翡翠绿胶囊 Badge (Emerald Green)
+                        click_badge_html = f'<span class="click-count-badge history-active">({today_c}/{total_c})</span>'
                     else:
                         # ⚪ 从无点击：低调暗灰
-                        click_badge_html = ' <span class="click-count-badge" style="font-size:11px;color:#64748b !important;font-weight:500;">(0/0)</span>'
+                        click_badge_html = f'<span class="click-count-badge no-clicks">(0/0)</span>'
 
                     tv_url_val = _tv_link(ticker, period)
                     st.markdown(
