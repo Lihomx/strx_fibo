@@ -985,11 +985,11 @@ def render_alert_log_table(full_page: bool = True):
                 html_parts.append(".unfav-btn:hover { background-color: rgba(239, 68, 68, 0.3); color: #ef4444 !important; transform: translateY(-1px); }")
                 html_parts.append(".fav-btn { display: inline-flex; align-items: center; background-color: rgba(34, 197, 94, 0.15); color: #4ade80 !important; padding: 4px 8px; border-radius: 4px; text-decoration: none !important; font-size: 12px; font-weight: 500; transition: all 0.2s ease; border: 1px solid rgba(34, 197, 94, 0.3); margin-left: 5px; }")
                 html_parts.append(".fav-btn:hover { background-color: rgba(34, 197, 94, 0.3); color: #22c55e !important; transform: translateY(-1px); }")
-                html_parts.append(".star-btn { text-decoration: none !important; font-size: 16px; margin-right: 6px; cursor: pointer; display: inline-block; transition: transform 0.2s ease; }")
-                html_parts.append(".star-btn:hover { transform: scale(1.2); }")
-                html_parts.append(".star-active { filter: none; opacity: 1; }")
-                html_parts.append(".star-inactive { filter: grayscale(100%); opacity: 0.25; }")
-                html_parts.append(".star-inactive:hover { filter: none; opacity: 0.8; }")
+                html_parts.append(".star-btn { text-decoration: none !important; font-size: 16px; margin-right: 6px; cursor: pointer; display: inline-block; transition: transform 0.2s ease, filter 0.2s ease; }")
+                html_parts.append(".star-btn:hover { transform: scale(1.3); }")
+                html_parts.append(".star-active { color: #eab308 !important; filter: drop-shadow(0 0 4px rgba(234,179,8,0.8)); opacity: 1; }")
+                html_parts.append(".star-inactive { color: #64748b !important; opacity: 0.35; }")
+                html_parts.append(".star-inactive:hover { color: #eab308 !important; opacity: 0.9; }")
                 html_parts.append(".alert-log-row-starred { background-color: rgba(245, 158, 11, 0.08) !important; font-weight: 500; }")
                 html_parts.append(".click-count-badge { font-weight: 600; font-size: 12px; }")
                 html_parts.append("</style>")
@@ -1077,10 +1077,11 @@ def render_alert_log_table(full_page: bool = True):
                         tv_html += f'<a href="{sina_url_val}" target="_blank" class="sina-btn" data-ticker="{ticker}">🏦 新浪</a>'
                     
                     star_class = "star-active" if is_starred else "star-inactive"
+                    star_icon = "⭐" if is_starred else "☆"
                     curr_p = st.query_params.get("_p", "") or st.query_params.get("p", "")
                     p_param = f"&_p={curr_p}" if curr_p else ""
                     star_href = f"/?_page={curr_page}&_t={t_token}{p_param}&_toggle_star={ticker}"
-                    star_html = f'<a href="{star_href}" target="_top" class="star-btn {star_class}" title="标记重点关注">⭐</a>'
+                    star_html = f'<a href="{star_href}" target="_top" class="star-btn {star_class}" data-ticker="{ticker}" title="标记重点关注">{star_icon}</a>'
 
                     import urllib.parse
                     encoded_name = urllib.parse.quote(name)
@@ -1229,18 +1230,23 @@ def render_alert_log_table(full_page: bool = True):
                                 e.preventDefault();
                                 e.stopPropagation();
                                 
-                                var href = starBtn.getAttribute('href');
-                                var m = href.match(/_toggle_star=([^&]+)/);
-                                var tk = m ? decodeURIComponent(m[1]).trim().toUpperCase() : "";
+                                var href = starBtn.getAttribute('href') || "";
+                                var tk = starBtn.getAttribute('data-ticker') || "";
+                                if (!tk && href) {
+                                    var m = href.match(/_toggle_star=([^&]+)/);
+                                    tk = m ? decodeURIComponent(m[1]).trim().toUpperCase() : "";
+                                }
                                 
-                                // 1. 瞬间切换 DOM 星标高亮状态
+                                // 1. 瞬间切换 DOM 星标高亮状态及图标
                                 var isNowActive = starBtn.classList.contains('star-active');
                                 if (isNowActive) {
                                     starBtn.classList.remove('star-active');
                                     starBtn.classList.add('star-inactive');
+                                    starBtn.innerText = '☆';
                                 } else {
                                     starBtn.classList.remove('star-inactive');
                                     starBtn.classList.add('star-active');
+                                    starBtn.innerText = '⭐';
                                 }
                                 
                                 // 同步切换所在行的背景高亮
