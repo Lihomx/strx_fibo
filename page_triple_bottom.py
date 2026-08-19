@@ -1171,14 +1171,14 @@ def render_triple_bottom_page():
                     today_c = by_date_map.get(today_str_val, 0) if isinstance(by_date_map, dict) else 0
 
                     if today_c > 0:
-                        # 🌟 当天有点击：极度醒目的亮金黄色 (#fbbf24)，加粗，在极简深色背景下一目了然！
-                        click_badge_html = f' <span class="click-count-badge" style="font-size:12px;color:#fbbf24;font-weight:800;text-shadow:0 0 6px rgba(251,191,36,0.5);">({today_c}/{total_c})</span>'
+                        # 🌟 今日有点击：极致醒目的亮金黄 (Amber Gold)
+                        click_badge_html = f' <span class="click-count-badge" style="font-size:12px;color:#fde047 !important;font-weight:800;text-shadow:0 0 8px rgba(253,224,71,0.6);">({today_c}/{total_c})</span>'
                     elif total_c > 0:
-                        # 历史有点击但今日未点击：清爽天蓝色
-                        click_badge_html = f' <span class="click-count-badge" style="font-size:11px;color:#38bdf8;font-weight:600;">(0/{total_c})</span>'
+                        # 🌿 历史有点击（无论哪天）：醒目的鲜亮翡翠绿 (Emerald Green)
+                        click_badge_html = f' <span class="click-count-badge" style="font-size:12px;color:#4ade80 !important;font-weight:700;text-shadow:0 0 6px rgba(74,222,128,0.5);">({today_c}/{total_c})</span>'
                     else:
-                        # 从无点击：暗灰色
-                        click_badge_html = ' <span class="click-count-badge" style="font-size:11px;color:#64748b;font-weight:500;">(0/0)</span>'
+                        # ⚪ 从无点击：低调暗灰
+                        click_badge_html = ' <span class="click-count-badge" style="font-size:11px;color:#64748b !important;font-weight:500;">(0/0)</span>'
 
                     tv_url_val = _tv_link(ticker, period)
                     st.markdown(

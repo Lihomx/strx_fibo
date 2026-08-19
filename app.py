@@ -659,8 +659,9 @@ def inject_custom_theme():
             opacity: 0.7;
         }
 
-        /* ── stMarkdownContainer 内联 HTML 文字 ── */
-        div[data-testid="stMarkdownContainer"] * {
+        /* ── stMarkdownContainer 内联 HTML 文字 (排除带独立色彩的徽章与高亮元素) ── */
+        div[data-testid="stMarkdownContainer"] > p,
+        div[data-testid="stMarkdownContainer"] > span:not([class*="badge"]):not([style*="color"]) {
             color: var(--text-color) !important;
         }
 
