@@ -1105,9 +1105,15 @@ def main():
                 pass
         if _star_quiet:
             try:
+                _star_op_quiet = st.query_params.get("_star_op", "")
                 if storage.acquire_fav_lock(_star_quiet):
-                    storage.toggle_starred_ticker(_star_quiet)
-                    storage.log_fav_action(_star_quiet, "toggle_star", success=True, from_ajax=True)
+                    if _star_op_quiet == "star":
+                        storage.star_ticker(_star_quiet)
+                    elif _star_op_quiet == "unstar":
+                        storage.unstar_ticker(_star_quiet)
+                    else:
+                        storage.toggle_starred_ticker(_star_quiet)
+                    storage.log_fav_action(_star_quiet, _star_op_quiet or "toggle_star", success=True, from_ajax=True)
             except Exception:
                 pass
         if _rename_quiet:
@@ -1206,15 +1212,25 @@ def main():
     _toggle_star = st.query_params.get("_toggle_star", "")
     if _toggle_star:
         try:
+            _star_op = st.query_params.get("_star_op", "")
             if storage.acquire_fav_lock(_toggle_star):
-                storage.toggle_starred_ticker(_toggle_star)
-                st.toast(f"重点关注状态已更新：{_toggle_star}", icon="⭐")
-                storage.log_fav_action(_toggle_star, "toggle_star", success=True, from_ajax=False)
+                if _star_op == "star":
+                    storage.star_ticker(_toggle_star)
+                elif _star_op == "unstar":
+                    storage.unstar_ticker(_toggle_star)
+                else:
+                    storage.toggle_starred_ticker(_toggle_star)
+                st.toast(f"⭐ 重点关注状态已更新：{_toggle_star}", icon="⭐")
+                storage.log_fav_action(_toggle_star, _star_op or "toggle_star", success=True, from_ajax=False)
         except Exception:
             pass
-        # 清除 _toggle_star 参数，但保留 _page 等参数
+        # 清除 _toggle_star 及 _star_op 参数，保留 _page, _p 等参数
         try:
             del st.query_params["_toggle_star"]
+        except Exception:
+            pass
+        try:
+            del st.query_params["_star_op"]
         except Exception:
             pass
         st.rerun()

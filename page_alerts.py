@@ -1089,8 +1089,9 @@ def render_alert_log_table(full_page: bool = True):
                     star_icon = "⭐" if is_starred else "☆"
                     curr_p = st.query_params.get("_p", "") or st.query_params.get("p", "")
                     p_param = f"&_p={curr_p}" if curr_p else ""
-                    star_href = f"/?_page={curr_page}&_t={t_token}{p_param}&_toggle_star={ticker}"
-                    star_html = f'<a href="{star_href}" target="_top" class="star-btn {star_class}" data-ticker="{ticker}" title="标记重点关注">{star_icon}</a>'
+                    star_op_val = "unstar" if is_starred else "star"
+                    star_href = f"/?_page={curr_page}&_t={t_token}{p_param}&_toggle_star={ticker}&_star_op={star_op_val}"
+                    star_html = f'<a href="{star_href}" target="_top" class="star-btn {star_class}" data-ticker="{ticker}" data-star-op="{star_op_val}" title="标记重点关注">{star_icon}</a>'
 
                     import urllib.parse
                     encoded_name = urllib.parse.quote(name)
@@ -1147,168 +1148,83 @@ def render_alert_log_table(full_page: bool = True):
                     html_parts.append(f"<tr {row_class}>{row_tds}</tr>")
                 
                 html_parts.append("</tbody></table></div>")
-                html_table = "".join(html_parts)
-                st.markdown(html_table, unsafe_allow_html=True)
-
-                # 💡 隐形事件监听组件：捕捉原链接点击，能在后台落盘计数，同时在前台秒级实时更新 (今日/总) 数字
-                _click_js = r"""
-                <script>
-                (function() {
-                    try {
-                        var pDoc = window.parent.document;
-                        if (pDoc._tv_click_handler) {
-                            pDoc.removeEventListener('click', pDoc._tv_click_handler, true);
-                        }
-                        pDoc._tv_click_handler = function(e) {
-                            var btn = e.target.closest('.tv-btn, .sina-btn');
-                            if (btn) {
-                                var tk = btn.getAttribute('data-ticker');
-                                if (tk) {
-                                    tk = tk.trim().toUpperCase();
-                                    var cbUrl = '/?_tv_click=' + encodeURIComponent(tk) + '&_cb=' + Date.now() + '_' + Math.floor(Math.random()*10000);
-
-                                    // 1. fetch 强制 no-store 穿透所有浏览器/CDN 缓存
-                                    try { fetch(cbUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
-
-                                    // 2. sendBeacon 后台保障发送
-                                    try { if (navigator.sendBeacon) { navigator.sendBeacon(cbUrl); } } catch(err) {}
-
-                                    // 3. IFrame 静音发送
-                                    try {
-                                        var f = pDoc.createElement('iframe');
-                                        f.style.display = 'none';
-                                        f.src = cbUrl;
-                                        pDoc.body.appendChild(f);
-                                        setTimeout(function() {
-                                            try { f.remove(); } catch(err) {}
-                                        }, 6000);
-                                    } catch(err) {}
-
-                                    // 4. 前台 DOM 瞬间更新该 ticker 所有对应按钮数值 (秒级反馈)
-                                    try {
-                                        var allBtns = pDoc.querySelectorAll('.tv-btn, .sina-btn');
-                                        for (var i = 0; i < allBtns.length; i++) {
-                                            var b = allBtns[i];
-                                            var bTk = b.getAttribute('data-ticker');
-                                            if (bTk && bTk.trim().toUpperCase() === tk) {
-                                                var spans = b.getElementsByTagName('span');
-                                                if (spans && spans.length > 0) {
-                                                    var span = spans[spans.length - 1];
-                                                    var txt = span.innerText || span.textContent || "";
-                                                    var m = txt.match(/\((\d+)\/(\d+)\)/);
-                                                    if (m) {
-                                                        var today = parseInt(m[1], 10) + 1;
-                                                        var total = parseInt(m[2], 10) + 1;
-                                                        span.innerText = '(' + today + '/' + total + ')';
-                                                        span.style.color = '#4ade80';
-                                                        span.style.fontWeight = '600';
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    } catch(err) {}
-                                }
-                                return;
-                            }
-
-                            // ✏️ 修改名称按钮：直接获取 Python 后端预先解析出的品种全称并弹出 Prompt
-                            var editBtn = e.target.closest('.edit-name-btn');
-                            if (editBtn) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                var tk = editBtn.getAttribute('data-ticker');
-                                var curName = editBtn.getAttribute('data-name') || tk;
-                                var newName = prompt('✏️ 请输入 [' + tk + '] 的新名称：', curName);
-                                if (newName !== null) {
-                                    newName = newName.trim();
-                                    if (newName && newName !== curName) {
-                                        var targetUrl = '/?_page=alert_logs&_t=' + Date.now() + '&_rename=' + encodeURIComponent(tk + '|' + newName);
-                                        try {
-                                            window.top.location.href = targetUrl;
-                                        } catch(err) {
-                                            window.location.href = targetUrl;
-                                        }
-                                    }
-                                }
-                                return;
-                            }
-
-                            // ⭐ 重点关注按钮：瞬间切换星标高亮状态 + 后台静音异步落盘 (秒级交互)
-                            var starBtn = e.target.closest('.star-btn');
-                            if (starBtn) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                
-                                var href = starBtn.getAttribute('href') || "";
-                                var tk = starBtn.getAttribute('data-ticker') || "";
-                                if (!tk && href) {
-                                    var m = href.match(/_toggle_star=([^&]+)/);
-                                    tk = m ? decodeURIComponent(m[1]).trim().toUpperCase() : "";
-                                }
-                                
-                                // 1. 瞬间切换 DOM 星标高亮状态及图标
-                                var isNowActive = starBtn.classList.contains('star-active');
-                                if (isNowActive) {
-                                    starBtn.classList.remove('star-active');
-                                    starBtn.classList.add('star-inactive');
-                                    starBtn.innerText = '☆';
-                                } else {
-                                    starBtn.classList.remove('star-inactive');
-                                    starBtn.classList.add('star-active');
-                                    starBtn.innerText = '⭐';
-                                }
-                                
-                                // 同步切换所在行的背景高亮
-                                var tr = starBtn.closest('tr');
-                                if (tr) {
-                                    if (isNowActive) {
-                                        tr.classList.remove('alert-log-row-starred');
-                                    } else {
-                                        tr.classList.add('alert-log-row-starred');
-                                    }
-                                }
-
-                                // 2. 发送静音异步请求持久化落盘
-                                if (tk) {
-                                    var origin = window.location.origin || (window.location.protocol + '//' + window.location.host);
-                                    var cbUrl = origin + '/?_toggle_star=' + encodeURIComponent(tk) + '&_cb=' + Date.now() + '_' + Math.floor(Math.random()*10000);
-                                    try { fetch(cbUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
-                                    try { if (navigator.sendBeacon) { navigator.sendBeacon(cbUrl); } } catch(err) {}
-                                    try {
-                                        var f = pDoc.createElement('iframe');
-                                        f.style.display = 'none';
-                                        f.src = cbUrl;
-                                        pDoc.body.appendChild(f);
-                                        setTimeout(function() { try { f.remove(); } catch(err) {} }, 6000);
-                                    } catch(err) {}
-                                }
-                                return;
-                            }
-
-                            // 🗑️/➕ 自选按钮：统一在父页面上下文进行 URL 导航重定向
-                            var actionBtn = e.target.closest('.unfav-btn, .fav-btn');
-                            if (actionBtn) {
-                                var href = actionBtn.getAttribute('href');
-                                if (href) {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-
-                                    try {
-                                        window.top.location.href = href;
-                                    } catch(err) {
-                                        window.location.href = href;
-                                    }
-                                }
-                                return;
-                            }
-                        };
-                        pDoc.addEventListener('click', pDoc._tv_click_handler, true);
-                """
-                if hasattr(st, "html"):
-                    st.html(_click_js)
-                else:
-                    import streamlit.components.v1 as _components
-                    _components.html(_click_js, height=0)
+                
+                # ── 注入轻量交互监听脚本 ──
+                html_parts.append(
+                    "<img src='x' onerror=\""
+                    "(function() {"
+                    "  var doc = window.parent.document || document;"
+                    "  if (doc._alerts_table_inited) return;"
+                    "  doc._alerts_table_inited = true;"
+                    "  doc.addEventListener('click', function(e) {"
+                    "    var tvBtn = e.target.closest('.tv-btn, .sina-btn');"
+                    "    if (tvBtn) {"
+                    "      var tk = tvBtn.getAttribute('data-ticker');"
+                    "      if (tk) {"
+                    "        var cbUrl = '/?_tv_click=' + encodeURIComponent(tk.trim().toUpperCase()) + '&_cb=' + Date.now();"
+                    "        try { fetch(cbUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}"
+                    "      }"
+                    "      return;"
+                    "    }"
+                    "    var starBtn = e.target.closest('.star-btn');"
+                    "    if (starBtn) {"
+                    "      var href = starBtn.getAttribute('href');"
+                    "      if (href) {"
+                    "        e.preventDefault();"
+                    "        e.stopPropagation();"
+                    "        var isActive = starBtn.classList.contains('star-active');"
+                    "        if (isActive) {"
+                    "          starBtn.classList.remove('star-active');"
+                    "          starBtn.classList.add('star-inactive');"
+                    "          starBtn.innerText = '☆';"
+                    "        } else {"
+                    "          starBtn.classList.remove('star-inactive');"
+                    "          starBtn.classList.add('star-active');"
+                    "          starBtn.innerText = '⭐';"
+                    "        }"
+                    "        var tr = starBtn.closest('tr');"
+                    "        if (tr) {"
+                    "          if (isActive) { tr.classList.remove('alert-log-row-starred'); }"
+                    "          else { tr.classList.add('alert-log-row-starred'); }"
+                    "        }"
+                    "        try { window.top.location.href = href; } catch(err) { window.location.href = href; }"
+                    "      }"
+                    "      return;"
+                    "    }"
+                    "    var editBtn = e.target.closest('.edit-name-btn');"
+                    "    if (editBtn) {"
+                    "      e.preventDefault();"
+                    "      e.stopPropagation();"
+                    "      var tk2 = editBtn.getAttribute('data-ticker');"
+                    "      var curName = editBtn.getAttribute('data-name') || tk2;"
+                    "      var newName = prompt('✏️ 请输入 [' + tk2 + '] 的新名称：', curName);"
+                    "      if (newName !== null) {"
+                    "        newName = newName.trim();"
+                    "        if (newName && newName !== curName) {"
+                    "          var t = new URLSearchParams(window.location.search).get('_t') || '';"
+                    "          var renUrl = '/?_page=alert_logs&_t=' + t + '&_rename=' + encodeURIComponent(tk2 + '|' + newName);"
+                    "          try { window.top.location.href = renUrl; } catch(err) { window.location.href = renUrl; }"
+                    "        }"
+                    "      }"
+                    "      return;"
+                    "    }"
+                    "    var actionBtn = e.target.closest('.unfav-btn, .fav-btn');"
+                    "    if (actionBtn) {"
+                    "      var ah = actionBtn.getAttribute('href');"
+                    "      if (ah) {"
+                    "        e.preventDefault();"
+                    "        e.stopPropagation();"
+                    "        try { window.top.location.href = ah; } catch(err) { window.location.href = ah; }"
+                    "      }"
+                    "      return;"
+                    "    }"
+                    "  }, true);"
+                    "})();"
+                    "\" style='display:none;'>"
+                )
+                
+                html_full = "".join(html_parts)
+                st.markdown(html_full, unsafe_allow_html=True)
             except Exception as e:
                 st.dataframe(df, use_container_width=True, height=850)
 

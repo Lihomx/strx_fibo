@@ -765,6 +765,17 @@ def save_starred_tickers(tickers: List[str]) -> bool:
             pass
     return ok
 
+def star_ticker(ticker: str) -> bool:
+    """显式添加重点关注状态"""
+    ticker = ticker.strip().upper()
+    if not ticker:
+        return False
+    starred = load_starred_tickers()
+    if ticker not in starred:
+        starred.append(ticker)
+        return save_starred_tickers(starred)
+    return True
+
 def unstar_ticker(ticker: str) -> bool:
     """显式取消重点关注状态"""
     ticker = ticker.strip().upper()
