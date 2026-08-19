@@ -1077,16 +1077,18 @@ def render_alert_log_table(full_page: bool = True):
                         tv_html += f'<a href="{sina_url_val}" target="_blank" class="sina-btn" data-ticker="{ticker}">🏦 新浪</a>'
                     
                     star_class = "star-active" if is_starred else "star-inactive"
-                    star_href = f"/?_page={curr_page}&_t={t_token}&_toggle_star={ticker}"
+                    curr_p = st.query_params.get("_p", "") or st.query_params.get("p", "")
+                    p_param = f"&_p={curr_p}" if curr_p else ""
+                    star_href = f"/?_page={curr_page}&_t={t_token}{p_param}&_toggle_star={ticker}"
                     star_html = f'<a href="{star_href}" target="_top" class="star-btn {star_class}" title="标记重点关注">⭐</a>'
 
                     import urllib.parse
                     encoded_name = urllib.parse.quote(name)
                     if is_in_watchlist:
-                        fav_href = f"/?_page={curr_page}&_t={t_token}&_fav=del%7C{ticker}%7C{encoded_name}"
+                        fav_href = f"/?_page={curr_page}&_t={t_token}{p_param}&_fav=del%7C{ticker}%7C{encoded_name}"
                         tv_html += f'<a href="{fav_href}" target="_top" class="unfav-btn" title="从自选表移除并取消重点关注">🗑️ 取消自选</a>'
                     else:
-                        fav_href = f"/?_page={curr_page}&_t={t_token}&_fav=add%7C{ticker}%7C{encoded_name}"
+                        fav_href = f"/?_page={curr_page}&_t={t_token}{p_param}&_fav=add%7C{ticker}%7C{encoded_name}"
                         tv_html += f'<a href="{fav_href}" target="_top" class="fav-btn" title="添加到自选表">➕ 加入自选</a>'
 
                     # 点击统计 HTML
@@ -1221,8 +1223,55 @@ def render_alert_log_table(full_page: bool = True):
                                 return;
                             }
 
-                            // ⭐/🗑️/➕ 按钮：统一在父页面上下文进行 URL 导航重定向
-                            var actionBtn = e.target.closest('.star-btn, .unfav-btn, .fav-btn');
+                            // ⭐ 重点关注按钮：瞬间切换星标高亮状态 + 后台静音异步落盘 (秒级交互)
+                            var starBtn = e.target.closest('.star-btn');
+                            if (starBtn) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                
+                                var href = starBtn.getAttribute('href');
+                                var m = href.match(/_toggle_star=([^&]+)/);
+                                var tk = m ? decodeURIComponent(m[1]).trim().toUpperCase() : "";
+                                
+                                // 1. 瞬间切换 DOM 星标高亮状态
+                                var isNowActive = starBtn.classList.contains('star-active');
+                                if (isNowActive) {
+                                    starBtn.classList.remove('star-active');
+                                    starBtn.classList.add('star-inactive');
+                                } else {
+                                    starBtn.classList.remove('star-inactive');
+                                    starBtn.classList.add('star-active');
+                                }
+                                
+                                // 同步切换所在行的背景高亮
+                                var tr = starBtn.closest('tr');
+                                if (tr) {
+                                    if (isNowActive) {
+                                        tr.classList.remove('alert-log-row-starred');
+                                    } else {
+                                        tr.classList.add('alert-log-row-starred');
+                                    }
+                                }
+
+                                // 2. 发送静音异步请求持久化落盘
+                                if (tk) {
+                                    var origin = window.location.origin || (window.location.protocol + '//' + window.location.host);
+                                    var cbUrl = origin + '/?_toggle_star=' + encodeURIComponent(tk) + '&_cb=' + Date.now() + '_' + Math.floor(Math.random()*10000);
+                                    try { fetch(cbUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
+                                    try { if (navigator.sendBeacon) { navigator.sendBeacon(cbUrl); } } catch(err) {}
+                                    try {
+                                        var f = pDoc.createElement('iframe');
+                                        f.style.display = 'none';
+                                        f.src = cbUrl;
+                                        pDoc.body.appendChild(f);
+                                        setTimeout(function() { try { f.remove(); } catch(err) {} }, 6000);
+                                    } catch(err) {}
+                                }
+                                return;
+                            }
+
+                            // 🗑️/➕ 自选按钮：统一在父页面上下文进行 URL 导航重定向
+                            var actionBtn = e.target.closest('.unfav-btn, .fav-btn');
                             if (actionBtn) {
                                 var href = actionBtn.getAttribute('href');
                                 if (href) {
