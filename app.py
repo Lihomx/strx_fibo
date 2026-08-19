@@ -222,7 +222,7 @@ _st_components.html(r"""<script>
                         setTimeout(function() { try { f.remove(); } catch(err) {} }, 6000);
                     } catch(err) {}
 
-                    // 前台 DOM 瞬间更新该 ticker 的所有徽章
+                    // 前台 DOM 瞬间更新该 ticker 的所有徽章为亮金黄色今日胶囊
                     try {
                         var allBtns = pDoc.querySelectorAll('.tv-btn, .sina-btn');
                         for (var i = 0; i < allBtns.length; i++) {
@@ -238,8 +238,7 @@ _st_components.html(r"""<script>
                                         var today = parseInt(m[1], 10) + 1;
                                         var total = parseInt(m[2], 10) + 1;
                                         span.innerText = '(' + today + '/' + total + ')';
-                                        span.style.color = '#4ade80';
-                                        span.style.fontWeight = '600';
+                                        span.className = 'click-count-badge today-active';
                                     }
                                 }
                             }

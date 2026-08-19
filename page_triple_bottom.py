@@ -1451,10 +1451,7 @@ def render_triple_bottom_page():
                                             var today = parseInt(m[1], 10) + 1;
                                             var total = parseInt(m[2], 10) + 1;
                                             span.innerText = '(' + today + '/' + total + ')';
-                                            span.style.color = '#fbbf24';
-                                            span.style.fontWeight = '800';
-                                            span.style.fontSize = '12px';
-                                            span.style.textShadow = '0 0 6px rgba(251,191,36,0.5)';
+                                            span.className = 'click-count-badge today-active';
                                         }
                                     }
                                 }
