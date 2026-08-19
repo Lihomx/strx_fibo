@@ -1165,6 +1165,16 @@ def main():
             st.stop()
             return
 
+    # ── 启动时：从云端自动恢复所有数据（优先拉取，保证冷启动无论何种 URL 参数均首先拉取云端） ────
+    if not st.session_state.get("_cloud_pulled"):
+        try:
+            ok, msg = cloud_sync.auto_pull_on_startup()
+            if ok and "成功" in msg:
+                st.toast(f"☁️ 云端数据已恢复：{msg}", icon="✅")
+        except Exception:
+            pass
+        st.session_state["_cloud_pulled"] = True
+
     # ── 【优先】处理 _fav / _toggle_star / _rename URL 指令（放在密码检查前，避免 Session 重置或 token 校验问题导致丢动作）
     from urllib.parse import unquote as _uq
     import re as _re
@@ -1191,7 +1201,6 @@ def main():
             del st.query_params["_fav"]
         except Exception:
             pass
-        st.session_state["_cloud_pulled"] = True
         st.rerun()
 
     _toggle_star = st.query_params.get("_toggle_star", "")
@@ -1208,7 +1217,6 @@ def main():
             del st.query_params["_toggle_star"]
         except Exception:
             pass
-        st.session_state["_cloud_pulled"] = True
         st.rerun()
 
     _reorder_raw = st.query_params.get("_reorder", "")
@@ -1225,7 +1233,6 @@ def main():
             del st.query_params["_reorder"]
         except Exception:
             pass
-        st.session_state["_cloud_pulled"] = True
         st.rerun()
 
     _rename_raw = st.query_params.get("_rename", "")
@@ -1244,22 +1251,11 @@ def main():
             del st.query_params["_rename"]
         except Exception:
             pass
-        st.session_state["_cloud_pulled"] = True
         st.rerun()
 
     if not _check_password():
         st.stop()
         return
-
-    # ── 启动时：从云端自动恢复所有数据（优先拉取，保证 theme_style 即刻生效） ────
-    if not st.session_state.get("_cloud_pulled"):
-        try:
-            ok, msg = cloud_sync.auto_pull_on_startup()
-            if ok and "成功" in msg:
-                st.toast(f"☁️ 云端数据已恢复：{msg}", icon="✅")
-        except Exception:
-            pass
-        st.session_state["_cloud_pulled"] = True
 
     # ── 应用显示风格和字体大小设置 ──────────────────────────────
     inject_custom_theme()

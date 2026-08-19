@@ -583,6 +583,15 @@ def render_alert_log_table(full_page: bool = True):
     cfg = storage.load_config()
     logs = storage.load_alerts(limit=0 if full_page else 100)
     if not logs:
+        # 如果本地为空但配置了云端，尝试即时从云端拉取恢复
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                cloud_sync.pull_all()
+                logs = storage.load_alerts(limit=0 if full_page else 100)
+        except Exception:
+            pass
+    if not logs:
         st.info("尚无告警记录。运行扫描引擎检测到信号后，告警记录将显示在这里。")
         return
 
