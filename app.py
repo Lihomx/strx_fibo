@@ -255,14 +255,54 @@ _st_components.html(r"""<script>
                     newName = newName.trim();
                     if (newName && newName !== curName) {
                         var renUrl = '/?_page=alert_logs&_t=' + Date.now() + '&_rename=' + encodeURIComponent(tkEdit + '|' + newName);
+                        var targetWin = window.top || window;
                         try {
-                            window.top.location.href = renUrl;
+                            targetWin.location.href = renUrl;
                         } catch(err) {
                             window.location.href = renUrl;
                         }
+                        setTimeout(function() {
+                            try { targetWin.location.reload(); } catch(e2) {}
+                        }, 80);
                     }
                 }
                 return;
+            }
+
+            // (C) ⭐ 重点关注按钮与自选按钮 (.star-btn, .fav-btn, .unfav-btn) 强制硬重载
+            var actionBtn = target.closest ? target.closest('.star-btn, .fav-btn, .unfav-btn') : null;
+            if (actionBtn) {
+                var href = actionBtn.getAttribute('href');
+                if (href) {
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    // 瞬间提供 DOM 视觉响应（消除等待感）
+                    if (actionBtn.classList.contains('star-btn')) {
+                        var isAct = actionBtn.classList.contains('star-active') || actionBtn.innerText.indexOf('⭐') !== -1;
+                        actionBtn.innerText = isAct ? '☆' : '⭐';
+                        actionBtn.classList.toggle('star-active', !isAct);
+                        actionBtn.classList.toggle('star-inactive', isAct);
+                        var tr = actionBtn.closest('tr');
+                        if (tr) { tr.classList.toggle('alert-log-row-starred', !isAct); }
+                    }
+
+                    // 强制在顶层窗口执行硬加载，确保 Streamlit 后端 100% 接收并处理参数
+                    var targetWin = window.top || window;
+                    var origin = '';
+                    try { origin = targetWin.location.origin || ''; } catch(eOrigin) { origin = window.location.origin || ''; }
+                    var fullTargetUrl = origin + href;
+                    
+                    try {
+                        targetWin.location.href = fullTargetUrl;
+                    } catch(err) {
+                        window.location.href = fullTargetUrl;
+                    }
+                    setTimeout(function() {
+                        try { targetWin.location.reload(); } catch(eReload) { window.location.reload(); }
+                    }, 60);
+                    return;
+                }
             }
         };
         pDoc.addEventListener('click', pDoc._global_click_handler, true);
