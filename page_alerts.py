@@ -418,7 +418,8 @@ def render():
         """, unsafe_allow_html=True)
         
         # 使用顶层 DOM 渲染权限申请与测试面板，彻底规避 Iframe 沙箱权限限制
-        js_notify_ui = """
+        import textwrap
+        js_notify_ui = textwrap.dedent("""
         <div style="background-color: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08); padding: 20px; border-radius: 8px; font-family: sans-serif; color: #f3f4f6;">
             <div style="margin-bottom: 20px;">
                 <h5 style="margin: 0 0 10px 0; font-size: 14px; color: #38bdf8;">🔑 第一步：授权浏览器通知</h5>
@@ -430,13 +431,10 @@ def render():
                     <span id="notif-permission-status" style="font-size: 13px; font-weight: bold; color: #f59e0b;">❔ 尚未授权（请点击左侧按钮申请）</span>
                 </div>
             </div>
-            
             <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.08); margin: 20px 0;" />
-            
             <div>
                 <h5 style="margin: 0 0 10px 0; font-size: 14px; color: #38bdf8;">🧪 第二步：直接在当前浏览器测试发送</h5>
                 <p style="margin: 0 0 12px 0; font-size: 12px; color: #94a3b8;">点击下方按钮将在当前浏览器上立即弹出一行系统测试通知，并伴随提示音：</p>
-                
                 <div style="margin-bottom: 12px;">
                     <label style="display: block; font-size: 12px; color: #cbd5e1; margin-bottom: 4px;">测试标题</label>
                     <input type="text" id="notif-test-title" value="📐 Fibo 信号发现" style="width: 100%; max-width: 400px; background: #1e293b; border: 1px solid #475569; padding: 6px 10px; border-radius: 4px; color: white; font-size: 13px;" />
@@ -445,13 +443,12 @@ def render():
                     <label style="display: block; font-size: 12px; color: #cbd5e1; margin-bottom: 4px;">测试内容</label>
                     <input type="text" id="notif-test-body" value="贵州茅台 (600519.SS) 触及日线黄金区" style="width: 100%; max-width: 400px; background: #1e293b; border: 1px solid #475569; padding: 6px 10px; border-radius: 4px; color: white; font-size: 13px;" />
                 </div>
-                
                 <button id="btn-test-notif" type="button" style="background-color: #10b981; color: white; border: none; padding: 8px 16px; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s;">
                     🧪 发送测试桌面通知
                 </button>
             </div>
         </div>
-        """
+        """).strip()
         st.markdown(js_notify_ui, unsafe_allow_html=True)
         
         # 后台依然保存静音/非静音设置
