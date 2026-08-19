@@ -198,7 +198,7 @@ _st_components.html(r"""<script>
         }
     } catch(e) {}
 
-    // 3. 全局行情链接点击计数监听器 (捕获所有页面中的 .tv-btn, .sina-btn 点击)
+    // 3. 全局行情链接点击计数监听器 & 名称修改监听器
     try {
         if (pDoc._global_click_handler) {
             pDoc.removeEventListener('click', pDoc._global_click_handler, true);
@@ -217,7 +217,7 @@ _st_components.html(r"""<script>
                     try { fetch(cbUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
                     try { if (navigator.sendBeacon) { navigator.sendBeacon(cbUrl); } } catch(err) {}
 
-                    // 前台 DOM 瞬间更新该 ticker 的所有徽章
+                    // 前台 DOM 瞬间更新该 ticker 的徽章
                     try {
                         var allBtns = pDoc.querySelectorAll('.tv-btn, .sina-btn');
                         for (var i = 0; i < allBtns.length; i++) {
@@ -243,128 +243,7 @@ _st_components.html(r"""<script>
                 return;
             }
 
-            // (B) ⭐ 全局重点关注按钮点击监听器 (.star-btn)
-            var starBtn = target.closest ? target.closest('.star-btn') : null;
-            if (starBtn) {
-                e.preventDefault();
-                e.stopPropagation();
-
-                var tkStar = starBtn.getAttribute('data-ticker') || '';
-                var href = starBtn.getAttribute('href') || '';
-                if (!tkStar && href) {
-                    var mStar = href.match(/_toggle_star=([^&]+)/);
-                    if (mStar) { tkStar = decodeURIComponent(mStar[1]).trim().toUpperCase(); }
-                }
-                if (tkStar) {
-                    tkStar = tkStar.trim().toUpperCase();
-                    var isNowActive = starBtn.classList.contains('star-active') || (starBtn.innerText && starBtn.innerText.indexOf('⭐') !== -1);
-                    var targetOp = isNowActive ? 'unstar' : 'star';
-
-                    // 瞬间同步更新页面上所有该品种的星标与行高亮
-                    var allStars = pDoc.querySelectorAll('.star-btn[data-ticker="' + tkStar + '"]');
-                    for (var sIdx = 0; sIdx < allStars.length; sIdx++) {
-                        var s = allStars[sIdx];
-                        if (targetOp === 'star') {
-                            s.classList.remove('star-inactive');
-                            s.classList.add('star-active');
-                            s.innerText = '⭐';
-                            s.setAttribute('data-star-op', 'unstar');
-                        } else {
-                            s.classList.remove('star-active');
-                            s.classList.add('star-inactive');
-                            s.innerText = '☆';
-                            s.setAttribute('data-star-op', 'star');
-                        }
-                    }
-                    var tr = starBtn.closest('tr');
-                    if (tr) {
-                        if (targetOp === 'star') {
-                            tr.classList.add('alert-log-row-starred');
-                        } else {
-                            tr.classList.remove('alert-log-row-starred');
-                        }
-                    }
-
-                    // 弹出轻量即时 Toast 提示
-                    try {
-                        var toastId = '_global_star_toast';
-                        var oldToast = pDoc.getElementById(toastId);
-                        if (oldToast) { oldToast.remove(); }
-                        var toast = pDoc.createElement('div');
-                        toast.id = toastId;
-                        toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#1e293b;color:#f8fafc;padding:10px 18px;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.4);border:1px solid #38bdf8;font-size:14px;font-weight:600;z-index:999999;transition:all 0.3s ease;display:flex;align-items:center;gap:8px;';
-                        toast.innerHTML = (targetOp === 'star' ? '⭐ 已标记重点关注：' : '☆ 已取消重点关注：') + tkStar;
-                        pDoc.body.appendChild(toast);
-                        setTimeout(function() {
-                            try { toast.style.opacity = '0'; setTimeout(function() { toast.remove(); }, 300); } catch(e) {}
-                        }, 2500);
-                    } catch(e) {}
-
-                    // 发送后台持久化请求
-                    var cbUrl = '/?_toggle_star=' + encodeURIComponent(tkStar) + '&_star_op=' + targetOp + '&_cb=' + Date.now() + '_' + Math.floor(Math.random()*10000);
-                    try { fetch(cbUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
-                    try { if (navigator.sendBeacon) { navigator.sendBeacon(cbUrl); } } catch(err) {}
-                }
-                return;
-            }
-
-            // (C) ➕/🗑️ 自选收藏按钮点击监听器 (.fav-btn, .unfav-btn)
-            var favBtn = target.closest ? target.closest('.fav-btn, .unfav-btn') : null;
-            if (favBtn) {
-                var ah = favBtn.getAttribute('href');
-                if (ah) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    var mFav = ah.match(/_fav=([^&]+)/);
-                    if (mFav) {
-                        var favVal = mFav[1];
-                        var parts = decodeURIComponent(favVal).split('|');
-                        var op = parts[0]; // add or del
-                        var tkFav = parts[1];
-                        var nmFav = parts.length > 2 ? parts[2] : tkFav;
-                        
-                        // 瞬间更新 DOM 按钮状态
-                        if (op === 'add') {
-                            favBtn.classList.remove('fav-btn');
-                            favBtn.classList.add('unfav-btn');
-                            favBtn.innerText = '🗑️ 取消自选';
-                            favBtn.title = '从自选表移除并取消重点关注';
-                            var newHref = ah.replace(/_fav=add%7C/, '_fav=del%7C').replace(/_fav=add\|/, '_fav=del|');
-                            favBtn.setAttribute('href', newHref);
-                        } else {
-                            favBtn.classList.remove('unfav-btn');
-                            favBtn.classList.add('fav-btn');
-                            favBtn.innerText = '➕ 加入自选';
-                            favBtn.title = '添加到自选表';
-                            var newHref = ah.replace(/_fav=del%7C/, '_fav=add%7C').replace(/_fav=del\|/, '_fav=add|');
-                            favBtn.setAttribute('href', newHref);
-                        }
-
-                        // 弹出轻量即时 Toast 提示
-                        try {
-                            var toastId = '_global_fav_toast';
-                            var oldToast = pDoc.getElementById(toastId);
-                            if (oldToast) { oldToast.remove(); }
-                            var toast = pDoc.createElement('div');
-                            toast.id = toastId;
-                            toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#1e293b;color:#f8fafc;padding:10px 18px;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.4);border:1px solid #22c55e;font-size:14px;font-weight:600;z-index:999999;transition:all 0.3s ease;display:flex;align-items:center;gap:8px;';
-                            toast.innerHTML = (op === 'add' ? '⭐ 已加入自选：' : '🗑️ 已移出自选：') + (nmFav || tkFav);
-                            pDoc.body.appendChild(toast);
-                            setTimeout(function() {
-                                try { toast.style.opacity = '0'; setTimeout(function() { toast.remove(); }, 300); } catch(e) {}
-                            }, 2500);
-                        } catch(e) {}
-
-                        // 发送后台请求
-                        var cbUrl = '/?_fav=' + encodeURIComponent(decodeURIComponent(favVal)) + '&_cb=' + Date.now() + '_' + Math.floor(Math.random()*10000);
-                        try { fetch(cbUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
-                        try { if (navigator.sendBeacon) { navigator.sendBeacon(cbUrl); } } catch(err) {}
-                    }
-                }
-                return;
-            }
-
-            // (D) ✏️ 编辑名称按钮 (.edit-name-btn)
+            // (B) ✏️ 编辑名称按钮 (.edit-name-btn)
             var editBtn = target.closest ? target.closest('.edit-name-btn') : null;
             if (editBtn) {
                 e.preventDefault();
@@ -375,14 +254,12 @@ _st_components.html(r"""<script>
                 if (newName !== null) {
                     newName = newName.trim();
                     if (newName && newName !== curName) {
-                        editBtn.setAttribute('data-name', newName);
-                        var parentSpan = editBtn.closest('.name-text-wrap');
-                        if (parentSpan) {
-                            var linkA = parentSpan.querySelector('a');
-                            if (linkA) { linkA.innerText = newName; }
+                        var renUrl = '/?_page=alert_logs&_t=' + Date.now() + '&_rename=' + encodeURIComponent(tkEdit + '|' + newName);
+                        try {
+                            window.top.location.href = renUrl;
+                        } catch(err) {
+                            window.location.href = renUrl;
                         }
-                        var cbUrl = '/?_rename=' + encodeURIComponent(tkEdit + '|' + newName) + '&_cb=' + Date.now() + '_' + Math.floor(Math.random()*10000);
-                        try { fetch(cbUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
                     }
                 }
                 return;
