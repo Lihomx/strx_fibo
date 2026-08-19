@@ -449,7 +449,10 @@ def render():
             </div>
         </div>
         """).strip()
-        st.markdown(js_notify_ui, unsafe_allow_html=True)
+        if hasattr(st, "html"):
+            st.html(js_notify_ui)
+        else:
+            st.markdown(js_notify_ui, unsafe_allow_html=True)
         
         # 后台依然保存静音/非静音设置
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
