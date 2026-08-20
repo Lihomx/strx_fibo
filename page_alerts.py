@@ -591,9 +591,7 @@ def render_alert_log_table(full_page: bool = True):
                     sub_df = df[df["ticker"].str.upper() == stk_u]
                     if not sub_df.empty:
                         latest_row = sub_df.iloc[0]
-                        l_time = str(latest_row.get("time", ""))
-                        if len(l_time) > 16:
-                            l_time = l_time[:16]
+                        l_time = storage.format_timestamp(latest_row.get("time", ""))
                         l_tf = str(latest_row.get("timeframe", ""))
                         l_lbl = str(latest_row.get("label", "") or "").strip()
                         
@@ -856,119 +854,48 @@ def render_alert_log_table(full_page: bool = True):
             from assets import tv_url
             import urllib.parse
             
-            # 转换扫描器标签
             def get_scanner_label(row):
-                s = str(row.get("scanner", ""))
-                lbl = str(row.get("label", ""))
-                msg = str(row.get("message", ""))
-                
-                # 判断上涨/下跌
-                if "空头" in lbl or "跌" in lbl or "空头" in msg or "跌" in msg:
-                    dir_tag = " (下跌)"
-                elif "多头" in lbl or "突破" in lbl or "黄金区" in lbl or "多头" in msg or "突破" in msg:
-                    dir_tag = " (上涨)"
-                else:
-                    dir_tag = ""
-
-                if s == "fibo":
-                    return f"Fibonacci{dir_tag}"
-                elif s == "ema_pivot":
-                    return f"EMA + Daily Pivot{dir_tag}"
-                elif s == "chartink":
-                    return f"Chartink 4H{dir_tag}"
-                elif s:
-                    return f"{s}{dir_tag}"
-                return "其他/历史记录"
+                s, lbl, msg = str(row.get("scanner", "")), str(row.get("label", "")), str(row.get("message", ""))
+                dir_tag = " (下跌)" if ("空头" in lbl or "跌" in lbl or "空头" in msg or "跌" in msg) else (" (上涨)" if ("多头" in lbl or "突破" in lbl or "黄金区" in lbl or "多头" in msg or "突破" in msg) else "")
+                if s == "fibo": return f"Fibonacci{dir_tag}"
+                elif s == "ema_pivot": return f"EMA + Daily Pivot{dir_tag}"
+                elif s == "chartink": return f"Chartink 4H{dir_tag}"
+                return f"{s}{dir_tag}" if s else "其他/历史记录"
                 
             df["scanner_name"] = df.apply(get_scanner_label, axis=1)
             df["tradingview"] = df["ticker"].apply(lambda t: tv_url(t, "15m"))
-            df["clicks"] = ""  # 占位列
-            
-            # 预加载全量点击数据
-            all_clicks_data = storage.get_all_link_clicks()
-            today_str_val = storage.get_today_str()
+            df["clicks"] = ""
 
-            # 💡 用 HTML 渲染美观、大字体的表格，支持悬停高亮和批次底色交替，自适应深浅色主题
             try:
-                # 获取展示数据中所有唯一时间戳并排序
                 unique_times = sorted(df["time"].dropna().unique())
                 time_to_group = {t: idx for idx, t in enumerate(unique_times)}
+                all_clicks_data = storage.get_all_link_clicks()
+                today_str_val = storage.get_today_str()
                 
-                # 开始构建 HTML 结构
-                html_parts = []
-                html_parts.append("<style>")
-                html_parts.append(".alert-log-container { max-height: 850px; overflow-y: auto; border: 1px solid rgba(128, 128, 128, 0.2); border-radius: 8px; margin-top: 15px; margin-bottom: 20px; }")
-                html_parts.append(".alert-log-table { width: 100%; border-collapse: collapse; font-family: inherit; font-size: 14px; }")
-                html_parts.append(".alert-log-table th { background-color: rgba(128, 128, 128, 0.1); color: inherit; font-weight: 600; padding: 14px 16px; text-align: left; border-bottom: 2px solid rgba(128, 128, 128, 0.2); position: sticky; top: 0; z-index: 10; font-size: 13px; }")
-                html_parts.append(".alert-log-table td { padding: 14px 16px; border-bottom: 1px solid rgba(128, 128, 128, 0.1); vertical-align: middle; }")
-                html_parts.append(".alert-log-row-odd { background-color: rgba(30, 144, 255, 0.05); }")
-                html_parts.append(".alert-log-row-even { background-color: transparent; }")
-                html_parts.append(".alert-log-row-fail { background-color: rgba(239, 68, 68, 0.12) !important; }")
-                html_parts.append(".alert-log-table tr:hover { background-color: rgba(128, 128, 128, 0.08) !important; }")
-                html_parts.append(".badge-success { background-color: rgba(34, 197, 94, 0.15); color: #4ade80; padding: 4px 8px; border-radius: 4px; font-weight: 500; font-size: 12px; display: inline-block; border: 1px solid rgba(34, 197, 94, 0.3); }")
-                html_parts.append(".badge-danger { background-color: rgba(239, 68, 68, 0.15); color: #f87171; padding: 4px 8px; border-radius: 4px; font-weight: 500; font-size: 12px; display: inline-block; border: 1px solid rgba(239, 68, 68, 0.3); }")
-                html_parts.append(".tv-btn { display: inline-flex; align-items: center; background-color: rgba(30, 144, 255, 0.15); color: #38bdf8 !important; padding: 5px 10px; border-radius: 4px; text-decoration: none !important; font-size: 12px; font-weight: 500; transition: all 0.2s ease; border: 1px solid rgba(30, 144, 255, 0.3); }")
-                html_parts.append(".tv-btn:hover { background-color: rgba(30, 144, 255, 0.3); color: #60a5fa !important; transform: translateY(-1px); }")
-                html_parts.append(".sina-btn { display: inline-flex; align-items: center; background-color: rgba(255, 69, 0, 0.15); color: #ff6347 !important; padding: 5px 10px; border-radius: 4px; text-decoration: none !important; font-size: 12px; font-weight: 500; transition: all 0.2s ease; border: 1px solid rgba(255, 69, 0, 0.3); margin-left: 5px; }")
-                html_parts.append(".sina-btn:hover { background-color: rgba(255, 69, 0, 0.3); color: #ff7f50 !important; transform: translateY(-1px); }")
-                html_parts.append(".unfav-btn { display: inline-flex; align-items: center; background-color: rgba(239, 68, 68, 0.15); color: #f87171 !important; padding: 4px 8px; border-radius: 4px; text-decoration: none !important; font-size: 12px; font-weight: 500; transition: all 0.2s ease; border: 1px solid rgba(239, 68, 68, 0.3); margin-left: 5px; }")
-                html_parts.append(".unfav-btn:hover { background-color: rgba(239, 68, 68, 0.3); color: #ef4444 !important; transform: translateY(-1px); }")
-                html_parts.append(".fav-btn { display: inline-flex; align-items: center; background-color: rgba(34, 197, 94, 0.15); color: #4ade80 !important; padding: 4px 8px; border-radius: 4px; text-decoration: none !important; font-size: 12px; font-weight: 500; transition: all 0.2s ease; border: 1px solid rgba(34, 197, 94, 0.3); margin-left: 5px; }")
-                html_parts.append(".fav-btn:hover { background-color: rgba(34, 197, 94, 0.3); color: #22c55e !important; transform: translateY(-1px); }")
-                html_parts.append(".star-btn { text-decoration: none !important; font-size: 16px; margin-right: 6px; cursor: pointer; display: inline-block; transition: transform 0.2s ease, filter 0.2s ease; }")
-                html_parts.append(".star-btn:hover { transform: scale(1.3); }")
-                html_parts.append(".star-active { color: #eab308 !important; filter: drop-shadow(0 0 4px rgba(234,179,8,0.8)); opacity: 1; }")
-                html_parts.append(".star-inactive { color: #64748b !important; opacity: 0.35; }")
-                html_parts.append(".star-inactive:hover { color: #eab308 !important; opacity: 0.9; }")
-                html_parts.append(".alert-log-row-starred { background-color: rgba(245, 158, 11, 0.08) !important; font-weight: 500; }")
-                html_parts.append(".click-count-badge { font-weight: 600; font-size: 12px; }")
-                html_parts.append("</style>")
-                html_parts.append("<div class=\"alert-log-container\">")
-                html_parts.append("<table class=\"alert-log-table\">")
-                
-                # 预加载自选收藏列表
-                watchlist_items = storage.load_watchlist()
-                watchlist_tickers = {item.get("ticker", "").upper() for item in watchlist_items if isinstance(item, dict)}
-
-                # 动态生成表头
-                header_th_list = []
+                html_parts = ["<style>.alert-log-container { max-height: 850px; overflow-y: auto; border: 1px solid rgba(128, 128, 128, 0.2); border-radius: 8px; margin-top: 15px; } .alert-log-table { width: 100%; border-collapse: collapse; font-size: 14px; } .alert-log-table th { background-color: rgba(128, 128, 128, 0.1); padding: 14px 16px; text-align: left; position: sticky; top: 0; z-index: 10; } .alert-log-table td { padding: 14px 16px; border-bottom: 1px solid rgba(128, 128, 128, 0.1); } .alert-log-row-odd { background-color: rgba(30, 144, 255, 0.05); } .alert-log-row-fail { background-color: rgba(239, 68, 68, 0.12) !important; } .star-btn { text-decoration: none; cursor: pointer; } .star-active { color: #eab308; } .star-inactive { color: #64748b; opacity: 0.35; }</style>"]
+                html_parts.append("<div class=\"alert-log-container\"><table class=\"alert-log-table\"><thead><tr>")
                 for k in selected_col_keys:
                     lbl = next((l for key, l, _ in ALL_COLS_MAP if key == k), k)
-                    if k == "clicks":
-                        lbl = "📊 点击(今日/总)"
-                    header_th_list.append(f"<th>{lbl}</th>")
+                    html_parts.append(f"<th>{lbl}</th>")
+                html_parts.append("</tr></thead><tbody>")
                 
-                html_parts.append(f"<thead><tr>{''.join(header_th_list)}</tr></thead>")
-                html_parts.append("<tbody>")
+                watchlist_items = storage.load_watchlist()
+                watchlist_tickers = {item.get("ticker", "").upper() for item in watchlist_items if isinstance(item, dict)}
                 
-                t_token = st.query_params.get("_t", "")
-                curr_page = st.query_params.get("_page", "alert_logs")
-                
-                # 预加载品种全称字典（从自定义品种库、自选库及线上新浪/yfinance实时API补全）
                 from page_watchlist import _fetch_ticker_name
                 custom_symbols = storage.load_symbols()
                 symbol_name_map = {item["ticker"].upper(): item["name"] for item in custom_symbols if item.get("name")}
-                for item in watchlist_items:
-                    if item.get("name") and item.get("ticker"):
-                        symbol_name_map[item["ticker"].upper()] = item["name"]
 
                 for idx, row in df.iterrows():
-                    status = row.get("status", "")
-                    t_val = row.get("time", "")
-                    ticker = row.get("ticker", "")
+                    status, t_val, ticker = row.get("status", ""), row.get("time", ""), row.get("ticker", "")
+                    t_formatted = storage.format_timestamp(t_val)
                     tk_upper = ticker.upper()
-                    
-                    # 若存储中尚无中文全称，由 Python 后端服务在渲染前直接调用 _fetch_ticker_name 实时查询填入
                     raw_name = symbol_name_map.get(tk_upper) or row.get("name", "")
                     if not raw_name or raw_name.strip().upper().replace(".", "") == tk_upper.replace(".", ""):
                         fetched_nm = _fetch_ticker_name(ticker)
-                        if fetched_nm:
-                            name = fetched_nm
-                            symbol_name_map[tk_upper] = fetched_nm
-                        else:
-                            name = ticker
-                    else:
-                        name = raw_name
+                        if fetched_nm: name = fetched_nm; symbol_name_map[tk_upper] = fetched_nm
+                        else: name = ticker
+                    else: name = raw_name
                     
                     is_starred = storage.is_ticker_starred(ticker)
                     is_in_watchlist = ticker.upper() in watchlist_tickers
@@ -985,7 +912,7 @@ def render_alert_log_table(full_page: bool = True):
                             row_class = 'class="alert-log-row-odd"'
                         else:
                             row_class = 'class="alert-log-row-even"'
-                            
+
                     # 格式化状态徽标
                     if status == "fail" or status == "失败":
                         status_html = '<span class="badge-danger">❌ 失败</span>'
@@ -1054,7 +981,7 @@ def render_alert_log_table(full_page: bool = True):
 
                     # 动态拼接每行的 td
                     td_map = {
-                        "time": f"<td>{t_val}</td>",
+                        "time": f"<td>{t_formatted}</td>",
                         "ticker": f"<td>{code_html}</td>",
                         "name": f"<td>{name_html}</td>",
                         "scanner_name": f"<td>{row.get('scanner_name', '—')}</td>",

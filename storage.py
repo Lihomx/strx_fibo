@@ -609,14 +609,36 @@ def clear_alert_log() -> bool:
 
 F_LINK_CLICKS = os.path.join(_BASE, "data_link_clicks.json")
 
+def format_timestamp(ts_str: str, target_tz: str = None) -> str:
+    """将 UTC ISO 时间戳转换为用户配置时区的标准可读格式 YYYY-MM-DD HH:MM:SS"""
+    if not ts_str:
+        return "—"
+    try:
+        from datetime import datetime, timezone
+        from zoneinfo import ZoneInfo
+        if not target_tz:
+            cfg = load_config()
+            target_tz = cfg.get("timezone") or cfg.get("display_timezone") or "Asia/Shanghai"
+        
+        s = str(ts_str).strip()
+        if "T" in s or "+" in s or "Z" in s:
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            dt_local = dt.astimezone(ZoneInfo(target_tz))
+            return dt_local.strftime("%Y-%m-%d %H:%M:%S")
+        return s[:19].replace("T", " ")
+    except Exception:
+        return str(ts_str)[:19].replace("T", " ")
+
 def get_today_str() -> str:
     """按用户配置时区返回当前日期字符串 YYYY-MM-DD"""
     try:
         cfg = load_config()
-        tz_name = cfg.get("display_timezone") or "Asia/Shanghai"
-        import pytz
+        tz_name = cfg.get("timezone") or cfg.get("display_timezone") or "Asia/Shanghai"
+        from zoneinfo import ZoneInfo
         from datetime import datetime
-        return datetime.now(pytz.timezone(tz_name)).strftime("%Y-%m-%d")
+        return datetime.now(ZoneInfo(tz_name)).strftime("%Y-%m-%d")
     except Exception:
         from datetime import datetime
         return datetime.now().strftime("%Y-%m-%d")
