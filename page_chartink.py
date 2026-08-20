@@ -458,6 +458,174 @@ def render_page_chartink():
         time.sleep(0.5)
         st.rerun()
 
+    # ── 🌐 Google Colab 独立大规模扫描渠道 ──
+    with st.expander("☁️ Google Colab 算力扫描渠道 (全美股 / 全A股 极速 4H 突破扫描与结果导入)", expanded=False):
+        colab_c1, colab_c2 = st.columns([1.2, 1], gap="medium")
+        with colab_c1:
+            st.markdown("##### 1. 选择股票池并获取专属 Colab 4H 扫描脚本")
+            st.caption("利用 Google Colab 免费高性能多核算力极速扫描数百上千只全市场股票，完全不受 Streamlit Cloud 内存配额与执行时长限制。")
+            
+            # 从系统已有品种库与分组中提取
+            groups = storage.load_symbol_groups() or []
+            all_symbols = storage.load_symbols() or []
+            
+            pool_options = ["🇺🇸 全量美股 (系统内置)", "🇨🇳 全量A股 (系统内置)"]
+            grp_name_list = [g["name"] for g in groups if g.get("name")]
+            for gn in grp_name_list:
+                if gn not in pool_options:
+                    pool_options.append(f"📁 分组: {gn}")
+            pool_options.append("⭐ 我的自选关注列表")
+            
+            p_col1, p_col2 = st.columns([1.5, 1])
+            with p_col1:
+                selected_pool = st.selectbox(
+                    "选择需要导出的扫描股票池",
+                    options=pool_options,
+                    index=0,
+                    key="chartink_colab_selected_pool",
+                    help="系统会自动将选定股票池中的所有股票代码注入到 Colab 脚本中，无需在 Colab 中重复拉取"
+                )
+            with p_col2:
+                st.text_input(
+                    "扫描周期 (固定)",
+                    value="4h (4小时 突破)",
+                    disabled=True,
+                    help="Chartink 7条规则突破策略专用于 4小时 (4H) 周期突破检测"
+                )
+            
+            # 提取对应股票代码
+            export_tickers = []
+            if "全量美股" in selected_pool:
+                us_grp = next((g for g in groups if "全量美股" in g.get("name", "")), None)
+                if us_grp and us_grp.get("tickers"):
+                    export_tickers = us_grp["tickers"]
+                else:
+                    export_tickers = [s["ticker"] for s in all_symbols if not s["ticker"].endswith(".SS") and not s["ticker"].endswith(".SZ") and not s["ticker"].endswith(".BJ") and not s["ticker"].isdigit()]
+            elif "全量A股" in selected_pool:
+                a_grp = next((g for g in groups if "全量A股" in g.get("name", "")), None)
+                if a_grp and a_grp.get("tickers"):
+                    export_tickers = a_grp["tickers"]
+                else:
+                    export_tickers = [s["ticker"] for s in all_symbols if s["ticker"].endswith(".SS") or s["ticker"].endswith(".SZ") or s["ticker"].endswith(".BJ") or s["ticker"].isdigit()]
+            elif "自选关注" in selected_pool:
+                wl = storage.load_watchlist() or []
+                export_tickers = [w["ticker"] for w in wl if w.get("ticker")]
+            elif selected_pool.startswith("📁 分组:"):
+                g_target_name = selected_pool.replace("📁 分组: ", "").strip()
+                target_g = next((g for g in groups if g.get("name") == g_target_name), None)
+                if target_g:
+                    export_tickers = target_g.get("tickers", [])
+                    
+            if not export_tickers:
+                export_tickers = [s["ticker"] for s in all_symbols[:500]] if all_symbols else ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN"]
+                
+            export_tickers = list(dict.fromkeys([t.strip().upper() for t in export_tickers if t and isinstance(t, str)]))
+            
+            st.info(f"📋 选定股票池: **{len(export_tickers)}** 支品种 | 周期: **4h** (已直接生成于下方代码中)：")
+            
+            import colab_chartink_script
+            colab_code = colab_chartink_script.generate_colab_chartink_script(export_tickers, pool_name=selected_pool)
+            st.code(colab_code, language="python", line_numbers=True)
+            st.markdown(
+                """
+                <div style="font-size:12px;color:#94a3b8;margin-top:-6px;margin-bottom:10px;">
+                    👉 <b>操作指引：</b> 点击代码框右上角<b>复制</b> ➔ 打开 <a href="https://colab.research.google.com/" target="_blank" style="color:#38bdf8;text-decoration:underline;">Google Colab</a> 新建笔记本粘贴并运行 ➔ 运行完毕将自动下载 <code>colab_chartink_results.csv</code>。
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+        
+        with colab_c2:
+            st.markdown("##### 2. 导入 Colab 扫描结果 CSV")
+            st.caption("上传从 Google Colab 导出的扫描结果 CSV 文件，系统将自动进行格式校验并展示 4H 突破匹配结果。")
+            uploaded_file = st.file_uploader(
+                "选择或拖拽 Colab 导出的 CSV 文件",
+                type=["csv"],
+                key="chartink_colab_csv_uploader",
+                help="支持导入 colab_chartink_results.csv"
+            )
+            
+            if uploaded_file is not None:
+                try:
+                    import io
+                    import csv
+                    import json
+                    df_up = pd.read_csv(uploaded_file)
+                    
+                    if "ticker" not in df_up.columns:
+                        st.error("❌ CSV 文件格式不符合要求，缺少 ticker 列")
+                    else:
+                        passed_list = []
+                        failed_list = []
+                        errors_list = []
+                        
+                        for _, r in df_up.iterrows():
+                            tk = str(r.get("ticker", "")).strip().upper()
+                            if not tk:
+                                continue
+                            
+                            is_passed = bool(r.get("passed", 0) == 1 or str(r.get("passed", "")).lower() in ("true", "1"))
+                            err_msg = str(r.get("error", "")) if pd.notna(r.get("error")) and str(r.get("error", "")).strip() else None
+                            
+                            details = []
+                            details_json_str = str(r.get("details_json", ""))
+                            if details_json_str and details_json_str != "nan":
+                                try:
+                                    details = json.loads(details_json_str)
+                                except Exception:
+                                    pass
+                            
+                            item = {
+                                "ticker": tk,
+                                "passed": is_passed,
+                                "close": float(r.get("close", 0.0)) if pd.notna(r.get("close")) and r.get("close") != "" else None,
+                                "volume_4h": float(r.get("volume_4h", 0.0)) if pd.notna(r.get("volume_4h")) and r.get("volume_4h") != "" else None,
+                                "rsi": float(r.get("rsi", 0.0)) if pd.notna(r.get("rsi")) and r.get("rsi") != "" else None,
+                                "cloud_top": float(r.get("cloud_top", 0.0)) if pd.notna(r.get("cloud_top")) and r.get("cloud_top") != "" else None,
+                                "cloud_bot": float(r.get("cloud_bot", 0.0)) if pd.notna(r.get("cloud_bot")) and r.get("cloud_bot") != "" else None,
+                                "supertrend": float(r.get("supertrend", 0.0)) if pd.notna(r.get("supertrend")) and r.get("supertrend") != "" else None,
+                                "close_2h_m2": float(r.get("close_2h_m2", 0.0)) if pd.notna(r.get("close_2h_m2")) and r.get("close_2h_m2") != "" else None,
+                                "error": err_msg,
+                                "details": details,
+                                "scan_time": str(r.get("scan_time", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                            }
+                            
+                            if err_msg:
+                                errors_list.append(item)
+                            elif is_passed:
+                                passed_list.append(item)
+                            else:
+                                failed_list.append(item)
+                                
+                        total_cnt = len(passed_list) + len(failed_list) + len(errors_list)
+                        st.markdown(f"📊 **检测到 CSV 记录**: 共 `{total_cnt}` 支 | 🔥 通过突破: `{len(passed_list)}` 支 | ❌ 未通过: `{len(failed_list)}` 支 | ⚠️ 错误: `{len(errors_list)}` 支")
+                        
+                        if st.button("📥 确认导入并覆盖为当前结果", key="chartink_colab_confirm_import_btn", type="primary", use_container_width=True):
+                            try:
+                                final_res = {
+                                    "passed": passed_list,
+                                    "failed": failed_list,
+                                    "errors": errors_list,
+                                    "scanned_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                    "total": total_cnt,
+                                    "done_count": total_cnt
+                                }
+                                ok = storage.save_chartink(final_res)
+                                if ok:
+                                    try:
+                                        storage.backup_chartink(final_res)
+                                    except Exception:
+                                        pass
+                                    st.toast(f"✅ 成功导入 {len(passed_list)} 条 4H 突破扫描结果！", icon="🎉")
+                                    time.sleep(0.8)
+                                    st.rerun()
+                                else:
+                                    st.error("❌ 写入存储失败: storage.save_chartink 返回 False。")
+                            except Exception as save_err:
+                                st.error(f"❌ 写入存储异常: {save_err}")
+                except Exception as ex:
+                    st.error(f"❌ 解析 CSV 文件失败: {ex}")
+
     # ── 📦 扫描批次历史与恢复 ───────────────────────────────────────
     snapshots = storage.load_chartink_snapshots()
     options = []
