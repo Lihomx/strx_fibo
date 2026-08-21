@@ -502,15 +502,44 @@ def render_page_neckline():
         unsafe_allow_html=True,
     )
 
+    # ── 过滤、搜索与分页控制栏 ──────────────────────────────────────
+    col_f1, col_f2, col_f3, col_f4 = st.columns([1.5, 1.2, 1.2, 1.1])
+    with col_f1:
+        search_q = st.text_input("🔍 搜索品种代码", key="neckline_search_q", placeholder="输入代码如 AAPL, 600519...")
+    with col_f2:
+        pattern_filter = st.selectbox("🏷️ 突破形态筛选", options=["全部形态", "箱体突破", "双底突破", "头肩底突破"], key="neckline_pat_filter")
+    with col_f3:
+        sort_by = st.selectbox("↕️ 排序方式", options=["突破幅度 (高到低)", "4H成交量 (大到小)", "代码 (A-Z)"], key="neckline_sort_by")
+    with col_f4:
+        page_size = st.selectbox("📄 每页条数", options=[25, 50, 100, "全部"], index=0, key="neckline_page_size")
+
+    # 过滤通过列表
+    filtered_passed = passed
+    if search_q:
+        q = search_q.strip().upper()
+        filtered_passed = [r for r in filtered_passed if q in str(r.get("ticker", "")).upper()]
+    if pattern_filter != "全部形态":
+        filtered_passed = [r for r in filtered_passed if pattern_filter in str(r.get("pattern", ""))]
+    
+    # 排序
+    if sort_by == "突破幅度 (高到低)":
+        filtered_passed = sorted(filtered_passed, key=lambda x: float(x.get("breakout_pct", 0.0) or 0.0), reverse=True)
+    elif sort_by == "4H成交量 (大到小)":
+        filtered_passed = sorted(filtered_passed, key=lambda x: float(x.get("volume_4h", 0) or 0), reverse=True)
+    elif sort_by == "代码 (A-Z)":
+        filtered_passed = sorted(filtered_passed, key=lambda x: str(x.get("ticker", "")))
+
+    total_passed_cnt = len(filtered_passed)
+
     # ── 通过的品种 ──────────────────────────────────────────────────
     col_pass_hdr1, col_pass_hdr2 = st.columns([3, 1])
     with col_pass_hdr1:
-        st.markdown("### 🚀 突破 4H 结构颈线的品种")
+        st.markdown(f"### 🚀 突破 4H 结构颈线的品种 ({total_passed_cnt} 支)")
     with col_pass_hdr2:
-        if passed:
-            if st.button("⭐ 批量收藏全部通过品种", key="neckline_fav_all_passed", use_container_width=True):
+        if filtered_passed:
+            if st.button("⭐ 批量收藏当前筛选品种", key="neckline_fav_all_passed", use_container_width=True):
                 added_cnt = 0
-                for r in passed:
+                for r in filtered_passed:
                     tk = r["ticker"]
                     if storage.add_to_watchlist(ticker=tk, name=tk, note="4H 结构颈线突破扫描匹配"):
                         added_cnt += 1
@@ -518,9 +547,47 @@ def render_page_neckline():
                 time.sleep(1)
                 st.rerun()
 
-    if not passed:
-        st.markdown('<div class="n-warn">本次扫描无品种满足 4H 结构颈线突破条件。</div>', unsafe_allow_html=True)
+    if not filtered_passed:
+        if passed and (search_q or pattern_filter != "全部形态"):
+            st.markdown('<div class="n-warn">未找到符合搜索/筛选条件的突破品种。</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="n-warn">本次扫描无品种满足 4H 结构颈线突破条件。</div>', unsafe_allow_html=True)
     else:
+        # 分页切片计算
+        if page_size == "全部":
+            page_items = filtered_passed
+            total_pages = 1
+            curr_page_idx = 1
+        else:
+            ps = int(page_size)
+            total_pages = max(1, (total_passed_cnt + ps - 1) // ps)
+            
+            if "neckline_page_idx" not in st.session_state:
+                st.session_state["neckline_page_idx"] = 1
+            if st.session_state["neckline_page_idx"] > total_pages:
+                st.session_state["neckline_page_idx"] = total_pages
+            if st.session_state["neckline_page_idx"] < 1:
+                st.session_state["neckline_page_idx"] = 1
+                
+            curr_page_idx = st.session_state["neckline_page_idx"]
+            
+            if total_pages > 1:
+                col_p1, col_p2, col_p3 = st.columns([1, 2, 1])
+                with col_p1:
+                    if st.button("⬅️ 上一页", key="nl_prev_p", disabled=(curr_page_idx <= 1), use_container_width=True):
+                        st.session_state["neckline_page_idx"] = max(1, curr_page_idx - 1)
+                        st.rerun()
+                with col_p2:
+                    st.markdown(f"<div style='text-align:center;padding-top:6px;font-size:13px;color:#94a3b8;'>第 <b style='color:#38bdf8;'>{curr_page_idx}</b> / {total_pages} 页 (共 {total_passed_cnt} 支，当前显示第 {(curr_page_idx-1)*ps+1} - {min(curr_page_idx*ps, total_passed_cnt)} 支)</div>", unsafe_allow_html=True)
+                with col_p3:
+                    if st.button("下一页 ➡️", key="nl_next_p", disabled=(curr_page_idx >= total_pages), use_container_width=True):
+                        st.session_state["neckline_page_idx"] = min(total_pages, curr_page_idx + 1)
+                        st.rerun()
+                    
+            start_i = (curr_page_idx - 1) * ps
+            end_i = start_i + ps
+            page_items = filtered_passed[start_i:end_i]
+
         all_clicks_data = storage.get_all_link_clicks()
         today_str_val = storage.get_today_str()
         from assets import tv_url, sina_url
@@ -531,9 +598,9 @@ def render_page_neckline():
         _t_val = st.query_params.get("_t", "")
         _t_param = f"&_t={_t_val}" if _t_val else ""
 
-        # 汇总表
+        # 汇总表 (仅渲染当前页数据，极速流畅)
         rows_html = []
-        for r in passed:
+        for r in page_items:
             ticker = r["ticker"]
             pat = r.get("pattern", "箱体突破")
             price_s = f"{r['close']:.4f}" if r.get('close') else "—"
@@ -597,37 +664,112 @@ def render_page_neckline():
             unsafe_allow_html=True,
         )
 
-        # 详细条件展开
-        for r in passed:
-            with st.expander(f"🔍 {r['ticker']} — 4H 结构颈线突破明细 ({r.get('pattern', '—')})", expanded=False):
-                col_d1, col_d2 = st.columns([4, 1])
-                with col_d1:
-                    _render_details(r["details"])
-                with col_d2:
-                    if r['ticker'].upper() in wl_set:
-                        if st.button(f"🗑️ 移除收藏", key=f"neckline_fav_det_del_{r['ticker']}", use_container_width=True):
-                            storage.remove_from_watchlist(r['ticker'])
-                            st.toast(f"已将 {r['ticker']} 从自选收藏夹移除", icon="🗑️")
-                            st.rerun()
-                    else:
-                        if st.button(f"⭐ 加入收藏", key=f"neckline_fav_det_add_{r['ticker']}", use_container_width=True):
-                            storage.add_to_watchlist(ticker=r['ticker'], name=r['ticker'], note="4H 结构颈线突破扫描匹配")
-                            st.toast(f"⭐ 已将 {r['ticker']} 加入自选收藏夹", icon="⭐")
-                            st.rerun()
+        # 💡 隐形事件监听组件：捕捉原链接点击，能在后台落盘计数，同时在前台秒级实时更新 (今日/总) 数字
+        _js_code = (
+            "<script>\n"
+            "(function() {\n"
+            "    try {\n"
+            "        var pDoc = window.parent.document;\n"
+            "        if (pDoc._tv_click_handler) {\n"
+            "            pDoc.removeEventListener('click', pDoc._tv_click_handler, true);\n"
+            "        }\n"
+            "        pDoc._tv_click_handler = function(e) {\n"
+            "            var btn = e.target.closest('.tv-btn, .sina-btn');\n"
+            "            if (btn) {\n"
+            "                var tk = btn.getAttribute('data-ticker');\n"
+            "                if (tk) {\n"
+            "                    tk = tk.trim().toUpperCase();\n"
+            "                    var cbUrl = '/?_tv_click=' + encodeURIComponent(tk) + '&_cb=' + Date.now() + '_' + Math.floor(Math.random()*10000);\n"
+            "                    try { fetch(cbUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}\n"
+            "                    try { if (navigator.sendBeacon) { navigator.sendBeacon(cbUrl); } } catch(err) {}\n"
+            "                    try {\n"
+            "                        var f = pDoc.createElement('iframe');\n"
+            "                        f.style.display = 'none';\n"
+            "                        f.src = cbUrl;\n"
+            "                        pDoc.body.appendChild(f);\n"
+            "                        setTimeout(function() { try { f.remove(); } catch(err) {} }, 6000);\n"
+            "                    } catch(err) {}\n"
+            "                    try {\n"
+            "                        var allBtns = pDoc.querySelectorAll('.tv-btn, .sina-btn');\n"
+            "                        for (var i = 0; i < allBtns.length; i++) {\n"
+            "                            var b = allBtns[i];\n"
+            "                            var bTk = b.getAttribute('data-ticker');\n"
+            "                            if (bTk && bTk.trim().toUpperCase() === tk) {\n"
+            "                                var spans = b.getElementsByTagName('span');\n"
+            "                                if (spans && spans.length > 0) {\n"
+            "                                    var span = spans[spans.length - 1];\n"
+            "                                    var txt = span.innerText || span.textContent || '';\n"
+            "                                    var m = txt.match(/\\((\\d+)\\/(\\d+)\\)/);\n"
+            "                                    if (m) {\n"
+            "                                        var today = parseInt(m[1], 10) + 1;\n"
+            "                                        var total = parseInt(m[2], 10) + 1;\n"
+            "                                        span.innerText = '(' + today + '/' + total + ')';\n"
+            "                                        span.style.color = '#4ade80';\n"
+            "                                        span.style.fontWeight = '600';\n"
+            "                                    }\n"
+            "                                }\n"
+            "                            }\n"
+            "                        }\n"
+            "                    } catch(err) {}\n"
+            "                }\n"
+            "            }\n"
+            "        };\n"
+            "        pDoc.addEventListener('click', pDoc._tv_click_handler, true);\n"
+            "    } catch(err) {}\n"
+            "})();\n"
+            "</script>"
+        )
+        if hasattr(st, "html"):
+            st.html(_js_code)
+        else:
+            import streamlit.components.v1 as _components
+            _components.html(_js_code, height=0)
 
-    # ── 未通过（可折叠）────────────────────────────────────────────
+        # 详细条件展开 (仅对当前页的品种提供展开查看，避免过大 DOM 卡顿)
+        with st.expander(f"🔍 查看当前页 ({len(page_items)} 支) 7 条规则明细与检测值", expanded=False):
+            for r in page_items:
+                with st.expander(f"📊 {r['ticker']} — 4H 结构颈线突破明细 ({r.get('pattern', '—')})", expanded=False):
+                    col_d1, col_d2 = st.columns([4, 1])
+                    with col_d1:
+                        _render_details(r.get("details", []))
+                    with col_d2:
+                        if r['ticker'].upper() in wl_set:
+                            if st.button(f"🗑️ 移除收藏", key=f"neckline_fav_det_del_{r['ticker']}", use_container_width=True):
+                                storage.remove_from_watchlist(r['ticker'])
+                                st.toast(f"已将 {r['ticker']} 从自选收藏夹移除", icon="🗑️")
+                                st.rerun()
+                        else:
+                            if st.button(f"⭐ 加入收藏", key=f"neckline_fav_det_add_{r['ticker']}", use_container_width=True):
+                                storage.add_to_watchlist(ticker=r['ticker'], name=r['ticker'], note="4H 结构颈线突破扫描匹配")
+                                st.toast(f"⭐ 已将 {r['ticker']} 加入自选收藏夹", icon="⭐")
+                                st.rerun()
+
+    # ── 未通过品种（高性能 DataFrame 展示）────────────────────────
     if failed:
-        with st.expander(f"❌ 未通过品种（{len(failed)} 个）", expanded=False):
+        with st.expander(f"❌ 未通过品种（共 {len(failed)} 个）", expanded=False):
+            failed_df_rows = []
             for r in failed:
-                st.markdown(
-                    f'<div style="font-weight:600;font-size:13px;color:var(--text-color, #374151);'
-                    f'margin:10px 0 4px">{r["ticker"]} ({r.get("pattern", "—")})</div>',
-                    unsafe_allow_html=True,
-                )
-                _render_details(r["details"])
+                failed_df_rows.append({
+                    "品种代码": r.get("ticker", ""),
+                    "识别形态": r.get("pattern", "—"),
+                    "4H收盘价": f"{r.get('close', 0.0):.4f}" if r.get("close") else "—",
+                    "颈线位": f"{r.get('neckline', 0.0):.4f}" if r.get("neckline") else "—",
+                    "4H量比": f"{r.get('vol_ratio', 1.0):.2f}x" if r.get("vol_ratio") else "—",
+                    "扫描状态": r.get("error") or "未满足全部突破条件"
+                })
+            st.dataframe(pd.DataFrame(failed_df_rows), use_container_width=True, height=320, hide_index=True)
+            
+            # 单独点选查看某一个未通过品种的 7 条规则明细
+            failed_tickers = [r.get("ticker", "") for r in failed if r.get("ticker")]
+            if failed_tickers:
+                sel_f_tk = st.selectbox("🔍 选择查看未通过品种的 7 条规则检测值", options=["— 请选择品种 —"] + failed_tickers, key="nl_failed_inspect_picker")
+                if sel_f_tk and sel_f_tk != "— 请选择品种 —":
+                    target_f = next((r for r in failed if r.get("ticker") == sel_f_tk), None)
+                    if target_f and target_f.get("details"):
+                        _render_details(target_f["details"])
 
     # ── 数据错误 ────────────────────────────────────────────────────
     if errors:
-        with st.expander(f"⚠️ 数据获取失败（{len(errors)} 个）", expanded=False):
-            for r in errors:
-                st.caption(f"• **{r.get('ticker','')}**: {r.get('error','')}")
+        with st.expander(f"⚠️ 数据获取失败（共 {len(errors)} 个）", expanded=False):
+            err_df_rows = [{"品种代码": r.get("ticker", ""), "错误原因": r.get("error", "")} for r in errors]
+            st.dataframe(pd.DataFrame(err_df_rows), use_container_width=True, height=200, hide_index=True)
