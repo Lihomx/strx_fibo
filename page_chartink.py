@@ -28,6 +28,16 @@ except ImportError:
     _YF_OK = False
 
 
+def _safe_float(val, default=0.0):
+    if val is None or val == "":
+        return default
+    try:
+        f = float(val)
+        return default if np.isnan(f) else f
+    except Exception:
+        return default
+
+
 # ════════════════════════════════════════════════════════════════════
 # 指标计算工具
 # ════════════════════════════════════════════════════════════════════
@@ -748,15 +758,6 @@ def render_page_chartink():
         sort_by = st.selectbox("↕️ 排序方式", options=["4H成交量 (大到小)", "RSI(14) (高到低)", "代码 (A-Z)"], key="chartink_sort_by")
     with col_f3:
         page_size = st.selectbox("📄 每页条数", options=[25, 50, 100, "全部"], index=0, key="chartink_page_size")
-
-def _safe_float(val, default=0.0):
-    if val is None or val == "":
-        return default
-    try:
-        f = float(val)
-        return default if np.isnan(f) else f
-    except Exception:
-        return default
 
     # 过滤通过列表
     filtered_passed = passed

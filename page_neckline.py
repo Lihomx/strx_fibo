@@ -21,6 +21,16 @@ import bg_scan_manager
 from neckline_scanner import check_ticker_neckline, _YF_OK
 
 
+def _safe_float(val, default=0.0):
+    if val is None or val == "":
+        return default
+    try:
+        f = float(val)
+        return default if np.isnan(f) else f
+    except Exception:
+        return default
+
+
 # ════════════════════════════════════════════════════════════════════
 # 辅助 UI 组件
 # ════════════════════════════════════════════════════════════════════
@@ -513,15 +523,6 @@ def render_page_neckline():
         sort_by = st.selectbox("↕️ 排序方式", options=["突破幅度 (高到低)", "4H成交量 (大到小)", "代码 (A-Z)"], key="neckline_sort_by")
     with col_f4:
         page_size = st.selectbox("📄 每页条数", options=[25, 50, 100, "全部"], index=0, key="neckline_page_size")
-
-def _safe_float(val, default=0.0):
-    if val is None or val == "":
-        return default
-    try:
-        f = float(val)
-        return default if np.isnan(f) else f
-    except Exception:
-        return default
 
     # 过滤通过列表
     filtered_passed = passed
