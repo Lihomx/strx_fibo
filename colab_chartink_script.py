@@ -51,13 +51,14 @@ import logging
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
+from requests.adapters import HTTPAdapter
 import pandas as pd
 import numpy as np
 
 # ⏱️ 强制全局网络超时防卡死 (8秒自动熔断)
 socket.setdefaulttimeout(8)
 
-# 🤫 全局静音 Python 3.12 / jupyter_client 警告提示
+# 🤫 全局静音 Python 3.12 / jupyter_client / urllib3 警告提示
 os.environ["PYTHONWARNINGS"] = "ignore"
 warnings.filterwarnings("ignore")
 warnings.simplefilter("ignore")
@@ -66,6 +67,8 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 
 logging.captureWarnings(True)
+logging.getLogger("urllib3").setLevel(logging.CRITICAL)
+logging.getLogger("urllib3.connectionpool").setLevel(logging.CRITICAL)
 logging.getLogger("jupyter_client").setLevel(logging.CRITICAL)
 logging.getLogger("ipykernel").setLevel(logging.CRITICAL)
 
@@ -79,6 +82,9 @@ SCAN_TICKERS = {tickers_json}
 # 🧠 高性能直连数据获取与指标工具 (直连 Yahoo v8 API，杜绝 Cookie/Crumb 锁死卡顿)
 # ------------------------------------------------------------------------------
 _SESSION = requests.Session()
+_adapter = HTTPAdapter(pool_connections=128, pool_maxsize=128, max_retries=1)
+_SESSION.mount("https://", _adapter)
+_SESSION.mount("http://", _adapter)
 _SESSION.headers.update({{
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }})
