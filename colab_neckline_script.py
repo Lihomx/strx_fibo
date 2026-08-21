@@ -41,6 +41,7 @@ def generate_colab_neckline_script(tickers: list[str], pool_name: str = "系统�
 !pip install -q yfinance pandas numpy
 
 import os
+import sys
 import time
 import json
 import warnings
@@ -51,9 +52,18 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-# 🤫 静音 yfinance 的警告信息
-warnings.filterwarnings('ignore')
-logging.getLogger('yfinance').setLevel(logging.CRITICAL)
+# 🤫 全局静音 Python 3.12 / jupyter_client / yfinance 警告提示
+os.environ["PYTHONWARNINGS"] = "ignore"
+warnings.filterwarnings("ignore")
+warnings.simplefilter("ignore")
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
+
+logging.captureWarnings(True)
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+logging.getLogger("jupyter_client").setLevel(logging.CRITICAL)
+logging.getLogger("ipykernel").setLevel(logging.CRITICAL)
 
 # ------------------------------------------------------------------------------
 # ⚙️ 股票池配置
