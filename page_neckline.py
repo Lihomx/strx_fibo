@@ -184,19 +184,35 @@ def render_page_neckline():
     st.markdown("---")
 
     # ── 载入分组品种 ──
+    groups = storage.load_symbol_groups() or []
+    all_symbols = storage.load_symbols() or []
+
+    # 计算全部分组合并去重后的品种数
+    all_group_tickers_raw = [t.strip().upper() for g in groups for t in g.get("tickers", []) if t and isinstance(t, str)]
+    total_unique_in_groups = len(dict.fromkeys(all_group_tickers_raw)) if all_group_tickers_raw else 0
+
     def _on_neckline_group_change():
         sel = st.session_state.get("neckline_load_grp_sel")
         if sel and sel != "— 选择载入分组 —":
-            grps = storage.load_symbol_groups()
-            target = next((g for g in grps if g["name"] == sel), None)
-            if target:
-                tickers = target.get("tickers", [])
-                st.session_state["neckline_tickers"] = " ".join(tickers)
+            grps = storage.load_symbol_groups() or []
+            if "全部分组合并" in sel:
+                all_tks = []
+                for g in grps:
+                    for tk in g.get("tickers", []):
+                        if tk and isinstance(tk, str):
+                            all_tks.append(tk.strip().upper())
+                unique_tks = list(dict.fromkeys(all_tks))
+                st.session_state["neckline_tickers"] = " ".join(unique_tks)
+                st.toast(f"🌐 已合并载入全部分组共 {len(unique_tks)} 支品种 (自动去重)", icon="🌐")
+            else:
+                target = next((g for g in grps if g["name"] == sel), None)
+                if target:
+                    tickers = target.get("tickers", [])
+                    st.session_state["neckline_tickers"] = " ".join(tickers)
             st.session_state["neckline_load_grp_sel"] = "— 选择载入分组 —"
 
-    groups = storage.load_symbol_groups()
     if groups:
-        grp_names = ["— 选择载入分组 —"] + [g["name"] for g in groups]
+        grp_names = ["— 选择载入分组 —", f"🌐 全部分组合并 ({len(groups)}个组·去重共 {total_unique_in_groups} 支)"] + [g["name"] for g in groups]
         if "neckline_load_grp_sel" not in st.session_state:
             st.session_state["neckline_load_grp_sel"] = "— 选择载入分组 —"
         st.selectbox(
@@ -235,14 +251,18 @@ def render_page_neckline():
         st.rerun()
 
     # ── 🌐 Google Colab 独立大规模扫描渠道 ──
-    with st.expander("☁️ Google Colab 算力扫描渠道 (全美股 / 全A股 极速 4H 颈线突破扫描与结果导入)", expanded=False):
+    with st.expander("☁️ Google Colab 算力扫描渠道 (全美股 / 全A股 / 全部分组合并 极速 4H 颈线突破扫描与结果导入)", expanded=False):
         colab_c1, colab_c2 = st.columns([1.2, 1], gap="medium")
         with colab_c1:
             st.markdown("##### 1. 选择股票池并获取专属 Colab 4H 扫描脚本")
             st.caption("利用 Google Colab 免费高性能多核算力极速扫描数百上千只全市场股票，完全不受 Streamlit Cloud 内存配额与执行时长限制。")
             
-            all_symbols = storage.load_symbols() or []
-            pool_options = ["🇺🇸 全量美股 (系统内置)", "🇨🇳 全量A股 (系统内置)"]
+            pool_options = [
+                f"🌐 全部分组合并 (全部 {len(groups)} 个组·去重共 {total_unique_in_groups} 支)",
+                "🎯 自定义勾选多个分组 (多选并去重合并)",
+                "🇺🇸 全量美股 (系统内置)",
+                "🇨🇳 全量A股 (系统内置)",
+            ]
             grp_name_list = [g["name"] for g in groups if g.get("name")]
             for gn in grp_name_list:
                 if gn not in pool_options:
@@ -266,9 +286,36 @@ def render_page_neckline():
                     help="4H 结构颈线突破专用于 4小时 (4H) 周期突破检测"
                 )
             
+            # 如果选择了自定义勾选多个分组
+            selected_custom_groups = []
+            if "自定义勾选多个分组" in selected_pool:
+                all_grp_names = [g["name"] for g in groups if g.get("name")]
+                selected_custom_groups = st.multiselect(
+                    "勾选要合并扫描的分组 (可任意多选，系统自动去重合并)",
+                    options=all_grp_names,
+                    default=all_grp_names[:2] if len(all_grp_names) >= 2 else all_grp_names,
+                    key="neckline_colab_custom_groups"
+                )
+
             # 提取对应股票代码
             export_tickers = []
-            if "全量美股" in selected_pool:
+            if "全部分组合并" in selected_pool:
+                all_tks = []
+                for g in groups:
+                    for tk in g.get("tickers", []):
+                        if tk and isinstance(tk, str):
+                            all_tks.append(tk.strip().upper())
+                export_tickers = list(dict.fromkeys(all_tks))
+            elif "自定义勾选多个分组" in selected_pool:
+                all_tks = []
+                for gn in selected_custom_groups:
+                    target_g = next((g for g in groups if g.get("name") == gn), None)
+                    if target_g:
+                        for tk in target_g.get("tickers", []):
+                            if tk and isinstance(tk, str):
+                                all_tks.append(tk.strip().upper())
+                export_tickers = list(dict.fromkeys(all_tks))
+            elif "全量美股" in selected_pool:
                 us_grp = next((g for g in groups if "全量美股" in g.get("name", "")), None)
                 if us_grp and us_grp.get("tickers"):
                     export_tickers = us_grp["tickers"]
@@ -294,7 +341,7 @@ def render_page_neckline():
                 
             export_tickers = list(dict.fromkeys([t.strip().upper() for t in export_tickers if t and isinstance(t, str)]))
             
-            st.info(f"📋 选定股票池: **{len(export_tickers)}** 支品种 | 周期: **4h** (已直接生成于下方代码中)：")
+            st.info(f"📋 选定股票池: **{len(export_tickers)}** 支品种 (已自动合并去重) | 周期: **4h** (已直接生成于下方代码中)：")
             
             import colab_neckline_script
             colab_code = colab_neckline_script.generate_colab_neckline_script(export_tickers, pool_name=selected_pool)

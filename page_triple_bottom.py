@@ -716,8 +716,16 @@ def render_triple_bottom_page():
             # 从系统已有品种库与分组中提取
             groups = storage.load_symbol_groups() or []
             all_symbols = storage.load_symbols() or []
+
+            all_group_tickers_raw = [t.strip().upper() for g in groups for t in g.get("tickers", []) if t and isinstance(t, str)]
+            total_unique_in_groups = len(dict.fromkeys(all_group_tickers_raw)) if all_group_tickers_raw else 0
             
-            pool_options = ["🇺🇸 全量美股 (系统内置)", "🇨🇳 全量A股 (系统内置)"]
+            pool_options = [
+                f"🌐 全部分组合并 (全部 {len(groups)} 个组·去重共 {total_unique_in_groups} 支)",
+                "🎯 自定义勾选多个分组 (多选并去重合并)",
+                "🇺🇸 全量美股 (系统内置)",
+                "🇨🇳 全量A股 (系统内置)",
+            ]
             grp_name_list = [g["name"] for g in groups if g.get("name")]
             for gn in grp_name_list:
                 if gn not in pool_options:
@@ -753,9 +761,36 @@ def render_triple_bottom_page():
             if not tf_map_keys:
                 tf_map_keys = ["1d", "1w", "1mo"]
             
+            # 如果选择了自定义勾选多个分组
+            selected_custom_groups = []
+            if "自定义勾选多个分组" in selected_pool:
+                all_grp_names = [g["name"] for g in groups if g.get("name")]
+                selected_custom_groups = st.multiselect(
+                    "勾选要合并扫描的分组 (可任意多选，系统自动去重合并)",
+                    options=all_grp_names,
+                    default=all_grp_names[:2] if len(all_grp_names) >= 2 else all_grp_names,
+                    key="tb_colab_custom_groups"
+                )
+
             # 提取对应股票代码
             export_tickers = []
-            if "全量美股" in selected_pool:
+            if "全部分组合并" in selected_pool:
+                all_tks = []
+                for g in groups:
+                    for tk in g.get("tickers", []):
+                        if tk and isinstance(tk, str):
+                            all_tks.append(tk.strip().upper())
+                export_tickers = list(dict.fromkeys(all_tks))
+            elif "自定义勾选多个分组" in selected_pool:
+                all_tks = []
+                for gn in selected_custom_groups:
+                    target_g = next((g for g in groups if g.get("name") == gn), None)
+                    if target_g:
+                        for tk in target_g.get("tickers", []):
+                            if tk and isinstance(tk, str):
+                                all_tks.append(tk.strip().upper())
+                export_tickers = list(dict.fromkeys(all_tks))
+            elif "全量美股" in selected_pool:
                 # 寻找美股分组或过滤美股
                 us_grp = next((g for g in groups if "全量美股" in g.get("name", "")), None)
                 if us_grp and us_grp.get("tickers"):
@@ -783,7 +818,7 @@ def render_triple_bottom_page():
                 
             export_tickers = list(dict.fromkeys([t.strip().upper() for t in export_tickers if t and isinstance(t, str)]))
             
-            st.info(f"📋 选定股票池: **{len(export_tickers)}** 支品种 | 周期: **{', '.join(tf_map_keys)}** (已直接生成于下方代码中)：")
+            st.info(f"📋 选定股票池: **{len(export_tickers)}** 支品种 (已自动合并去重) | 周期: **{', '.join(tf_map_keys)}** (已直接生成于下方代码中)：")
             
             import colab_scan_script
             colab_code = colab_scan_script.generate_colab_script_for_tickers(export_tickers, pool_name=selected_pool, selected_tfs=tf_map_keys)
