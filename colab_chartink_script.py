@@ -39,7 +39,7 @@ def generate_colab_chartink_script(tickers: list[str], pool_name: str = "系统�
 # ==============================================================================
 
 # 1. 安装所需依赖
-!pip install -q yfinance pandas numpy
+!pip install -q requests pandas numpy
 
 import os
 import sys
@@ -50,14 +50,14 @@ import warnings
 import logging
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import requests
 import pandas as pd
 import numpy as np
-import yfinance as yf
 
-# ⏱️ 强制全局网络超时防卡死 (10秒自动熔断)
-socket.setdefaulttimeout(10)
+# ⏱️ 强制全局网络超时防卡死 (8秒自动熔断)
+socket.setdefaulttimeout(8)
 
-# 🤫 全局静音 Python 3.12 / jupyter_client / yfinance 警告提示
+# 🤫 全局静音 Python 3.12 / jupyter_client 警告提示
 os.environ["PYTHONWARNINGS"] = "ignore"
 warnings.filterwarnings("ignore")
 warnings.simplefilter("ignore")
@@ -66,7 +66,6 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 
 logging.captureWarnings(True)
-logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 logging.getLogger("jupyter_client").setLevel(logging.CRITICAL)
 logging.getLogger("ipykernel").setLevel(logging.CRITICAL)
 
@@ -74,6 +73,45 @@ logging.getLogger("ipykernel").setLevel(logging.CRITICAL)
 # ⚙️ 股票池配置
 # ------------------------------------------------------------------------------
 SCAN_TICKERS = {tickers_json}
+
+
+# ------------------------------------------------------------------------------
+# 🧠 高性能直连数据获取与指标工具 (直连 Yahoo v8 API，杜绝 Cookie/Crumb 锁死卡顿)
+# ------------------------------------------------------------------------------
+_SESSION = requests.Session()
+_SESSION.headers.update({{
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}})
+
+def _fetch_direct_chart(ticker: str, range_str: str = "60d", interval: str = "1h") -> pd.DataFrame:
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{{ticker}}?range={{range_str}}&interval={{interval}}&indicators=quote&includeTimestamps=true"
+        r = _SESSION.get(url, timeout=(2.5, 4.0))
+        if r.status_code == 200:
+            data = r.json()
+            result = data.get("chart", {{}}).get("result")
+            if result:
+                res = result[0]
+                timestamps = res.get("timestamp", [])
+                if timestamps:
+                    quote = res.get("indicators", {{}}).get("quote", [{{}}])[0]
+                    opens = quote.get("open", [])
+                    highs = quote.get("high", [])
+                    lows = quote.get("low", [])
+                    closes = quote.get("close", [])
+                    vols = quote.get("volume", [])
+                    
+                    df = pd.DataFrame({{
+                        "open": opens,
+                        "high": highs,
+                        "low": lows,
+                        "close": closes,
+                        "volume": vols
+                    }}, index=pd.to_datetime(timestamps, unit="s")).dropna(subset=["close"])
+                    return df
+    except Exception:
+        pass
+    return None
 
 
 # ------------------------------------------------------------------------------
@@ -142,23 +180,9 @@ def _supertrend(high: pd.Series, low: pd.Series, close: pd.Series,
 # 📥 数据拉取与 7 条规则校验核心
 # ------------------------------------------------------------------------------
 def _fetch(ticker: str, interval: str, period: str = "6mo") -> pd.DataFrame:
-    try:
-        df = yf.download(ticker, period=period, interval=interval,
-                         progress=False, auto_adjust=True, threads=False, timeout=8)
-        if df is None or df.empty:
-            return None
-        new_cols = []
-        for c in df.columns:
-            if isinstance(c, tuple):
-                new_cols.append(str(c[0]).lower())
-            else:
-                new_cols.append(str(c).lower())
-        df.columns = new_cols
-        if "close" not in df.columns:
-            return None
-        return df.dropna(subset=["close"])
-    except Exception:
-        return None
+    range_map = {{"1y": "1y", "2mo": "60d", "6mo": "6mo", "1mo": "1mo", "5d": "5d"}}
+    r_str = range_map.get(period, "60d")
+    return _fetch_direct_chart(ticker, range_str=r_str, interval=interval)
 
 
 def _check_ticker_chartink(ticker: str) -> dict:

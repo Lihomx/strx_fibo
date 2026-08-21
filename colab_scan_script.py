@@ -270,19 +270,47 @@ def _resample_ohlc(df, rule):
     except Exception:
         return None
 
+_SESSION = requests.Session()
+_SESSION.headers.update({{
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}})
+
+def _fetch_direct_chart(ticker: str, range_str: str = "10y", interval: str = "1d") -> pd.DataFrame:
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{{ticker}}?range={{range_str}}&interval={{interval}}&indicators=quote&includeTimestamps=true"
+        r = _SESSION.get(url, timeout=(2.5, 4.0))
+        if r.status_code == 200:
+            data = r.json()
+            result = data.get("chart", {{}}).get("result")
+            if result:
+                res = result[0]
+                timestamps = res.get("timestamp", [])
+                if timestamps:
+                    quote = res.get("indicators", {{}}).get("quote", [{{}}])[0]
+                    opens = quote.get("open", [])
+                    highs = quote.get("high", [])
+                    lows = quote.get("low", [])
+                    closes = quote.get("close", [])
+                    vols = quote.get("volume", [])
+                    
+                    df = pd.DataFrame({{
+                        "open": opens,
+                        "high": highs,
+                        "low": lows,
+                        "close": closes,
+                        "volume": vols
+                    }}, index=pd.to_datetime(timestamps, unit="s")).dropna(subset=["close", "high", "low"])
+                    return df
+    except Exception:
+        pass
+    return None
+
 def _scan_single_ticker(ticker):
     results = []
     try:
         # ⚡ 核心优化：只发起 1 次日线全量下载 (10y)，日线/周线/月线全部在本地内存瞬间计算完成
-        df_daily = yf.download(ticker, period="10y", interval="1d", auto_adjust=False, progress=False, timeout=10)
+        df_daily = _fetch_direct_chart(ticker, range_str="10y", interval="1d")
         if df_daily is None or df_daily.empty:
-            return []
-            
-        if isinstance(df_daily.columns, pd.MultiIndex):
-            df_daily.columns = df_daily.columns.get_level_values(0)
-        df_daily.columns = [c.lower() for c in df_daily.columns]
-        
-        if not all(k in df_daily.columns for k in ["close", "high", "low"]):
             return []
 
         # 1. 扫描日线 (1d)
