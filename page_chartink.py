@@ -502,13 +502,25 @@ def render_page_chartink():
                     pool_options.append(f"📁 分组: {gn}")
             pool_options.append("⭐ 我的自选关注列表")
             
+            cfg = storage.load_config()
+            saved_pool_chartink = cfg.get("colab_selected_pool_chartink", "")
+            pool_def_idx = 0
+            if saved_pool_chartink and saved_pool_chartink in pool_options:
+                pool_def_idx = pool_options.index(saved_pool_chartink)
+
+            def _on_chartink_colab_pool_change():
+                p_val = st.session_state.get("chartink_colab_selected_pool")
+                if p_val:
+                    storage.save_config({"colab_selected_pool_chartink": p_val})
+
             p_col1, p_col2 = st.columns([1.5, 1])
             with p_col1:
                 selected_pool = st.selectbox(
                     "选择需要导出的扫描股票池",
                     options=pool_options,
-                    index=0,
+                    index=pool_def_idx,
                     key="chartink_colab_selected_pool",
+                    on_change=_on_chartink_colab_pool_change,
                     help="系统会自动将选定股票池中的所有股票代码注入到 Colab 脚本中，无需在 Colab 中重复拉取"
                 )
             with p_col2:
@@ -519,15 +531,28 @@ def render_page_chartink():
                     help="Chartink 7条规则突破策略专用于 4小时 (4H) 周期突破检测"
                 )
             
-            # 如果选择了自定义勾选多个分组
+            # 如果选择了自定义勾选多个分组 (带持久记忆功能)
             selected_custom_groups = []
             if "自定义勾选多个分组" in selected_pool:
                 all_grp_names = [g["name"] for g in groups if g.get("name")]
+                saved_grps = cfg.get("colab_custom_groups_chartink") or cfg.get("colab_custom_groups") or []
+                valid_defaults = [gn for gn in saved_grps if gn in all_grp_names]
+                if not valid_defaults and all_grp_names:
+                    valid_defaults = all_grp_names[:2] if len(all_grp_names) >= 2 else all_grp_names
+                
+                if "chartink_colab_custom_groups" not in st.session_state:
+                    st.session_state["chartink_colab_custom_groups"] = valid_defaults
+                
+                def _on_chartink_colab_custom_groups_change():
+                    chosen = st.session_state.get("chartink_colab_custom_groups", [])
+                    storage.save_config({"colab_custom_groups_chartink": chosen, "colab_custom_groups": chosen})
+
                 selected_custom_groups = st.multiselect(
-                    "勾选要合并扫描的分组 (可任意多选，系统自动去重合并)",
+                    "勾选要合并扫描的分组 (可任意多选，系统自动去重合并并持久记忆)",
                     options=all_grp_names,
-                    default=all_grp_names[:2] if len(all_grp_names) >= 2 else all_grp_names,
-                    key="chartink_colab_custom_groups"
+                    key="chartink_colab_custom_groups",
+                    on_change=_on_chartink_colab_custom_groups_change,
+                    help="选中的分组会自动记忆保存，下次打开页面无需重新勾选"
                 )
 
             # 提取对应股票代码
