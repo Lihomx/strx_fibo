@@ -47,6 +47,7 @@ _LATEST_FILES = {
     "triple_bottom":       "data_triple_bottom.json",
     "tb_batch_state":      "data_tb_batch_state.json",
     "chartink":            "data_chartink.json",
+    "neckline":            "data_neckline.json",
     "scan_checkpoint":     "scan_checkpoint.json",
     "alerts":              "data_alerts.json",
     "starred":             "data_starred.json",
@@ -576,6 +577,31 @@ def pull_chartink() -> Tuple[bool, str]:
         return False, f"pull_chartink 异常：{e}"
 
 
+def push_neckline() -> Tuple[bool, str]:
+    try:
+        import storage as loc
+        data = loc.load_neckline()
+        ok, msg = _upload_latest("neckline", data)
+        _upload_snapshot("neckline", data)
+        if ok:
+            return True, "4H 结构颈线扫描结果已同步"
+        return False, f"neckline: {msg}"
+    except Exception as e:
+        return False, f"push_neckline 异常：{e}"
+
+
+def pull_neckline() -> Tuple[bool, str]:
+    try:
+        from storage import F_NECKLINE, _save
+        cloud_data = _download_latest("neckline")
+        if not isinstance(cloud_data, dict):
+            return False, "云端无 4H 结构颈线扫描数据"
+        _save(F_NECKLINE, cloud_data)
+        return True, "4H 结构颈线扫描数据已从云端恢复"
+    except Exception as e:
+        return False, f"pull_neckline 异常：{e}"
+
+
 def push_tb_snapshot(session_id: str, payload: dict) -> bool:
     """上传单个三重底快照到云端"""
     try:
@@ -1024,8 +1050,10 @@ def pull_all() -> Dict[str, Any]:
     results["tb_batch_state"] = (ok_tb_state, msg_tb_state)
 
     ok_ci, msg_ci = pull_chartink()
-
     results["chartink"] = (ok_ci, msg_ci)
+
+    ok_nl, msg_nl = pull_neckline()
+    results["neckline"] = (ok_nl, msg_nl)
 
     ok_tbsnap, msg_tbsnap = pull_tb_snapshots()
     results["tb_snapshots"] = (ok_tbsnap, msg_tbsnap)

@@ -2063,6 +2063,146 @@ def clear_chartink_results() -> bool:
     return ok
 
 
+# ── 4H 结构颈线突破扫描数据与快照 ─────────────────────────────────────
+F_NECKLINE = os.path.join(_BASE, "data_neckline.json")
+F_NECKLINE_SNAPSHOT_DIR = os.path.join(_BASE, "snapshots_neckline")
+
+def _ensure_neckline_snapshot_dir():
+    os.makedirs(F_NECKLINE_SNAPSHOT_DIR, exist_ok=True)
+
+def backup_neckline(data: Dict) -> str:
+    """备份当前 4H 结构颈线扫描批次到快照文件夹，返回备份产生的 session_id"""
+    if not data or not isinstance(data, dict):
+        return ""
+    if not data.get("passed") and not data.get("total"):
+        return ""
+    try:
+        _ensure_neckline_snapshot_dir()
+        sid = f"nl_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        fpath = os.path.join(F_NECKLINE_SNAPSHOT_DIR, f"{sid}.json")
+        scan_time = data.get("scanned_at") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        passed_cnt = len(data.get("passed", []))
+        total_cnt = data.get("total", 0)
+        
+        payload = {
+            "session_id": sid,
+            "scan_time": scan_time,
+            "total": total_cnt,
+            "passed_count": passed_cnt,
+            "data": data,
+            "saved_at": _now_str()
+        }
+        if _save(fpath, payload):
+            try:
+                import cloud_sync
+                if cloud_sync.is_configured():
+                    _async_push(lambda: cloud_sync._upload_snapshot("neckline", data))
+            except Exception:
+                pass
+            # 保留最多 100 个快照
+            try:
+                snaps = []
+                for fname in os.listdir(F_NECKLINE_SNAPSHOT_DIR):
+                    if fname.endswith(".json"):
+                        fp = os.path.join(F_NECKLINE_SNAPSHOT_DIR, fname)
+                        mtime = os.path.getmtime(fp)
+                        snaps.append((mtime, fp))
+                snaps.sort(reverse=True)
+                for _, old_path in snaps[100:]:
+                    try:
+                        os.remove(old_path)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            return sid
+    except Exception as e:
+        import logging
+        logging.error(f"backup_neckline error: {e}")
+    return ""
+
+def load_neckline_snapshots() -> List[Dict]:
+    """获取所有 4H 结构颈线的快照批次列表，按时间倒序排列"""
+    try:
+        _ensure_neckline_snapshot_dir()
+        candidates = []
+        for fname in os.listdir(F_NECKLINE_SNAPSHOT_DIR):
+            if fname.endswith(".json"):
+                fpath = os.path.join(F_NECKLINE_SNAPSHOT_DIR, fname)
+                data = _load(fpath, {})
+                if isinstance(data, dict):
+                    sid = data.get("session_id", os.path.splitext(fname)[0])
+                    scan_time = data.get("scan_time") or data.get("saved_at") or "—"
+                    total = data.get("total", 0)
+                    passed_cnt = data.get("passed_count", 0)
+                    candidates.append({
+                        "session_id": sid,
+                        "scan_time": scan_time,
+                        "total": total,
+                        "passed_count": passed_cnt,
+                        "mtime": os.path.getmtime(fpath)
+                    })
+        candidates.sort(key=lambda x: x["mtime"], reverse=True)
+        return candidates
+    except Exception as e:
+        import logging
+        logging.error(f"load_neckline_snapshots error: {e}")
+        return []
+
+def restore_neckline_snapshot(session_id: str) -> tuple:
+    """从备份批次恢复 4H 结构颈线扫描结果"""
+    try:
+        _ensure_neckline_snapshot_dir()
+        sid = "".join(ch for ch in str(session_id) if ch.isalnum() or ch in ("_", "-"))
+        fpath = os.path.join(F_NECKLINE_SNAPSHOT_DIR, f"{sid}.json")
+        if not os.path.exists(fpath):
+            return False, "备份批次不存在", 0
+        payload = _load(fpath, {})
+        data = payload.get("data", {}) if isinstance(payload, dict) else {}
+        if not isinstance(data, dict) or not data:
+            return False, "快照文件内容无效", 0
+        ok = save_neckline(data)
+        if ok:
+            passed_cnt = len(data.get("passed", []))
+            return True, "恢复成功", passed_cnt
+        return False, "保存恢复数据失败", 0
+    except Exception as e:
+        return False, f"恢复异常: {e}", 0
+
+def load_neckline() -> Dict:
+    """返回上次 4H 结构颈线扫描结果"""
+    res = _load(F_NECKLINE, {})
+    if not isinstance(res, dict):
+        return {}
+    return res
+
+def save_neckline(data: Dict) -> bool:
+    """保存 4H 结构颈线扫描结果并实时同步推送到云端"""
+    ok = _save_with_backup(F_NECKLINE, data)
+    if ok:
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                cloud_sync.push_neckline()
+        except Exception as e:
+            logging.error(f"save_neckline push_neckline error: {e}")
+    return ok
+
+def clear_neckline_results() -> bool:
+    """清空当前 4H 结构颈线扫描结果（清空前会自动生成快照并同步至云端）"""
+    data = load_neckline()
+    if data and isinstance(data, dict) and (data.get("passed") or data.get("total")):
+        backup_neckline(data)
+    ok = save_neckline({})
+    try:
+        import cloud_sync
+        if cloud_sync.is_configured():
+            cloud_sync.push_neckline()
+    except Exception:
+        pass
+    return ok
+
+
 # ── 自定义品种库与分组 ─────────────────────────────────────────
 F_SYMBOLS = os.path.join(_BASE, "data_symbols.json")
 F_SYMBOL_GROUPS = os.path.join(_BASE, "data_symbol_groups.json")

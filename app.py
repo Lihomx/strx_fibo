@@ -396,6 +396,7 @@ import page_hotlist
 import page_universe
 import page_cloud
 import page_chartink
+import page_neckline
 import page_schedule
 import page_triple_bottom
 import page_symbols
@@ -978,6 +979,7 @@ def sidebar():
             ("⚡", "共振检测",           "confluence"),
             ("📐", "三重底扫描",         "triple_bottom"),
             ("📈", "4H Breakout",        "chartink"),
+            ("⚡", "4H 结构颈线",        "neckline"),
             ("⏰", "定时扫描",           "schedule"),
             ("🌍", "全量品种库",         "universe"),
             ("💎", "品种库",             "symbols"),
@@ -1517,6 +1519,7 @@ def main():
         "confluence":    page_confluence.render,
         "triple_bottom": page_triple_bottom.render_triple_bottom_page,
         "chartink":      getattr(page_chartink, "render_page_chartink", getattr(page_chartink, "render", None)),
+        "neckline":      getattr(page_neckline, "render_page_neckline", getattr(page_neckline, "render", None)),
         "universe":      page_universe.render,
         "watchlist":     page_watchlist.render,
         "hotlist":       page_hotlist.render,
@@ -1559,6 +1562,7 @@ def main():
                 "confluence": "共振检测",
                 "triple_bottom": "三重底扫描",
                 "chartink": "4H Breakout",
+                "neckline": "4H 结构颈线",
                 "schedule": "定时扫描",
                 "universe": "全量品种库",
                 "watchlist": "自选收藏",
@@ -1580,7 +1584,7 @@ def main():
 
 
     # ── 移动端悬浮扫描按钮（FAB） ────────────────────────────────
-    _support_scan_pages = {"scanner", "triple_bottom", "chartink", "universe"}
+    _support_scan_pages = {"scanner", "triple_bottom", "chartink", "neckline", "universe"}
     if p in _support_scan_pages:
         import bg_scan_manager
         is_running = bg_scan_manager.is_running()
@@ -1594,6 +1598,8 @@ def main():
                 fab_text = "📐 分析扫描"
             elif p == "chartink":
                 fab_text = "📈 4H扫描"
+            elif p == "neckline":
+                fab_text = "⚡ 颈线扫描"
             else:
                 fab_text = "🌍 批量扫描"
             btn_disabled = False
