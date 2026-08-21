@@ -514,6 +514,15 @@ def render_page_neckline():
     with col_f4:
         page_size = st.selectbox("📄 每页条数", options=[25, 50, 100, "全部"], index=0, key="neckline_page_size")
 
+def _safe_float(val, default=0.0):
+    if val is None or val == "":
+        return default
+    try:
+        f = float(val)
+        return default if np.isnan(f) else f
+    except Exception:
+        return default
+
     # 过滤通过列表
     filtered_passed = passed
     if search_q:
@@ -524,9 +533,9 @@ def render_page_neckline():
     
     # 排序
     if sort_by == "突破幅度 (高到低)":
-        filtered_passed = sorted(filtered_passed, key=lambda x: float(x.get("breakout_pct", 0.0) or 0.0), reverse=True)
+        filtered_passed = sorted(filtered_passed, key=lambda x: _safe_float(x.get("breakout_pct"), 0.0), reverse=True)
     elif sort_by == "4H成交量 (大到小)":
-        filtered_passed = sorted(filtered_passed, key=lambda x: float(x.get("volume_4h", 0) or 0), reverse=True)
+        filtered_passed = sorted(filtered_passed, key=lambda x: _safe_float(x.get("volume_4h"), 0.0), reverse=True)
     elif sort_by == "代码 (A-Z)":
         filtered_passed = sorted(filtered_passed, key=lambda x: str(x.get("ticker", "")))
 
@@ -604,12 +613,21 @@ def render_page_neckline():
         for r in page_items:
             ticker = r["ticker"]
             pat = r.get("pattern", "箱体突破")
-            price_s = f"{r['close']:.4f}" if r.get('close') else "—"
-            nl_s = f"{r['neckline']:.4f}" if r.get('neckline') else "—"
-            bk_pct = r.get('breakout_pct', 0.0)
+            
+            p_val = _safe_float(r.get("close"), None)
+            price_s = f"{p_val:.4f}" if p_val is not None else "—"
+            
+            nl_val = _safe_float(r.get("neckline"), None)
+            nl_s = f"{nl_val:.4f}" if nl_val is not None else "—"
+            
+            bk_pct = _safe_float(r.get("breakout_pct"), 0.0)
             bk_s = f"<span style='color:#4ade80;font-weight:700;'>+{bk_pct:.2f}%</span>" if bk_pct >= 0 else f"<span style='color:#f87171;'>{bk_pct:.2f}%</span>"
-            vol_s = f"{r['volume_4h']:,.0f}" if r.get('volume_4h') else "—"
-            ratio_s = f"<span style='color:#fbbf24;font-weight:600;'>{r.get('vol_ratio', 1.0):.2f}x</span>" if r.get('vol_ratio') else "—"
+            
+            v_val = _safe_float(r.get("volume_4h"), None)
+            vol_s = f"{v_val:,.0f}" if v_val is not None else "—"
+            
+            vr_val = _safe_float(r.get("vol_ratio"), None)
+            ratio_s = f"<span style='color:#fbbf24;font-weight:600;'>{vr_val:.2f}x</span>" if vr_val is not None else "—"
             
             click_entry = all_clicks_data.get(f"{ticker.upper()}:tv", {}) if isinstance(all_clicks_data, dict) else {}
             total_c = click_entry.get("total", 0) if isinstance(click_entry, dict) else 0
@@ -750,12 +768,15 @@ def render_page_neckline():
         with st.expander(f"❌ 未通过品种（共 {len(failed)} 个）", expanded=False):
             failed_df_rows = []
             for r in failed:
+                p_val = _safe_float(r.get("close"), None)
+                nl_val = _safe_float(r.get("neckline"), None)
+                vr_val = _safe_float(r.get("vol_ratio"), None)
                 failed_df_rows.append({
                     "品种代码": r.get("ticker", ""),
                     "识别形态": r.get("pattern", "—"),
-                    "4H收盘价": f"{r.get('close', 0.0):.4f}" if r.get("close") else "—",
-                    "颈线位": f"{r.get('neckline', 0.0):.4f}" if r.get("neckline") else "—",
-                    "4H量比": f"{r.get('vol_ratio', 1.0):.2f}x" if r.get("vol_ratio") else "—",
+                    "4H收盘价": f"{p_val:.4f}" if p_val is not None else "—",
+                    "颈线位": f"{nl_val:.4f}" if nl_val is not None else "—",
+                    "4H量比": f"{vr_val:.2f}x" if vr_val is not None else "—",
                     "扫描状态": r.get("error") or "未满足全部突破确认条件"
                 })
             st.dataframe(pd.DataFrame(failed_df_rows), use_container_width=True, height=320, hide_index=True)

@@ -749,6 +749,15 @@ def render_page_chartink():
     with col_f3:
         page_size = st.selectbox("📄 每页条数", options=[25, 50, 100, "全部"], index=0, key="chartink_page_size")
 
+def _safe_float(val, default=0.0):
+    if val is None or val == "":
+        return default
+    try:
+        f = float(val)
+        return default if np.isnan(f) else f
+    except Exception:
+        return default
+
     # 过滤通过列表
     filtered_passed = passed
     if search_q:
@@ -757,9 +766,9 @@ def render_page_chartink():
     
     # 排序
     if sort_by == "4H成交量 (大到小)":
-        filtered_passed = sorted(filtered_passed, key=lambda x: float(x.get("volume_4h", 0) or 0), reverse=True)
+        filtered_passed = sorted(filtered_passed, key=lambda x: _safe_float(x.get("volume_4h"), 0.0), reverse=True)
     elif sort_by == "RSI(14) (高到低)":
-        filtered_passed = sorted(filtered_passed, key=lambda x: float(x.get("rsi", 0) or 0), reverse=True)
+        filtered_passed = sorted(filtered_passed, key=lambda x: _safe_float(x.get("rsi"), 0.0), reverse=True)
     elif sort_by == "代码 (A-Z)":
         filtered_passed = sorted(filtered_passed, key=lambda x: str(x.get("ticker", "")))
 
@@ -836,9 +845,14 @@ def render_page_chartink():
         rows_html = []
         for r in page_items:
             ticker = r["ticker"]
-            price_s = f"{r['close']:.4f}" if r["close"] else "—"
-            vol_s = f"{r['volume_4h']:,.0f}" if r["volume_4h"] else "—"
-            rsi_s = f"{r['rsi']:.1f}" if r["rsi"] else "—"
+            p_val = _safe_float(r.get("close"), None)
+            price_s = f"{p_val:.4f}" if p_val is not None else "—"
+            
+            v_val = _safe_float(r.get("volume_4h"), None)
+            vol_s = f"{v_val:,.0f}" if v_val is not None else "—"
+            
+            rsi_val = _safe_float(r.get("rsi"), None)
+            rsi_s = f"{rsi_val:.1f}" if rsi_val is not None else "—"
             
             click_entry = all_clicks_data.get(f"{ticker.upper()}:tv", {}) if isinstance(all_clicks_data, dict) else {}
             total_c = click_entry.get("total", 0) if isinstance(click_entry, dict) else 0
@@ -970,11 +984,14 @@ def render_page_chartink():
         with st.expander(f"❌ 未通过品种（共 {len(failed)} 个）", expanded=False):
             failed_df_rows = []
             for r in failed:
+                p_val = _safe_float(r.get("close"), None)
+                v_val = _safe_float(r.get("volume_4h"), None)
+                rsi_val = _safe_float(r.get("rsi"), None)
                 failed_df_rows.append({
                     "品种代码": r.get("ticker", ""),
-                    "收盘价": f"{r.get('close', 0.0):.4f}" if r.get("close") else "—",
-                    "4H成交量": f"{r.get('volume_4h', 0):,.0f}" if r.get("volume_4h") else "—",
-                    "RSI(14)": f"{r.get('rsi', 0.0):.1f}" if r.get("rsi") else "—",
+                    "收盘价": f"{p_val:.4f}" if p_val is not None else "—",
+                    "4H成交量": f"{v_val:,.0f}" if v_val is not None else "—",
+                    "RSI(14)": f"{rsi_val:.1f}" if rsi_val is not None else "—",
                     "未满足原因": r.get("error") or "未满足全部7条突破规则"
                 })
             st.dataframe(pd.DataFrame(failed_df_rows), use_container_width=True, height=320, hide_index=True)
