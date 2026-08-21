@@ -44,6 +44,7 @@ import os
 import sys
 import time
 import json
+import socket
 import warnings
 import logging
 from datetime import datetime
@@ -51,6 +52,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 import numpy as np
 import yfinance as yf
+
+# ⏱️ 强制全局网络超时防卡死 (10秒自动熔断)
+socket.setdefaulttimeout(10)
 
 # 🤫 全局静音 Python 3.12 / jupyter_client / yfinance 警告提示
 os.environ["PYTHONWARNINGS"] = "ignore"
@@ -75,33 +79,28 @@ SCAN_TICKERS = {tickers_json}
 # 🧠 数据获取与指标工具
 # ------------------------------------------------------------------------------
 def _fetch_4h_data(ticker: str) -> pd.DataFrame:
-    for attempt in range(3):
-        try:
-            df_1h = yf.download(ticker, period="60d", interval="1h",
-                                progress=False, auto_adjust=True, threads=False, timeout=15)
-            if df_1h is not None and not df_1h.empty and len(df_1h) >= 8:
-                new_cols = [str(c[0] if isinstance(c, tuple) else c).lower() for c in df_1h.columns]
-                df_1h.columns = new_cols
-                if "close" in df_1h.columns:
-                    df_4h = df_1h.resample("4h").agg({{
-                        "open": "first",
-                        "high": "max",
-                        "low": "min",
-                        "close": "last",
-                        "volume": "sum"
-                    }}).dropna(subset=["close"])
-                    if len(df_4h) >= 20:
-                        return df_4h
-        except Exception as e:
-            err = str(e).lower()
-            if "rate" in err or "429" in err:
-                time.sleep(1.5 * (attempt + 1))
-                continue
-            break
+    try:
+        df_1h = yf.download(ticker, period="60d", interval="1h",
+                            progress=False, auto_adjust=True, threads=False, timeout=8)
+        if df_1h is not None and not df_1h.empty and len(df_1h) >= 8:
+            new_cols = [str(c[0] if isinstance(c, tuple) else c).lower() for c in df_1h.columns]
+            df_1h.columns = new_cols
+            if "close" in df_1h.columns:
+                df_4h = df_1h.resample("4h").agg({{
+                    "open": "first",
+                    "high": "max",
+                    "low": "min",
+                    "close": "last",
+                    "volume": "sum"
+                }}).dropna(subset=["close"])
+                if len(df_4h) >= 20:
+                    return df_4h
+    except Exception:
+        pass
 
     try:
         df_4h = yf.download(ticker, period="6mo", interval="4h",
-                            progress=False, auto_adjust=True, threads=False, timeout=15)
+                            progress=False, auto_adjust=True, threads=False, timeout=8)
         if df_4h is not None and not df_4h.empty and len(df_4h) >= 20:
             new_cols = [str(c[0] if isinstance(c, tuple) else c).lower() for c in df_4h.columns]
             df_4h.columns = new_cols
@@ -312,9 +311,10 @@ def _check_ticker_neckline(ticker: str) -> dict:
 def run_neckline_scanner():
     tickers = SCAN_TICKERS
     total_tickers = len(tickers)
-    MAX_WORKERS = 64
+    MAX_WORKERS = 32
     
     print(f"\\n🚀 开启 4H 结构颈线突破极速并发扫描 (共 {{total_tickers}} 只股票, 线程数: {{MAX_WORKERS}})...\\n")
+    sys.stdout.flush()
     
     start_time = time.time()
     completed = 0
@@ -333,18 +333,22 @@ def run_neckline_scanner():
                 if res.get("passed"):
                     passed_records.append(res)
                     print(f"  🔥 [发现突破] {{tk}} 满足 6 条 4H 结构突破确认条件! (形态: {{res['pattern']}}, 价格: {{res['close']}}, 颈线: {{res['neckline']}}, 4H量比: {{res['vol_ratio']:.2f}}x)")
+                    sys.stdout.flush()
             except Exception as e:
                 all_records.append({{"ticker": tk, "passed": False, "pattern": "—", "details": [], "error": str(e), "scan_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}})
                 
-            if completed % 25 == 0 or completed == total_tickers:
+            print_step = 50 if total_tickers > 1000 else 25
+            if completed % print_step == 0 or completed == total_tickers:
                 elapsed = time.time() - start_time
                 rate = completed / elapsed if elapsed > 0 else 1
                 rem = (total_tickers - completed) / rate
                 speed = completed / elapsed if elapsed > 0 else 0
                 print(f"[{{completed}}/{{total_tickers}}] 进度: {{completed*100//total_tickers}}% ({{speed:.1f}}只/秒) | 已匹配突破: {{len(passed_records)}} 支 | 预计剩余: {{int(rem//60)}}分{{int(rem%60)}}秒")
+                sys.stdout.flush()
 
     total_min = (time.time() - start_time) / 60
     print(f"\\n🎉 扫描全部完成！共耗时 {{total_min:.1f}} 分钟，匹配到 {{len(passed_records)}} 支 4H 结构颈线突破股票！")
+    sys.stdout.flush()
 
     # 导出 CSV
     if all_records:

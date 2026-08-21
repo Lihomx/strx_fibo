@@ -45,6 +45,7 @@ import os
 import sys
 import time
 import json
+import socket
 import warnings
 import logging
 from datetime import datetime
@@ -52,6 +53,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 import numpy as np
 import yfinance as yf
+
+# ⏱️ 强制全局网络超时防卡死 (10秒自动熔断)
+socket.setdefaulttimeout(10)
 
 # 🤫 全局静音 Python 3.12 / jupyter_client / yfinance 警告提示
 os.environ["PYTHONWARNINGS"] = "ignore"
@@ -138,29 +142,23 @@ def _supertrend(high: pd.Series, low: pd.Series, close: pd.Series,
 # 📥 数据拉取与 7 条规则校验核心
 # ------------------------------------------------------------------------------
 def _fetch(ticker: str, interval: str, period: str = "6mo") -> pd.DataFrame:
-    for attempt in range(3):
-        try:
-            df = yf.download(ticker, period=period, interval=interval,
-                             progress=False, auto_adjust=True, threads=False, timeout=15)
-            if df is None or df.empty:
-                return None
-            new_cols = []
-            for c in df.columns:
-                if isinstance(c, tuple):
-                    new_cols.append(str(c[0]).lower())
-                else:
-                    new_cols.append(str(c).lower())
-            df.columns = new_cols
-            if "close" not in df.columns:
-                return None
-            return df.dropna(subset=["close"])
-        except Exception as e:
-            err_str = str(e).lower()
-            if "rate" in err_str or "too many requests" in err_str or "429" in err_str:
-                time.sleep(1.5 * (attempt + 1))
-                continue
+    try:
+        df = yf.download(ticker, period=period, interval=interval,
+                         progress=False, auto_adjust=True, threads=False, timeout=8)
+        if df is None or df.empty:
             return None
-    return None
+        new_cols = []
+        for c in df.columns:
+            if isinstance(c, tuple):
+                new_cols.append(str(c[0]).lower())
+            else:
+                new_cols.append(str(c).lower())
+        df.columns = new_cols
+        if "close" not in df.columns:
+            return None
+        return df.dropna(subset=["close"])
+    except Exception:
+        return None
 
 
 def _check_ticker_chartink(ticker: str) -> dict:
@@ -308,9 +306,10 @@ def _check_ticker_chartink(ticker: str) -> dict:
 def run_chartink_scanner():
     tickers = SCAN_TICKERS
     total_tickers = len(tickers)
-    MAX_WORKERS = 64
+    MAX_WORKERS = 32
     
     print(f"\\n🚀 开启 Chartink 4H Breakout 极速并发扫描 (共 {{total_tickers}} 只股票, 线程数: {{MAX_WORKERS}})...\\n")
+    sys.stdout.flush()
     
     start_time = time.time()
     completed = 0
@@ -329,18 +328,22 @@ def run_chartink_scanner():
                 if res.get("passed"):
                     passed_records.append(res)
                     print(f"  🔥 [发现突破] {{tk}} 满足全部 7 条 4H 突破规则! (Close: {{res['close']}}, 4H Vol: {{res['volume_4h']:,.0f}}, RSI: {{res['rsi']:.1f}})")
+                    sys.stdout.flush()
             except Exception as e:
                 all_records.append({{"ticker": tk, "passed": False, "details": [], "error": str(e), "scan_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}})
                 
-            if completed % 25 == 0 or completed == total_tickers:
+            print_step = 50 if total_tickers > 1000 else 25
+            if completed % print_step == 0 or completed == total_tickers:
                 elapsed = time.time() - start_time
                 rate = completed / elapsed if elapsed > 0 else 1
                 rem = (total_tickers - completed) / rate
                 speed = completed / elapsed if elapsed > 0 else 0
                 print(f"[{{completed}}/{{total_tickers}}] 进度: {{completed*100//total_tickers}}% ({{speed:.1f}}只/秒) | 已匹配突破: {{len(passed_records)}} 支 | 预计剩余: {{int(rem//60)}}分{{int(rem%60)}}秒")
+                sys.stdout.flush()
 
     total_min = (time.time() - start_time) / 60
     print(f"\\n🎉 扫描全部完成！共耗时 {{total_min:.1f}} 分钟，匹配到 {{len(passed_records)}} 支 4H 突破股票！")
+    sys.stdout.flush()
 
     # 导出 CSV
     if all_records:

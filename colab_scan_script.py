@@ -54,6 +54,7 @@ import os
 import sys
 import time
 import json
+import socket
 import warnings
 import logging
 from datetime import datetime
@@ -61,6 +62,9 @@ from dataclasses import dataclass
 import pandas as pd
 import numpy as np
 import yfinance as yf
+
+# ⏱️ 强制全局网络超时防卡死 (10秒自动熔断)
+socket.setdefaulttimeout(10)
 
 # 🤫 全局静音 Python 3.12 / jupyter_client / yfinance 警告提示
 os.environ["PYTHONWARNINGS"] = "ignore"
@@ -345,9 +349,9 @@ def run_scanner():
     all_results = []
     total_tickers = len(tickers)
     
-    # ⚡ 开启 128 线程超高并发 (充分压榨 Colab 云端高速网络管道，吞吐量提升至 50-80 只/秒)
-    MAX_WORKERS = 128
+    MAX_WORKERS = 32
     print(f"\\n🚀 开启超高速并发扫描 (共 {{total_tickers}} 只股票, 线程数: {{MAX_WORKERS}}, 周期: {{list(TIMEFRAMES.keys())}})...\\n")
+    sys.stdout.flush()
     
     start_time = time.time()
     completed = 0
@@ -365,16 +369,19 @@ def run_scanner():
             except Exception:
                 pass
                 
-            if completed % 50 == 0 or completed == total_tickers:
+            print_step = 50 if total_tickers > 1000 else 25
+            if completed % print_step == 0 or completed == total_tickers:
                 elapsed = time.time() - start_time
                 rate = completed / elapsed if elapsed > 0 else 1
                 rem = (total_tickers - completed) / rate
                 speed_per_sec = completed / elapsed if elapsed > 0 else 0
                 print(f"[{{completed}}/{{total_tickers}}] 进度: {{completed*100//total_tickers}}% ({{speed_per_sec:.1f}}只/秒) | 已匹配: {{len(all_results)}} 条形态 | 预计剩余: {{int(rem//60)}}分{{int(rem%60)}}秒")
+                sys.stdout.flush()
                 
     # 汇总并输出
     total_min = (time.time() - start_time) / 60
     print(f"\\n🎉 扫描全部完成！共耗时 {{total_min:.1f}} 分钟，匹配到 {{len(all_results)}} 条三重底形态！")
+    sys.stdout.flush()
     
     if all_results:
         out_df = pd.DataFrame(all_results)
