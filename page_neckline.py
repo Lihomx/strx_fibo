@@ -298,18 +298,42 @@ def render_page_neckline():
                     help="4H 结构颈线突破专用于 4小时 (4H) 周期突破检测"
                 )
             
-            # 如果选择了自定义勾选多个分组 (带持久记忆功能)
+            # 如果选择了自定义勾选多个分组 (带持久记忆功能与一键快捷辅助)
             selected_custom_groups = []
             if "自定义勾选多个分组" in selected_pool:
                 all_grp_names = [g["name"] for g in groups if g.get("name")]
-                saved_grps = cfg.get("colab_custom_groups_neckline") or cfg.get("colab_custom_groups") or []
-                valid_defaults = [gn for gn in saved_grps if gn in all_grp_names]
-                if not valid_defaults and all_grp_names:
-                    valid_defaults = all_grp_names[:2] if len(all_grp_names) >= 2 else all_grp_names
+                saved_grps = cfg.get("colab_custom_groups_neckline")
+                if saved_grps is None:
+                    saved_grps = cfg.get("colab_custom_groups")
                 
+                # 如果已保存过，则使用保存的列表（过滤有效项）；如果从未保存过，默认为空让用户自由勾选，绝不乱塞默认品种
+                if saved_grps is not None:
+                    valid_defaults = [gn for gn in saved_grps if gn in all_grp_names]
+                else:
+                    valid_defaults = []
+
                 if "neckline_colab_custom_groups" not in st.session_state:
                     st.session_state["neckline_colab_custom_groups"] = valid_defaults
-                
+
+                # 快捷全选 / 清空 / 常用 辅助操作栏
+                q_c1, q_c2, q_c3, _ = st.columns([1, 1, 1.2, 1.8])
+                with q_c1:
+                    if st.button("➕ 全选所有分组", key="btn_select_all_neckline", use_container_width=True):
+                        st.session_state["neckline_colab_custom_groups"] = list(all_grp_names)
+                        storage.save_config({"colab_custom_groups_neckline": list(all_grp_names), "colab_custom_groups": list(all_grp_names)})
+                        st.rerun()
+                with q_c2:
+                    if st.button("🧹 清空所有勾选", key="btn_clear_all_neckline", use_container_width=True):
+                        st.session_state["neckline_colab_custom_groups"] = []
+                        storage.save_config({"colab_custom_groups_neckline": [], "colab_custom_groups": []})
+                        st.rerun()
+                with q_c3:
+                    a_us_names = [gn for gn in all_grp_names if any(k in gn for k in ["美股", "标普", "纳斯达克", "A股", "沪深", "中证"])]
+                    if st.button("🎯 勾选主要股市", key="btn_main_markets_neckline", use_container_width=True, help="一键快速勾选美股与A股各核心板块分组"):
+                        st.session_state["neckline_colab_custom_groups"] = list(a_us_names)
+                        storage.save_config({"colab_custom_groups_neckline": list(a_us_names), "colab_custom_groups": list(a_us_names)})
+                        st.rerun()
+
                 def _on_neckline_colab_custom_groups_change():
                     chosen = st.session_state.get("neckline_colab_custom_groups", [])
                     storage.save_config({"colab_custom_groups_neckline": chosen, "colab_custom_groups": chosen})
@@ -321,6 +345,10 @@ def render_page_neckline():
                     on_change=_on_neckline_colab_custom_groups_change,
                     help="选中的分组会自动记忆保存，下次打开页面无需重新勾选"
                 )
+                
+                # 双重保障：只要当前选中的与已保存的不一致，立即同步持久化
+                if selected_custom_groups != (saved_grps if saved_grps is not None else []):
+                    storage.save_config({"colab_custom_groups_neckline": selected_custom_groups, "colab_custom_groups": selected_custom_groups})
 
             # 提取对应股票代码
             export_tickers = []
@@ -340,6 +368,8 @@ def render_page_neckline():
                             if tk and isinstance(tk, str):
                                 all_tks.append(tk.strip().upper())
                 export_tickers = list(dict.fromkeys(all_tks))
+                if not export_tickers:
+                    st.warning("⚠️ 您当前尚未勾选任何分组。请在上方多选框中勾选您想扫描的分组，或点击【➕ 全选所有分组】。")
             elif "全量美股" in selected_pool:
                 us_grp = next((g for g in groups if "全量美股" in g.get("name", "")), None)
                 if us_grp and us_grp.get("tickers"):
