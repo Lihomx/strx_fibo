@@ -1,8 +1,13 @@
 """
 neckline_scanner.py — 4小时 (4H) 结构颈线突破扫描核心算法
 ========================================================================================
-核心原理：
-  形态识别（箱体/双底/头肩底） + 突破确认 (Price > Neckline + 1.2*ATR) + 量能过滤 + 趋势过滤 + 连续站稳
+严格对齐 6 条突破确认核心条件：
+  [0] 价格突破: CLOSE > NECKLINE 或 HIGH > NECKLINE (判断价格是否跨过颈线)
+  [1] 突破幅度: CLOSE > NECKLINE * 1.01 或 CLOSE > NECKLINE + 1.2 * ATR (过滤盘中假刺穿)
+  [2] 成交量放大: VOL > MA(VOL,5) * 1.3 或 VOL > REF(HHV(VOL,2),1) (确认增量资金进场)
+  [3] 站稳天数: 连续3根四小时K线收盘价在颈线上方 (避免单日冲高回落)
+  [4] 均线趋势: MA5 > MA10 且 MA10 > MA20 (确认趋势方向一致)
+  [5] 波动率过滤: 突破幅度 (CLOSE - NECKLINE) >= 1.2 * ATR(14) (排除低波动假突破)
 """
 
 import time
@@ -65,7 +70,7 @@ def _fetch_4h_data(ticker: str) -> Optional[pd.DataFrame]:
 
 
 def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
-    """计算真实波幅 ATR"""
+    """计算真实波幅 ATR(14)"""
     high = df["high"]
     low = df["low"]
     close = df["close"]
@@ -80,11 +85,7 @@ def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
 
 def check_ticker_neckline(ticker: str, df: Optional[pd.DataFrame] = None) -> Dict:
     """
-    对指定品种执行 4H 结构颈线突破 7 条核心规则检测
-    返回结果字典包含：
-      passed(bool), pattern(str), neckline(float), close(float),
-      volume_4h(float), vol_ratio(float), atr14(float), breakout_pct(float),
-      details(list[dict]), error(str|None)
+    对指定品种执行 4H 结构颈线突破 6 条确认条件检测
     """
     res = {
         "ticker": ticker,
@@ -105,8 +106,8 @@ def check_ticker_neckline(ticker: str, df: Optional[pd.DataFrame] = None) -> Dic
         if df is None:
             df = _fetch_4h_data(ticker)
 
-        if df is None or len(df) < 30:
-            res["error"] = "4H K线数据不足 (需至少 30 根)"
+        if df is None or len(df) < 25:
+            res["error"] = "4H K线数据不足 (需至少 25 根)"
             return res
 
         close = df["close"]
@@ -118,163 +119,155 @@ def check_ticker_neckline(ticker: str, df: Optional[pd.DataFrame] = None) -> Dic
         c_prev1 = float(close.iloc[-2]) if len(close) >= 2 else c_last
         c_prev2 = float(close.iloc[-3]) if len(close) >= 3 else c_prev1
 
+        h_last = float(high.iloc[-1])
         v_last = float(volume.iloc[-1])
         v_prev1 = float(volume.iloc[-2]) if len(volume) >= 2 else v_last
+        v_prev2 = float(volume.iloc[-3]) if len(volume) >= 3 else v_prev1
 
-        # 计算 ATR
+        # 计算 ATR(14)
         atr_ser = calculate_atr(df, 14)
         atr_val = float(atr_ser.iloc[-1]) if not pd.isna(atr_ser.iloc[-1]) else (c_last * 0.02)
         res["atr14"] = atr_val
         res["close"] = c_last
         res["volume_4h"] = v_last
 
-        # ── 1. 箱体突破结构 (Box Breakout) ──
-        # 取前 20 周期 (不含当前最新根) 的高低点作为箱体
+        # ── 1. 结构识别与确定颈线位 NECKLINE ──
+        # 综合箱体上沿(近20根高点区间) / 双底中峰 / 头肩底阻力
         box_n = min(20, len(df) - 1)
         sub_high = high.iloc[-box_n-1:-1]
-        sub_low = low.iloc[-box_n-1:-1]
         box_high = float(sub_high.max())
-        box_low = float(sub_low.min())
-        box_range = box_high - box_low
 
-        box_break = c_last > box_high
-        box_break_strong = c_last > (box_high + 0.8 * atr_val)
-
-        # ── 2. 双底结构 (Double Bottom) ──
-        # 寻找前 25 根 K 线中的两个相近低点与中间颈线
+        # 双底中峰颈线
         db_n = min(25, len(df))
         sub_df = df.iloc[-db_n:]
         lows = sub_df["low"].values
         highs = sub_df["high"].values
-        
-        # 底部 1 (前 12-24 根的局部最低点)
         mid_idx = len(lows) // 2
         b1_idx = int(np.argmin(lows[:mid_idx])) if mid_idx > 2 else 0
         b1_low = float(lows[b1_idx])
-        
-        # 底部 2 (近 2-12 根的局部最低点)
         b2_idx = mid_idx + int(np.argmin(lows[mid_idx:-1])) if (len(lows) - mid_idx) > 2 else (len(lows) - 2)
         b2_low = float(lows[b2_idx])
-        
-        # 颈线 (两底之间的最高反弹点)
         if b2_idx > b1_idx + 2:
             neckline_double = float(np.max(highs[b1_idx:b2_idx]))
         else:
             neckline_double = float(np.max(highs[-10:-1]))
-            
-        double_bottom_valid = (b2_low >= b1_low * 0.96) and (b2_low <= b1_low * 1.05) and (neckline_double > max(b1_low, b2_low))
-        double_break = double_bottom_valid and (c_last > neckline_double)
 
-        # ── 3. 头肩底结构 (Head & Shoulders Bottom) ──
-        # 左肩、头部 (最低)、右肩 (高于头部)
-        hs_valid = False
-        neckline_hs = box_high
-        if len(df) >= 35:
-            l_slice = df.iloc[-35:]
-            h_vals = l_slice["high"].values
-            l_vals = l_slice["low"].values
-            head_idx = int(np.argmin(l_vals[8:-5])) + 8
-            head_low = float(l_vals[head_idx])
-            left_low = float(np.min(l_vals[:head_idx-2])) if head_idx > 4 else head_low * 1.02
-            right_low = float(np.min(l_vals[head_idx+2:-1])) if (len(l_vals) - head_idx) > 4 else head_low * 1.02
-            
-            if (head_low < left_low * 0.98) and (right_low > head_low * 1.005):
-                hs_valid = True
-                neckline_hs = float(np.max(h_vals[head_idx-3:head_idx+4]))
-
-        hs_break = hs_valid and (c_last > neckline_hs)
-
-        # 确定主颈线价格
-        matched_patterns = []
+        # 判断形态与主颈线
+        is_box = c_last >= box_high * 0.99
+        is_double = (b2_low >= b1_low * 0.96) and (b2_low <= b1_low * 1.05) and (c_last >= neckline_double * 0.99)
+        
+        patterns = []
         necklines = []
-        if box_break:
-            matched_patterns.append("箱体突破")
+        if is_box:
+            patterns.append("箱体突破")
             necklines.append(box_high)
-        if double_break:
-            matched_patterns.append("双底突破")
+        if is_double:
+            patterns.append("双底突破")
             necklines.append(neckline_double)
-        if hs_break:
-            matched_patterns.append("头肩底突破")
-            necklines.append(neckline_hs)
-
-        if necklines:
-            primary_neckline = float(np.mean(necklines))
-            primary_pattern = " + ".join(matched_patterns)
-        else:
+            
+        if not necklines:
             primary_neckline = box_high
-            primary_pattern = "结构临近/未突破"
+            primary_pattern = "箱体/前高结构"
+        else:
+            primary_neckline = float(np.mean(necklines))
+            primary_pattern = " + ".join(patterns)
 
         res["neckline"] = primary_neckline
         res["pattern"] = primary_pattern
-        res["breakout_pct"] = ((c_last - primary_neckline) / primary_neckline * 100) if primary_neckline else 0.0
+        breakout_amount = c_last - primary_neckline
+        res["breakout_pct"] = ((breakout_amount) / primary_neckline * 100) if primary_neckline else 0.0
 
-        # ── 4. 成交量过滤 ──
+        # ── 2. 突破确认的 6 条源码条件 ──
+
+        # [0] 价格突破: CLOSE > NECKLINE 或 HIGH > NECKLINE
+        ok0_price_break = bool((c_last > primary_neckline) or (h_last > primary_neckline))
+        val0 = f"Close={c_last:.4f}, High={h_last:.4f} vs 颈线={primary_neckline:.4f}"
+
+        # [1] 突破幅度: CLOSE > NECKLINE * 1.01 或 CLOSE > NECKLINE + 1.2 * ATR
+        target_margin_pct = primary_neckline * 1.01
+        target_margin_atr = primary_neckline + 1.2 * atr_val
+        ok1_amount_break = bool((c_last > target_margin_pct) or (c_last > target_margin_atr))
+        val1 = f"Close={c_last:.4f} vs 1.01倍={target_margin_pct:.4f} / +1.2ATR={target_margin_atr:.4f}"
+
+        # [2] 成交量放大: VOL > MA(VOL,5) * 1.3 或 VOL > REF(HHV(VOL,2),1)
         vol_ma5 = float(volume.rolling(5).mean().iloc[-1]) if len(volume) >= 5 else v_last
-        vol_ma20 = float(volume.rolling(20).mean().iloc[-1]) if len(volume) >= 20 else (vol_ma5 or 1.0)
         vol_ratio = (v_last / vol_ma5) if vol_ma5 > 0 else 1.0
         res["vol_ratio"] = vol_ratio
+        max_prev2_vol = max(v_prev1, v_prev2)
+        ok2_vol_break = bool((v_last > vol_ma5 * 1.3) or (v_last > max_prev2_vol))
+        val2 = f"4H量={v_last:,.0f} vs 1.3×MA5={vol_ma5*1.3:,.0f} ({vol_ratio:.2f}倍) / 前2根最大={max_prev2_vol:,.0f}"
 
-        vol_break = (vol_ratio >= 1.3) or (v_last > v_prev1 * 1.5)
-        vol_not_abnormal = (v_last <= (vol_ma20 * 2.8))  # 排除极端天量衰竭
+        # [3] 站稳天数: 连续3根四小时K线收盘价在颈线上方
+        # close.iloc[-1], close.iloc[-2], close.iloc[-3]
+        if len(close) >= 3:
+            recent_3_closes = close.iloc[-3:].values
+            ok3_stand_still = bool(all(float(c) > primary_neckline * 0.998 for c in recent_3_closes))
+            val3 = f"近3根4H: [{float(recent_3_closes[0]):.2f}, {float(recent_3_closes[1]):.2f}, {float(recent_3_closes[2]):.2f}] > 颈线 {primary_neckline:.2f}"
+        else:
+            ok3_stand_still = bool(c_last > primary_neckline)
+            val3 = f"Close={c_last:.4f} > 颈线 {primary_neckline:.4f}"
 
-        # ── 5. 均线多头排列 ──
+        # [4] 均线趋势: MA5 > MA10，MA10 > MA20
         ma5 = float(close.rolling(5).mean().iloc[-1]) if len(close) >= 5 else c_last
         ma10 = float(close.rolling(10).mean().iloc[-1]) if len(close) >= 10 else c_last
         ma20 = float(close.rolling(20).mean().iloc[-1]) if len(close) >= 20 else c_last
-        ma_bull = (ma5 >= ma10 * 0.998) and (ma10 >= ma20 * 0.995)
+        ok4_ma_trend = bool((ma5 > ma10) and (ma10 > ma20))
+        val4 = f"MA5={ma5:.3f} > MA10={ma10:.3f} > MA20={ma20:.3f}"
 
-        # ── 6. 连续站稳过滤 ──
-        stand_still = (c_last >= primary_neckline * 0.995) and ((c_prev1 >= primary_neckline * 0.99) or (c_last > primary_neckline * 1.008))
+        # [5] 波动率过滤: 突破幅度 >= 1.2 * ATR(14)
+        atr_req = 1.2 * atr_val
+        ok5_volatility = bool(breakout_amount >= atr_req)
+        val5 = f"突破幅度={breakout_amount:.4f} (+{res['breakout_pct']:.2f}%) vs 1.2×ATR={atr_req:.4f}"
 
-        # ── 7. 规则明细构建 ──
+        # ── 3. 汇总规则列表 ──
         rules = [
             {
-                "id": "[0] 颈线突破",
-                "desc": "4H收盘价突破结构颈线 (箱体/双底/头肩底)",
-                "ok": bool(c_last >= primary_neckline),
-                "val": f"Close={c_last:.4f} vs 颈线={primary_neckline:.4f} (+{res['breakout_pct']:.2f}%)",
+                "id": "价格突破",
+                "desc": "CLOSE > NECKLINE 或 HIGH > NECKLINE",
+                "purpose": "判断价格是否跨过颈线",
+                "ok": ok0_price_break,
+                "val": val0,
             },
             {
-                "id": "[1] 突破幅度",
-                "desc": "突破幅度有效过滤假刺穿 (Close > 颈线 + 0.8×ATR 或 幅度>1%)",
-                "ok": bool(box_break_strong or (res['breakout_pct'] >= 0.8)),
-                "val": f"幅度=+{res['breakout_pct']:.2f}% | ATR14={atr_val:.4f}",
+                "id": "突破幅度",
+                "desc": "CLOSE > NECKLINE * 1.01 或 CLOSE > NECKLINE + 1.2 * ATR",
+                "purpose": "过滤盘中假刺穿",
+                "ok": ok1_amount_break,
+                "val": val1,
             },
             {
-                "id": "[2] 增量放大",
-                "desc": "4H成交量放大 (VOL > 1.3×MA5 或 前根1.5倍)",
-                "ok": bool(vol_break),
-                "val": f"4H量={v_last:,.0f} vs MA5={vol_ma5:,.0f} ({vol_ratio:.2f}倍)",
+                "id": "成交量放大",
+                "desc": "VOL > MA(VOL,5) * 1.3 或 VOL > REF(HHV(VOL,2),1)",
+                "purpose": "确认增量资金进场",
+                "ok": ok2_vol_break,
+                "val": val2,
             },
             {
-                "id": "[3] 异常天量过滤",
-                "desc": "避免天量脉冲后衰竭 (VOL < 2.8×MA20)",
-                "ok": bool(vol_not_abnormal),
-                "val": f"4H量={v_last:,.0f} vs MA20={vol_ma20:,.0f} ({v_last/vol_ma20:.2f}倍)" if vol_ma20 else "正常",
+                "id": "站稳天数",
+                "desc": "连续3根四小时K线收盘价在颈线上方",
+                "purpose": "避免单日冲高回落",
+                "ok": ok3_stand_still,
+                "val": val3,
             },
             {
-                "id": "[4] 趋势共振",
-                "desc": "4H均线多头共振排列 (MA5 ≥ MA10 ≥ MA20)",
-                "ok": bool(ma_bull),
-                "val": f"MA5={ma5:.3f} | MA10={ma10:.3f} | MA20={ma20:.3f}",
+                "id": "均线趋势",
+                "desc": "MA5 > MA10，MA10 > MA20",
+                "purpose": "确认趋势方向一致",
+                "ok": ok4_ma_trend,
+                "val": val4,
             },
             {
-                "id": "[5] 站稳确认",
-                "desc": "收盘价在颈线上方持续站稳 (过滤单针冲高回落)",
-                "ok": bool(stand_still),
-                "val": f"当前={c_last:.4f} | 前根={c_prev1:.4f} | 颈线={primary_neckline:.4f}",
-            },
-            {
-                "id": "[6] 形态结构",
-                "desc": "识别到有效底部/整理结构 (箱体/双底/头肩底)",
-                "ok": bool(len(matched_patterns) > 0 or box_break),
-                "val": f"识别形态: {primary_pattern}",
+                "id": "波动率过滤",
+                "desc": "突破幅度 ≥ 1.2 * ATR(14)",
+                "purpose": "排除低波动假突破",
+                "ok": ok5_volatility,
+                "val": val5,
             },
         ]
 
         res["details"] = rules
-        # 只要突破了颈线且满足量能与趋势过滤即判定通过
-        res["passed"] = bool((c_last >= primary_neckline) and vol_break and ma_bull and stand_still)
+        # 满足全部确认条件判定为突破通过
+        res["passed"] = bool(ok0_price_break and ok1_amount_break and ok2_vol_break and ok3_stand_still and ok4_ma_trend and ok5_volatility)
 
     except Exception as e:
         res["error"] = str(e)

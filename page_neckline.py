@@ -48,10 +48,17 @@ def _render_details(details: list):
         color = "#4ade80" if ok else "#f87171"
         bg = "rgba(74,222,128,0.07)" if ok else "rgba(248,113,113,0.07)"
         bd = "rgba(74,222,128,0.25)" if ok else "rgba(248,113,113,0.25)"
+        cond_name = r.get('id', '')
+        logic_desc = r.get('desc', '')
+        purpose = r.get('purpose', '')
+        val_str = r.get('val', '')
         st.markdown(
-            f"""<div style="background:{bg};border:1px solid {bd};border-radius:6px;padding:6px 10px;margin:3px 0;font-size:12px;display:flex;justify-content:space-between;align-items:center;">
-                <span style="font-weight:600;color:{color};">{icon} {r.get('id', '')} {r.get('desc', '')}</span>
-                <span style="font-family:monospace;color:#cbd5e1;font-size:11px;">{r.get('val', '')}</span>
+            f"""<div style="background:{bg};border:1px solid {bd};border-radius:6px;padding:8px 12px;margin:4px 0;font-size:12px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+                    <span style="font-weight:700;color:{color};">{icon} {cond_name} <span style="font-size:11px;color:#94a3b8;font-weight:normal;margin-left:6px;">({purpose})</span></span>
+                    <span style="font-family:monospace;color:#f8fafc;font-size:12px;font-weight:600;">{val_str}</span>
+                </div>
+                <div style="font-family:monospace;color:#94a3b8;font-size:11px;">源码逻辑: {logic_desc}</div>
             </div>""",
             unsafe_allow_html=True,
         )
@@ -149,25 +156,19 @@ def render_page_neckline():
             st.success("✅ 4H 结构颈线后台扫描任务已完成!")
 
     # ── 策略说明面板 ──
-    with st.expander("📖 4H 结构颈线突破 7 条核心规则说明（问财 / 价格行为学模型）", expanded=False):
+    with st.expander("📖 4H 结构颈线突破确认 6 条核心源码条件说明（问财 / 价格行为学模型）", expanded=False):
         st.markdown("""
-        #### 💡 核心原理：「形态识别 + 突破确认 + 量价过滤 + 站稳确认」四重共振
-        1. **形态识别**：自动在 4H K 线中识别 **箱体整理、双底反弹、头肩底** 等关键反转/中继结构，确定多空分界颈线价格；
-        2. **突破确认**：价格收盘价有效跨过颈线，且突破幅度大于 **0.8 × ATR(14)**，过滤假刺穿；
-        3. **量价过滤**：成交量明显放大 (VOL > 1.3 × MA5 或 前根1.5倍)，同时排除 2.8倍 MA20 的异常脉冲天量；
-        4. **趋势共振**：4H 均线呈多头排列 (MA5 ≥ MA10 ≥ MA20)；
-        5. **站稳确认**：收盘价在颈线上方持续站稳，避免单针冲高回落。
+        #### 💡 核心原则：突破颈线不能只看一根K线刺穿，必须通过多重严格条件确认！
         """)
         conditions = [
-            ("[0] 颈线突破", "4H Close > Neckline", "收盘价突破箱体上沿 / 双底中峰 / 头肩底颈线"),
-            ("[1] 突破幅度", "Close > Neckline + 0.8×ATR 或 幅度>1%", "利用波动率过滤盘中毛刺与假刺穿"),
-            ("[2] 增量放大", "VOL > MA(VOL,5) * 1.3 或 前根1.5倍", "增量主力资金进场确认"),
-            ("[3] 天量过滤", "VOL < MA(VOL,20) * 2.8", "排除主力拉高出货的极端异常爆量"),
-            ("[4] 趋势共振", "MA5 ≥ MA10 ≥ MA20", "短期均线系统多头排列，顺势突破"),
-            ("[5] 站稳确认", "连续站稳颈线上方 (回踩不破)", "过滤单根 K 线冲高后大幅回落"),
-            ("[6] 形态结构", "识别到箱体 / 双底 / 头肩底结构", "确保存在明确的价格结构位"),
+            ("价格突破", "CLOSE > NECKLINE 或 HIGH > NECKLINE", "判断价格是否跨过颈线"),
+            ("突破幅度", "CLOSE > NECKLINE * 1.01 或 CLOSE > NECKLINE + 1.2 * ATR", "过滤盘中假刺穿"),
+            ("成交量放大", "VOL > MA(VOL,5) * 1.3 或 VOL > REF(HHV(VOL,2),1)", "确认增量资金进场"),
+            ("站稳天数", "连续3根四小时K线收盘价在颈线上方", "避免单日冲高回落"),
+            ("均线趋势", "MA5 > MA10，MA10 > MA20", "确认趋势方向一致"),
+            ("波动率过滤", "突破幅度 ≥ 1.2 * ATR(14)", "排除低波动假突破"),
         ]
-        rows = [{"编号": idx, "条件": cond, "含义": meaning} for idx, cond, meaning in conditions]
+        rows = [{"条件": c[0], "源码逻辑": c[1], "作用": c[2]} for c in conditions]
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
     st.markdown("---")
@@ -726,7 +727,7 @@ def render_page_neckline():
             _components.html(_js_code, height=0)
 
         # 详细条件展开 (仅对当前页的品种提供展开查看，避免过大 DOM 卡顿)
-        with st.expander(f"🔍 查看当前页 ({len(page_items)} 支) 7 条规则明细与检测值", expanded=False):
+        with st.expander(f"🔍 查看当前页 ({len(page_items)} 支) 6 条突破确认条件明细与检测值", expanded=False):
             for r in page_items:
                 with st.expander(f"📊 {r['ticker']} — 4H 结构颈线突破明细 ({r.get('pattern', '—')})", expanded=False):
                     col_d1, col_d2 = st.columns([4, 1])
@@ -755,14 +756,14 @@ def render_page_neckline():
                     "4H收盘价": f"{r.get('close', 0.0):.4f}" if r.get("close") else "—",
                     "颈线位": f"{r.get('neckline', 0.0):.4f}" if r.get("neckline") else "—",
                     "4H量比": f"{r.get('vol_ratio', 1.0):.2f}x" if r.get("vol_ratio") else "—",
-                    "扫描状态": r.get("error") or "未满足全部突破条件"
+                    "扫描状态": r.get("error") or "未满足全部突破确认条件"
                 })
             st.dataframe(pd.DataFrame(failed_df_rows), use_container_width=True, height=320, hide_index=True)
             
-            # 单独点选查看某一个未通过品种的 7 条规则明细
+            # 单独点选查看某一个未通过品种的 6 条规则明细
             failed_tickers = [r.get("ticker", "") for r in failed if r.get("ticker")]
             if failed_tickers:
-                sel_f_tk = st.selectbox("🔍 选择查看未通过品种的 7 条规则检测值", options=["— 请选择品种 —"] + failed_tickers, key="nl_failed_inspect_picker")
+                sel_f_tk = st.selectbox("🔍 选择查看未通过品种的 6 条规则检测值", options=["— 请选择品种 —"] + failed_tickers, key="nl_failed_inspect_picker")
                 if sel_f_tk and sel_f_tk != "— 请选择品种 —":
                     target_f = next((r for r in failed if r.get("ticker") == sel_f_tk), None)
                     if target_f and target_f.get("details"):
