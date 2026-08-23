@@ -4,6 +4,8 @@ page_triple_pattern.py
 🌟 三重底 & 三重顶 (Triple Top Bottom Scan v4 / TFLab MT4) 双向形态扫描器
 - 🐂 看涨三重底 (Bullish Triple Bottom 1-2-3-4-5 波浪结构)
 - 🐻 看跌三重顶 (Bearish Triple Top 1-2-3-4-5 波浪结构)
+- 🏃 跑势进度体系 (breakout_progress: active=0%, confirmed=突破后推进百分比)
+- 🎯 刚突破 (≤20%) 与 5点蓄势中优先过滤，支持动态滑块调节跑势进度上限 (0%~300%)
 - 🎯 TFLab 风格 Entry, Stop Loss (粉色区), TP1 (61.8%), TP2 (100%), TP3 (161.8%) 斐波那契目标区
 - ⚖️ 风险点数 (Risk) 与 收益点数 (Reward) & 盈亏比 (Risk to Reward 1:4+)
 - 📈 深度还原 MT4 指标的 K 线图、粉绿多重目标阴影区与 1-2-3-4-5 拐点折线
@@ -73,12 +75,6 @@ def _sina_link(ticker: str) -> str:
     return f"https://finance.sina.com.cn/realstock/company/{code}/nc.shtml"
 
 
-def _row_anchor_id(ticker: str, period: str, direction: str) -> str:
-    import re
-    safe_tk = re.sub(r'[^0-9A-Za-z_-]', '_', ticker.upper())
-    return f"tp_{direction}_{safe_tk}_{period}"
-
-
 def render_triple_pattern_page():
     st.markdown(
         """
@@ -146,6 +142,20 @@ def render_triple_pattern_page():
             color: #94a3b8;
             border: 1px solid rgba(148, 163, 184, 0.3);
         }
+        .progress-track {
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 4px;
+            height: 6px;
+            width: 100%;
+            overflow: hidden;
+            margin: 6px 0 6px 0;
+            position: relative;
+        }
+        .progress-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
         </style>
         """,
         unsafe_allow_html=True
@@ -164,25 +174,28 @@ def render_triple_pattern_page():
         """,
         unsafe_allow_html=True
     )
-    st.caption("对齐 TFLab MT4 经典 5 点波浪 (1-2-3-4-5) 几何反转形态与三段斐波那契目标体系 (TP1 61.8%, TP2 100%, TP3 161.8%)，全市场并发极速扫描。")
+    st.caption("对齐 TFLab MT4 经典 5 点波浪 (1-2-3-4-5) 几何反转形态与三段斐波那契目标体系 (TP1 61.8%, TP2 100%, TP3 161.8%)，支持实时跑势进度过滤。")
 
     total_patterns_cnt = len(all_patterns)
     bull_cnt = sum(1 for r in all_patterns if r.get("direction") == "bullish")
     bear_cnt = sum(1 for r in all_patterns if r.get("direction") == "bearish")
-    confirmed_cnt = sum(1 for r in all_patterns if r.get("status") == "confirmed")
     active_cnt = sum(1 for r in all_patterns if r.get("status") == "active")
+    early_break_cnt = sum(1 for r in all_patterns if r.get("status") == "confirmed" and float(r.get("breakout_progress", 0.0)) <= 20.0)
+    far_break_cnt = sum(1 for r in all_patterns if r.get("status") == "confirmed" and float(r.get("breakout_progress", 0.0)) > 20.0)
 
-    col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
+    col_m1, col_m2, col_m3, col_m4, col_m5, col_m6 = st.columns(6)
     with col_m1:
-        st.metric("📊 检出形态总数", f"{total_patterns_cnt} 条")
+        st.metric("📊 形态总数", f"{total_patterns_cnt} 条")
     with col_m2:
-        st.metric("🐂 看涨三重底 (Bullish)", f"{bull_cnt} 条", delta=f"{bull_cnt/max(1, total_patterns_cnt):.1%}" if total_patterns_cnt else None)
+        st.metric("🐂 看涨三重底", f"{bull_cnt} 条")
     with col_m3:
-        st.metric("🐻 看跌三重顶 (Bearish)", f"{bear_cnt} 条", delta=f"{bear_cnt/max(1, total_patterns_cnt):.1%}" if total_patterns_cnt else None, delta_color="inverse")
+        st.metric("🐻 看跌三重顶", f"{bear_cnt} 条")
     with col_m4:
-        st.metric("🚀 已突破/推进", f"{confirmed_cnt} 条")
+        st.metric("👀 5点蓄势中", f"{active_cnt} 条")
     with col_m5:
-        st.metric("👀 5点成型蓄势", f"{active_cnt} 条")
+        st.metric("🚀 刚突破 (≤20%)", f"{early_break_cnt} 条", delta="绝佳进场区" if early_break_cnt > 0 else None)
+    with col_m6:
+        st.metric("🏃 已推进 (>20%)", f"{far_break_cnt} 条")
 
     # ── 2. Google Colab 独立云端扫描与 1 键导入 ──
     with st.expander("🚀 1. Google Colab 独立云端极速扫描与 1 键导入 (推荐 · 50+只/秒并发)", expanded=False):
@@ -318,8 +331,8 @@ def render_triple_pattern_page():
         )
         return
 
-    # 筛选面板
-    col_f1, col_f2, col_f3, col_f4 = st.columns([1.2, 1.5, 1.3, 1.5])
+    # 筛选面板 第一行
+    col_f1, col_f2, col_f3, col_f4 = st.columns([1.2, 1.5, 1.3, 1.8])
     with col_f1:
         st_direction = st.selectbox(
             "🧭 形态方向",
@@ -352,19 +365,41 @@ def render_triple_pattern_page():
         )
     with col_f4:
         st_status = st.multiselect(
-            "📌 有效状态",
-            options=["观望中 (active)", "已突破 (confirmed)", "已失效 (invalidated)", "已过期 (expired)"],
-            default=["观望中 (active)", "已突破 (confirmed)"],
+            "📌 形态阶段状态",
+            options=[
+                "👀 观望蓄势中 (active 0%)",
+                "🚀 刚突破 (confirmed ≤20%)",
+                "⚡ 推进中 (confirmed 20~100%)",
+                "🏁 已超TP2目标 (confirmed >100%)",
+                "❌ 已失效 (invalidated)",
+                "⏰ 已过期 (expired)"
+            ],
+            default=[
+                "👀 观望蓄势中 (active 0%)",
+                "🚀 刚突破 (confirmed ≤20%)"
+            ],
             key="tp_filter_status"
         )
 
-    # 映射 status
-    selected_statuses = []
-    for s in st_status:
-        if "active" in s: selected_statuses.append("active")
-        elif "confirmed" in s: selected_statuses.append("confirmed")
-        elif "invalidated" in s: selected_statuses.append("invalidated")
-        elif "expired" in s: selected_statuses.append("expired")
+    # 筛选面板 第二行：跑势进度上限滑块
+    col_sl1, col_sl2 = st.columns([2.5, 1])
+    with col_sl1:
+        progress_limit = st.slider(
+            "🏃 跑势进度上限 (0% ~ 300%)",
+            min_value=0,
+            max_value=300,
+            value=20,
+            step=5,
+            help="【核心过滤】：默认 20%，只保留 5 点成型蓄势中 (0%) 以及突破颈线 20% 形态高度以内的标的。已突破跑很远 (>20%) 的标的将被自动过滤。向右拉大滑块可查看更多推进中的形态。",
+            key="tp_progress_slider"
+        )
+    with col_sl2:
+        st.markdown(
+            f"<div style='margin-top:28px;font-size:13px;color:#38bdf8;font-weight:600;'>"
+            f"🎯 当前过滤: <b>0% ~ {progress_limit}%</b>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
 
     # 执行过滤
     filtered = []
@@ -389,21 +424,52 @@ def render_triple_pattern_page():
         if r.get("period") not in st_period:
             continue
 
-        # 状态过滤
+        # 状态阶段划分与跑势过滤
         st_val = r.get("status", "active")
-        if st_val not in selected_statuses:
+        prog = float(r.get("breakout_progress", 0.0))
+
+        # 状态多选过滤
+        is_active = (st_val == "active")
+        is_early = (st_val == "confirmed" and prog <= 20.0)
+        is_mid = (st_val == "confirmed" and 20.0 < prog <= 100.0)
+        is_far = (st_val == "confirmed" and prog > 100.0)
+        is_invalidated = (st_val == "invalidated")
+        is_expired = (st_val == "expired")
+
+        matched_status = False
+        for s in st_status:
+            if "观望蓄势中" in s and is_active: matched_status = True
+            elif "刚突破" in s and is_early: matched_status = True
+            elif "推进中" in s and is_mid: matched_status = True
+            elif "已超TP2目标" in s and is_far: matched_status = True
+            elif "已失效" in s and is_invalidated: matched_status = True
+            elif "已过期" in s and is_expired: matched_status = True
+
+        if not matched_status:
+            continue
+
+        # 跑势进度上限滑块过滤 (只对 active 和 confirmed 生效)
+        if st_val in ("active", "confirmed") and prog > progress_limit:
             continue
 
         filtered.append(r)
 
     # 搜索与排序
-    col_s1, col_s2, col_s3 = st.columns([2, 1.2, 1])
+    col_s1, col_s2, col_s3 = st.columns([2, 1.4, 1])
     with col_s1:
         search_query = st.text_input("🔍 搜索代码 / 名称", "", placeholder="输入股票代码或名称关键词...", key="tp_search_query")
     with col_s2:
         sort_by = st.selectbox(
             "↕️ 排序方式",
-            ["置信度 (高 → 低)", "TP3 黄金盈亏比 (高 → 低)", "TP2 颈线盈亏比 (高 → 低)", "最新扫描时间 (新 → 旧)", "股票代码 (A → Z)"],
+            [
+                "🏃 跑势进度 (低 → 高 · 优先蓄势/刚突破)",
+                "置信度 (高 → 低)",
+                "TP3 黄金盈亏比 (高 → 低)",
+                "TP2 颈线盈亏比 (高 → 低)",
+                "🏃 跑势进度 (高 → 低)",
+                "最新扫描时间 (新 → 旧)",
+                "股票代码 (A → Z)"
+            ],
             index=0,
             key="tp_sort_by"
         )
@@ -414,7 +480,11 @@ def render_triple_pattern_page():
         q = search_query.strip().upper()
         filtered = [r for r in filtered if q in str(r.get("symbol", "")).upper() or q in _fetch_name(str(r.get("symbol", ""))).upper()]
 
-    if sort_by == "置信度 (高 → 低)":
+    if sort_by == "🏃 跑势进度 (低 → 高 · 优先蓄势/刚突破)":
+        filtered.sort(key=lambda x: (float(x.get("breakout_progress", 0.0)), -float(x.get("confidence", 0.0))))
+    elif sort_by == "🏃 跑势进度 (高 → 低)":
+        filtered.sort(key=lambda x: (float(x.get("breakout_progress", 0.0)), float(x.get("confidence", 0.0))), reverse=True)
+    elif sort_by == "置信度 (高 → 低)":
         filtered.sort(key=lambda x: (float(x.get("confidence", 0.0)), float(x.get("rr_tp3", 2.0))), reverse=True)
     elif sort_by == "TP3 黄金盈亏比 (高 → 低)":
         filtered.sort(key=lambda x: float(x.get("rr_tp3", x.get("risk_reward", 1.0))), reverse=True)
@@ -465,7 +535,7 @@ def render_triple_pattern_page():
         st.markdown(
             f"<div style='text-align:center; line-height:36px; color:#cbd5e1; font-size:14px; font-weight:600;'>"
             f"📄 第 <span style='color:#f59e0b;'>{current_page}</span> / {total_pages} 页 "
-            f"(共 <span style='color:#38bdf8;'>{total_items}</span> 条，显示 {(current_page-1)*page_size + 1 if total_items > 0 else 0} - {min(current_page*page_size, total_items)} 条)"
+            f"(符合筛选 <span style='color:#38bdf8;'>{total_items}</span> 条，显示 {(current_page-1)*page_size + 1 if total_items > 0 else 0} - {min(current_page*page_size, total_items)} 条)"
             f"</div>",
             unsafe_allow_html=True
         )
@@ -493,6 +563,7 @@ def render_triple_pattern_page():
         note = r.get("note", "")
         status_val = r.get("status", "active")
         status_reason = r.get("status_reason", "")
+        prog_val = float(r.get("breakout_progress", 0.0))
         period_desc = TRIPLE_PATTERN_TIMEFRAMES.get(period, (None, None, period))[2]
         name = _fetch_name(ticker)
 
@@ -521,15 +592,32 @@ def render_triple_pattern_page():
             dir_badge = "<span style='font-size:12px;background:rgba(239,68,68,0.18);color:#f87171;border:1px solid rgba(239,68,68,0.4);padding:2px 8px;border-radius:4px;font-weight:700;'>🐻 看跌三重顶 (Bearish)</span>"
             p_lbls = ["1: H1", "2: L1", "3: H2", "4: L2", "5: H3 (Entry)"]
 
-        # 状态徽章
+        # 状态与跑势进度徽章
         if status_val == "active":
-            status_badge = "<span style='font-size:12px;background:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>5点蓄势中</span>"
+            status_badge = "<span style='font-size:12px;background:rgba(59,130,246,0.18);color:#93c5fd;border:1px solid rgba(59,130,246,0.4);padding:2px 8px;border-radius:4px;font-weight:700;'>👀 5点蓄势中 (0%)</span>"
+            bar_color = "#3b82f6"
+            bar_width = 5
         elif status_val == "confirmed":
-            status_badge = "<span style='font-size:12px;background:rgba(34,197,94,0.15);color:#86efac;border:1px solid rgba(34,197,94,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>已突破推进 🚀</span>"
+            if prog_val <= 20.0:
+                status_badge = f"<span style='font-size:12px;background:rgba(34,197,94,0.22);color:#4ade80;border:1px solid rgba(34,197,94,0.5);padding:2px 8px;border-radius:4px;font-weight:700;'>🚀 刚突破颈线 ({prog_val:.1f}%)</span>"
+                bar_color = "#22c55e"
+                bar_width = max(8, min(100, int(prog_val)))
+            elif prog_val <= 100.0:
+                status_badge = f"<span style='font-size:12px;background:rgba(245,158,11,0.2);color:#fde047;border:1px solid rgba(245,158,11,0.5);padding:2px 8px;border-radius:4px;font-weight:700;'>⚡ 推进中 ({prog_val:.1f}%)</span>"
+                bar_color = "#f59e0b"
+                bar_width = max(10, min(100, int(prog_val)))
+            else:
+                status_badge = f"<span style='font-size:12px;background:rgba(249,115,22,0.2);color:#fb923c;border:1px solid rgba(249,115,22,0.5);padding:2px 8px;border-radius:4px;font-weight:700;'>🏁 已超TP2 ({prog_val:.1f}%)</span>"
+                bar_color = "#f97316"
+                bar_width = 100
         elif status_val == "invalidated":
             status_badge = "<span style='font-size:12px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>已触及止损 ❌</span>"
+            bar_color = "#ef4444"
+            bar_width = 100
         else:
             status_badge = "<span style='font-size:12px;background:rgba(100,116,139,0.15);color:#94a3b8;border:1px solid rgba(100,116,139,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>已过期 ⏰</span>"
+            bar_color = "#64748b"
+            bar_width = 0
 
         with st.container(border=True):
             col_t1, col_t2 = st.columns([5, 3])
@@ -589,11 +677,14 @@ def render_triple_pattern_page():
                     else:
                         st.button("✅ 已加", disabled=True, key=f"tp_is_fav_{item_idx}", use_container_width=True)
 
-            # 5 点波浪与交易计划
+            # 跑势进度条指示
             st.markdown(
                 f"""
-                <div style="font-size:13px; line-height:1.7; color:#cbd5e1; margin-top: 4px;">
-                    <div>🏷️ <b>形态分类</b>：<span style="color:#f59e0b; font-weight:600;">{patt_desc}</span></div>
+                <div class="progress-track" title="跑势进度: {prog_val:.1f}% (0%=颈线位, 100%=TP2颈线目标)">
+                    <div class="progress-fill" style="width:{bar_width}%; background:{bar_color};"></div>
+                </div>
+                <div style="font-size:13px; line-height:1.7; color:#cbd5e1; margin-top: 2px;">
+                    <div>🏷️ <b>形态分类</b>：<span style="color:#f59e0b; font-weight:600;">{patt_desc}</span> | 🏃 <b>跑势进度</b>：<span style="color:{bar_color}; font-weight:700;">{prog_val:.1f}%</span></div>
                     <div>🔍 <b>跟踪观察</b>：{status_reason}</div>
                     <div style="color:#94a3b8; font-size:12px; margin-top:2px;">📝 <b>特征说明</b>：{note}</div>
                 </div>

@@ -261,6 +261,12 @@ def scan_patterns(df, symbol="", period="1d", swing_window=3, lookback_bars=150,
                 status = "active"
                 reason = "第5点探底成型，观察反弹与突破"
 
+            # 🏃 跑势进度：active=0%，confirmed=(当前收盘-颈线)/形态高度×100%
+            if status == "confirmed":
+                breakout_progress = round(max(0.0, (latest_close - neckline) / pattern_height * 100), 1)
+            else:
+                breakout_progress = 0.0
+
             if status in ("active", "confirmed"):
                 results.append({{
                     "symbol": symbol,
@@ -288,6 +294,7 @@ def scan_patterns(df, symbol="", period="1d", swing_window=3, lookback_bars=150,
                     "status_reason": reason,
                     "bars_since_p5": bars_since,
                     "latest_close": round(latest_close, 4),
+                    "breakout_progress": breakout_progress,
                 }})
 
     # 🐻 2. 看跌三重顶 (1-2-3-4-5 波浪结构)
@@ -355,6 +362,12 @@ def scan_patterns(df, symbol="", period="1d", swing_window=3, lookback_bars=150,
                 status = "active"
                 reason = "第5点冲顶受阻，观察回调与破位"
 
+            # 🏃 跑势进度：active=0%，confirmed=(颈线-当前收盘)/形态高度×100%
+            if status == "confirmed":
+                breakout_progress = round(max(0.0, (neckline - latest_close) / pattern_height * 100), 1)
+            else:
+                breakout_progress = 0.0
+
             if status in ("active", "confirmed"):
                 results.append({{
                     "symbol": symbol,
@@ -382,6 +395,7 @@ def scan_patterns(df, symbol="", period="1d", swing_window=3, lookback_bars=150,
                     "status_reason": reason,
                     "bars_since_p5": bars_since,
                     "latest_close": round(latest_close, 4),
+                    "breakout_progress": breakout_progress,
                 }})
 
     return results
@@ -614,7 +628,7 @@ if all_results:
         "pt1", "pt2", "pt3", "pt4", "pt5", "neckline",
         "entry_price", "stop_loss", "tp1", "tp2", "tp3",
         "risk", "reward_tp1", "reward_tp2", "reward_tp3",
-        "risk_reward", "rr_tp3", "note", "status", "status_reason", "bars_since_p5", "latest_close", "scan_time"
+        "risk_reward", "rr_tp3", "note", "status", "status_reason", "bars_since_p5", "latest_close", "breakout_progress", "scan_time"
     ]
     existing_cols = [c for c in cols if c in df_res.columns]
     df_res = df_res[existing_cols]

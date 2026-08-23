@@ -1924,6 +1924,42 @@ def restore_tb_snapshot(session_id: str) -> tuple:
 
 # ── 🌟 三重顶底 (Triple Pattern: Bottom & Top) 双向扫描持久化 ─────────
 
+def _ensure_tp_progress(r: Dict) -> Dict:
+    """确保三重顶底记录包含正确的 breakout_progress 跑势进度 (0%~300%+)"""
+    if "breakout_progress" in r and r["breakout_progress"] is not None and not pd.isna(r["breakout_progress"]):
+        try:
+            r["breakout_progress"] = round(float(r["breakout_progress"]), 1)
+            return r
+        except Exception:
+            pass
+
+    st_val = str(r.get("status", "active")).lower()
+    if st_val != "confirmed":
+        r["breakout_progress"] = 0.0
+        return r
+
+    try:
+        direction = str(r.get("direction", "bullish")).lower()
+        close = float(r.get("latest_close", 0.0))
+        neckline = float(r.get("neckline", 0.0))
+        p1 = float(r.get("p1", r.get("pt1", 0.0)))
+        p2 = float(r.get("p2", r.get("pt3", 0.0)))
+        p3 = float(r.get("p3", r.get("pt5", 0.0)))
+
+        if direction == "bullish":
+            min_low = min(p1, p2, p3) if (p1 > 0 and p2 > 0 and p3 > 0) else (neckline * 0.95)
+            h = max(neckline - min_low, neckline * 0.01)
+            prog = max(0.0, (close - neckline) / h * 100.0)
+        else:
+            max_high = max(p1, p2, p3) if (p1 > 0 and p2 > 0 and p3 > 0) else (neckline * 1.05)
+            h = max(max_high - neckline, neckline * 0.01)
+            prog = max(0.0, (neckline - close) / h * 100.0)
+        r["breakout_progress"] = round(prog, 1)
+    except Exception:
+        r["breakout_progress"] = 0.0
+    return r
+
+
 def load_triple_pattern() -> List[Dict]:
     """返回三重顶底双向扫描结果，按 (symbol, period, direction, pattern) 自动去重并按置信度排序"""
     res = _load(F_TRIPLE_PATTERN, [])
@@ -1933,6 +1969,7 @@ def load_triple_pattern() -> List[Dict]:
     for r in res:
         if not isinstance(r, dict) or not r.get("symbol"):
             continue
+        r = _ensure_tp_progress(r)
         k = (
             str(r.get("symbol")).upper(),
             str(r.get("period", "")).lower(),
@@ -1948,6 +1985,7 @@ def load_triple_pattern() -> List[Dict]:
 
 def save_triple_pattern(items: List[Dict], with_backup: bool = True) -> bool:
     """保存三重顶底双向扫描结果"""
+    items = [_ensure_tp_progress(r) for r in items if isinstance(r, dict)]
     if with_backup:
         ok = _save_with_backup(F_TRIPLE_PATTERN, items)
     else:
@@ -1977,6 +2015,9 @@ def append_triple_pattern_results(new_items: List[Dict], with_backup: bool = Tru
         )
         item_map[k] = it
     for it in new_items:
+        if not isinstance(it, dict) or not it.get("symbol"):
+            continue
+        it = _ensure_tp_progress(it)
         k = (
             str(it.get("symbol", "")).upper(),
             str(it.get("period", "")).lower(),

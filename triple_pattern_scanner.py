@@ -102,6 +102,7 @@ class PatternMatch:
     bars_since_p5: int = 0       # 距第5点已过 K 线根数
     latest_close: float = 0.0    # 最新收盘价
     scan_time: str = ""          # 扫描生成时间
+    breakout_progress: float = 0.0  # 🏃 跑势进度 (%): active=0%, confirmed=(close-neckline)/pattern_height×100%
 
     def to_dict(self) -> Dict:
         return asdict(self)
@@ -333,6 +334,12 @@ def scan_triple_patterns(
                 status = "active"
                 status_reason = f"探底反弹中：价格在 {lowest_point:.2f} ~ {neckline:.2f} 运行"
 
+            # 🏃 跑势进度：active=0%，confirmed=(当前收盘-颈线)/形态高度×100%
+            if status == "confirmed":
+                breakout_progress = round(max(0.0, (latest_close - neckline) / pattern_height * 100), 1)
+            else:
+                breakout_progress = 0.0
+
             matches.append(PatternMatch(
                 symbol=symbol,
                 direction="bullish",
@@ -357,6 +364,7 @@ def scan_triple_patterns(
                 status_reason=status_reason,
                 bars_since_p5=bars_since_p5,
                 latest_close=round(latest_close, 3),
+                breakout_progress=breakout_progress,
             ))
 
     # ==================================================================
@@ -432,6 +440,12 @@ def scan_triple_patterns(
                 status = "active"
                 status_reason = f"冲顶受阻回落中：价格在 {neckline:.2f} ~ {highest_point:.2f} 承压"
 
+            # 🏃 跑势进度：active=0%，confirmed=(颈线-当前收盘)/形态高度×100%
+            if status == "confirmed":
+                breakout_progress = round(max(0.0, (neckline - latest_close) / pattern_height * 100), 1)
+            else:
+                breakout_progress = 0.0
+
             matches.append(PatternMatch(
                 symbol=symbol,
                 direction="bearish",
@@ -456,6 +470,7 @@ def scan_triple_patterns(
                 status_reason=status_reason,
                 bars_since_p5=bars_since_p5,
                 latest_close=round(latest_close, 3),
+                breakout_progress=breakout_progress,
             ))
 
     # 最近的排在最前
