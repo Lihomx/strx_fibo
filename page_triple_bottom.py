@@ -1120,20 +1120,22 @@ def render_triple_bottom_page():
 
     col_f1, col_f2, col_f3 = st.columns([1.2, 1.2, 1.6])
     with col_f1:
-        sel_patt = st.selectbox("筛选形态类别", pattern_types)
+        sel_patt = st.selectbox("筛选形态类别", pattern_types, key="tb_filter_pattern")
     with col_f2:
         st_period = st.multiselect(
             "筛选周期",
             options=list(TRIPLE_BOTTOM_TIMEFRAMES.keys()),
             default=list(TRIPLE_BOTTOM_TIMEFRAMES.keys()),
-            format_func=lambda x: TRIPLE_BOTTOM_TIMEFRAMES[x][2]
+            format_func=lambda x: TRIPLE_BOTTOM_TIMEFRAMES[x][2],
+            key="tb_filter_period"
         )
     with col_f3:
         st_status = st.multiselect(
             "筛选有效状态",
             options=["观望中 (active)", "已突破 (confirmed)", "已失效 (invalidated)", "已过期 (expired)"],
             default=["观望中 (active)", "已突破 (confirmed)"],
-            help="失效或过期的形态默认被隐藏，勾选即可恢复显示"
+            help="失效或过期的形态默认被隐藏，勾选即可恢复显示",
+            key="tb_filter_status"
         )
 
     # 映射 status
@@ -1199,47 +1201,38 @@ def render_triple_bottom_page():
     total_items = len(filtered)
     total_pages = max(1, (total_items + page_size - 1) // page_size)
 
-    # ── 页码状态管理 (双向绑定 URL 参数与按钮交互) ──
+    # ── 页码状态管理 ──
+    # 用 _tb_url_p_seen 记录上次渲染时 URL 中的 _p 值
+    # 若 URL 中 _p 与上次不同 → 用户手动修改了地址栏 → 跳到新页
+    # 若相同 → 普通 rerun（按钮翻页）→ 完全由 session_state.tb_current_page 驱动
     url_p_raw = str(st.query_params.get("_p", "") or st.query_params.get("p", "")).strip()
-    last_url_p = str(st.session_state.get("_tb_last_url_p", "")).strip()
+    seen_url_p = str(st.session_state.get("_tb_url_p_seen", "")).strip()
 
-    if url_p_raw and url_p_raw != last_url_p:
-        # 用户通过修改浏览器地址栏中的 _p 参数或外部链接跳转进来
+    if url_p_raw and url_p_raw != seen_url_p:
+        # 用户通过地址栏修改 _p 参数进来（含首次加载）
         try:
-            target_p = int(url_p_raw)
+            st.session_state.tb_current_page = int(url_p_raw)
         except Exception:
-            target_p = 1
-        st.session_state.tb_current_page = target_p
-        st.session_state._tb_last_url_p = url_p_raw
-    elif "tb_current_page" not in st.session_state:
-        if url_p_raw:
-            try:
-                st.session_state.tb_current_page = int(url_p_raw)
-            except Exception:
-                st.session_state.tb_current_page = 1
-        else:
             st.session_state.tb_current_page = 1
-        st.session_state._tb_last_url_p = str(st.session_state.tb_current_page)
+        st.session_state._tb_url_p_seen = url_p_raw
+    elif "tb_current_page" not in st.session_state:
+        st.session_state.tb_current_page = 1
+        st.session_state._tb_url_p_seen = ""
 
-    current_page = max(1, min(total_pages, int(st.session_state.get("tb_current_page", 1))))
+    current_page = max(1, min(total_pages, int(st.session_state.tb_current_page)))
     st.session_state.tb_current_page = current_page
-    st.session_state._tb_last_url_p = str(current_page)
-    
-    # 保证 URL 中的 _p 参数与当前页码始终双向同步
-    if st.query_params.get("_p") != str(current_page):
-        try:
-            st.query_params["_p"] = str(current_page)
-        except Exception:
-            pass
+    # 记录本次渲染时的 URL _p，使得按钮翻页写入 query_params 后不被误判为"手动跳页"
+    st.session_state._tb_url_p_seen = str(current_page)
+
+    # 单向同步：将当前页码写入 URL（用于分享链接），不读取回来
+    try:
+        st.query_params["_p"] = str(current_page)
+    except Exception:
+        pass
 
     def _set_tb_page(p_num: int):
         target_p = max(1, min(total_pages, p_num))
         st.session_state.tb_current_page = target_p
-        st.session_state._tb_last_url_p = str(target_p)
-        try:
-            st.query_params["_p"] = str(target_p)
-        except Exception:
-            pass
 
     # 分页导航条（顶部）
     col_p1, col_p2, col_p3, col_p4, col_p5 = st.columns([1, 1.2, 3, 1.2, 1])
