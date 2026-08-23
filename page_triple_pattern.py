@@ -1,0 +1,708 @@
+"""
+page_triple_pattern.py
+======================================================================
+🌟 三重底 & 三重顶 (Triple Bottom & Triple Top) 双向形态扫描器
+- 🐂 看涨三重底 (Triple Bottom) 7 种变体分类
+- 🐻 看跌三重顶 (Triple Top) 7 种变体分类
+- 🎯 TFLab 风格入场位、止损位 (SL)、第一目标 (TP1 1:1)、第二目标 (TP2 1.618)、盈亏比 (R:R)
+- ⚡ 多周期扫描与秒级云端 Colab 脚本一键生成与导入
+- 📄 高性能分页检索与 TradingView 交互联动
+======================================================================
+"""
+
+import time
+import json
+import logging
+from datetime import datetime
+from typing import Dict, List, Optional
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+import streamlit as st
+
+import storage
+import triple_pattern_scanner
+import colab_triple_pattern_script
+
+logger = logging.getLogger(__name__)
+
+# 支持的周期映射: (interval, yfinance_period, 显示文本)
+TRIPLE_PATTERN_TIMEFRAMES = {
+    "1d":  ("1d",  "2y",  "日线 (1D)"),
+    "1w":  ("1wk", "5y",  "周线 (1W)"),
+    "1mo": ("1mo", "10y", "月线 (1M)"),
+    "4h":  ("1h",  "730d", "4小时 (4H)"),
+    "60m": ("60m", "720d", "60分钟 (60M)"),
+    "30m": ("30m", "60d",  "30分钟 (30M)"),
+}
+
+
+def _fetch_name(ticker: str) -> str:
+    """获取股票名称"""
+    try:
+        from page_watchlist import _fetch_ticker_name
+        return _fetch_ticker_name(ticker) or ticker
+    except Exception:
+        return ticker
+
+
+def _tv_link(ticker: str, period: str) -> str:
+    """生成 TradingView 链接"""
+    clean_tk = ticker.strip().upper()
+    if clean_tk.endswith(".SS"):
+        clean_tk = "SSE:" + clean_tk.replace(".SS", "")
+    elif clean_tk.endswith(".SZ"):
+        clean_tk = "SZSE:" + clean_tk.replace(".SZ", "")
+    elif clean_tk.endswith(".BJ"):
+        clean_tk = "BSE:" + clean_tk.replace(".BJ", "")
+    return f"https://www.tradingview.com/chart/?symbol={clean_tk}"
+
+
+def _sina_link(ticker: str) -> str:
+    """生成新浪财经链接"""
+    clean_tk = ticker.strip().upper()
+    if clean_tk.endswith(".SS"):
+        code = "sh" + clean_tk.replace(".SS", "")
+    elif clean_tk.endswith(".SZ"):
+        code = "sz" + clean_tk.replace(".SZ", "")
+    elif clean_tk.endswith(".BJ"):
+        code = "bj" + clean_tk.replace(".BJ", "")
+    else:
+        code = "gb_" + clean_tk.lower()
+    return f"https://finance.sina.com.cn/realstock/company/{code}/nc.shtml"
+
+
+def _row_anchor_id(ticker: str, period: str, direction: str) -> str:
+    import re
+    safe_tk = re.sub(r'[^0-9A-Za-z_-]', '_', ticker.upper())
+    return f"tp_{direction}_{safe_tk}_{period}"
+
+
+def render_triple_pattern_page():
+    st.markdown(
+        """
+        <style>
+        .tp-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .tp-title {
+            font-size: 24px;
+            font-weight: 800;
+            color: #f8fafc;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .tp-card-bull {
+            border-left: 4px solid #22c55e !important;
+        }
+        .tp-card-bear {
+            border-left: 4px solid #ef4444 !important;
+        }
+        .tp-plan-box {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            padding: 10px 14px;
+            margin-top: 8px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 8px;
+        }
+        .tp-plan-item {
+            display: flex;
+            flex-direction: column;
+        }
+        .tp-plan-label {
+            font-size: 11px;
+            color: #94a3b8;
+            font-weight: 600;
+        }
+        .tp-plan-val {
+            font-size: 14px;
+            font-weight: 800;
+            font-family: monospace;
+            margin-top: 2px;
+        }
+        .click-count-badge {
+            display: inline-block;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 1px 6px;
+            border-radius: 10px;
+            margin-left: 4px;
+            line-height: 1.3;
+        }
+        .click-count-badge.today-active {
+            background: rgba(245, 158, 11, 0.25);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.6);
+        }
+        .click-count-badge.history-active {
+            background: rgba(34, 197, 94, 0.25);
+            color: #4ade80;
+            border: 1px solid rgba(34, 197, 94, 0.6);
+        }
+        .click-count-badge.no-clicks {
+            background: rgba(148, 163, 184, 0.15);
+            color: #94a3b8;
+            border: 1px solid rgba(148, 163, 184, 0.3);
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    all_patterns = storage.load_triple_pattern()
+
+    # ── 1. 顶部标题与形态总体统计 ──
+    st.markdown(
+        """
+        <div class="tp-header">
+            <div class="tp-title">
+                <span>🌟 三重底 & 三重顶 (Triple Pattern) 双向扫描器</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    st.caption("基于 Al Brooks 价格行为学分类与 TFLab MT4 几何投影模型，实时全市场并发扫描看涨三重底与看跌三重顶，自动测算入场位、止损位与目标盈亏比。")
+
+    total_patterns_cnt = len(all_patterns)
+    bull_cnt = sum(1 for r in all_patterns if r.get("direction") == "bullish")
+    bear_cnt = sum(1 for r in all_patterns if r.get("direction") == "bearish")
+    confirmed_cnt = sum(1 for r in all_patterns if r.get("status") == "confirmed")
+    active_cnt = sum(1 for r in all_patterns if r.get("status") == "active")
+
+    col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
+    with col_m1:
+        st.metric("📊 检出形态总数", f"{total_patterns_cnt} 条")
+    with col_m2:
+        st.metric("🐂 看涨三重底", f"{bull_cnt} 条", delta=f"{bull_cnt/max(1, total_patterns_cnt):.1%}" if total_patterns_cnt else None)
+    with col_m3:
+        st.metric("🐻 看跌三重顶", f"{bear_cnt} 条", delta=f"{bear_cnt/max(1, total_patterns_cnt):.1%}" if total_patterns_cnt else None, delta_color="inverse")
+    with col_m4:
+        st.metric("🚀 已突破确认", f"{confirmed_cnt} 条")
+    with col_m5:
+        st.metric("👀 形成观望中", f"{active_cnt} 条")
+
+    # ── 2. Google Colab 独立云端扫描与 1 键导入 ──
+    with st.expander("🚀 1. Google Colab 独立云端极速扫描与 1 键导入 (推荐 · 50+只/秒并发)", expanded=False):
+        colab_c1, colab_c2 = st.columns([1.2, 1])
+        with colab_c1:
+            st.markdown("##### 1. 生成并复制 Google Colab 扫描脚本")
+            st.caption("脚本内置 Yahoo v8 直连引擎与连接池技术，支持全部分组 12,400+ 支标的多周期秒级并发扫描。")
+
+            all_symbols = storage.load_symbols() or []
+            groups = storage.load_symbol_groups() or []
+
+            pool_options = ["🇺🇸 全量美股 (系统内置)", "🇨🇳 全量A股 (系统内置)", "🌐 全部组去重合并 (全量市场)"]
+            for g in groups:
+                if g.get("name"):
+                    pool_options.append(f"📁 分组: {g.get('name')}")
+
+            c_p1, c_p2 = st.columns([2, 1])
+            with c_p1:
+                selected_pool = st.selectbox(
+                    "🎯 选择扫描股票池",
+                    pool_options,
+                    index=0,
+                    key="tp_colab_pool_select"
+                )
+            with c_p2:
+                tf_map_keys = st.multiselect(
+                    "⏱ 扫描周期",
+                    options=list(TRIPLE_PATTERN_TIMEFRAMES.keys()),
+                    default=["1d", "1w", "1mo"],
+                    format_func=lambda x: TRIPLE_PATTERN_TIMEFRAMES[x][2],
+                    key="tp_colab_tf_select"
+                )
+
+            export_tickers = []
+            if selected_pool == "🌐 全部组去重合并 (全量市场)":
+                for g in groups:
+                    export_tickers.extend(g.get("tickers", []))
+                if not export_tickers:
+                    export_tickers = [s["ticker"] for s in all_symbols]
+            elif "全量美股" in selected_pool:
+                export_tickers = [s["ticker"] for s in all_symbols if not (s["ticker"].endswith(".SS") or s["ticker"].endswith(".SZ") or s["ticker"].endswith(".BJ") or s["ticker"].isdigit())]
+            elif "全量A股" in selected_pool:
+                export_tickers = [s["ticker"] for s in all_symbols if s["ticker"].endswith(".SS") or s["ticker"].endswith(".SZ") or s["ticker"].endswith(".BJ") or s["ticker"].isdigit()]
+            elif selected_pool.startswith("📁 分组:"):
+                g_name = selected_pool.replace("📁 分组: ", "").strip()
+                target_g = next((g for g in groups if g.get("name") == g_name), None)
+                if target_g:
+                    export_tickers = target_g.get("tickers", [])
+
+            if not export_tickers:
+                export_tickers = ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "GOOGL", "META"]
+
+            export_tickers = list(dict.fromkeys([t.strip().upper() for t in export_tickers if t and isinstance(t, str)]))
+            st.info(f"📋 选定股票池: **{len(export_tickers)}** 支品种 | 周期: **{', '.join(tf_map_keys)}** (代码已内置)：")
+
+            colab_code = colab_triple_pattern_script.generate_colab_script_for_tickers(
+                export_tickers, pool_name=selected_pool, selected_tfs=tf_map_keys
+            )
+            st.code(colab_code, language="python", line_numbers=True)
+
+        with colab_c2:
+            st.markdown("##### 2. 导入 Colab 扫描结果 CSV")
+            st.caption("上传从 Google Colab 导出的 `colab_triple_pattern_results.csv`，系统将自动增量合并。")
+            uploaded_file = st.file_uploader(
+                "选择或拖拽 Colab 导出的 CSV 文件",
+                type=["csv"],
+                key="tp_colab_csv_uploader",
+                help="支持导入 colab_triple_pattern_results.csv"
+            )
+
+            if uploaded_file is not None:
+                try:
+                    df_up = pd.read_csv(uploaded_file)
+                    req_fields = ["symbol", "pattern", "confidence", "direction", "idx1", "idx2", "idx3", "p1", "p2", "p3", "neckline"]
+                    missing = [f for f in req_fields if f not in df_up.columns]
+                    if missing:
+                        st.error(f"❌ CSV 格式校验未通过，缺少关键字段: {missing}")
+                    else:
+                        st.success(f"📊 检测到有效双向形态记录: **{len(df_up)}** 条 (🐂 {sum(df_up['direction'] == 'bullish')} / 🐻 {sum(df_up['direction'] == 'bearish')})")
+                        if st.button("📥 确认增量导入并合并到数据库", key="tp_confirm_import_csv", use_container_width=True):
+                            new_records = df_up.to_dict(orient="records")
+                            ok = storage.append_triple_pattern_results(new_records)
+                            if ok:
+                                st.toast(f"✅ 成功增量导入 {len(new_records)} 条形态记录！", icon="🎉")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error("❌ 数据库写入失败，请重试")
+                except Exception as e:
+                    st.error(f"❌ 解析 CSV 出错: {e}")
+
+    # ── 3. 快照与清空管理 ──
+    with st.expander("📦 2. 快照备份与恢复", expanded=False):
+        c_bk1, c_bk2 = st.columns([2, 1])
+        with c_bk1:
+            snapshots = storage.load_tp_snapshots()
+            if snapshots:
+                st.markdown(f"当前历史快照共 **{len(snapshots)}** 个：")
+                options = {s["session_id"]: f"{s['scan_time']} | 数量: {s['count']} 条 | ID: {s['session_id'][:16]}..." for s in snapshots}
+                sel_sid = st.selectbox("选择要恢复的历史快照", list(options.keys()), format_func=lambda x: options[x], key="tp_sel_snap")
+                if st.button("♻️ 从选定快照恢复", key="tp_btn_restore_snap"):
+                    ok, msg, n = storage.restore_tp_snapshot(sel_sid)
+                    if ok:
+                        st.toast(f"✅ 成功恢复 {n} 条形态记录！", icon="♻️")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+            else:
+                st.caption("暂无历史快照备份。")
+        with c_bk2:
+            st.markdown("⚠️ **数据维护**")
+            if st.button("🗑️ 清空当前结果库", key="tp_btn_clear_data", use_container_width=True):
+                storage.clear_triple_pattern_results()
+                st.toast("已清空结果库并自动创建安全快照", icon="🗑️")
+                time.sleep(1)
+                st.rerun()
+
+    # ── 4. 主界面形态展示与多维筛选 ──
+    if not all_patterns:
+        st.markdown(
+            """
+            <div style="text-align:center;padding:40px 20px;background:rgba(255,255,255,0.02);border:1px dashed rgba(255,255,255,0.1);border-radius:12px;margin:20px 0;">
+                <div style="font-size:36px;margin-bottom:8px;">🌟</div>
+                <div style="font-size:16px;font-weight:700;color:#f8fafc;">暂无「三重底 & 三重顶」扫描记录</div>
+                <div style="font-size:13px;color:#94a3b8;margin-top:6px;">
+                    请展开上方 <b>「1. Google Colab 独立云端极速扫描」</b>，运行云端脚本并导入 CSV 结果。<br>
+                    或在系统后台自动扫描完成后即可在此查看全量多周期形态！
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        return
+
+    # 筛选面板
+    col_f1, col_f2, col_f3, col_f4 = st.columns([1.2, 1.5, 1.3, 1.5])
+    with col_f1:
+        st_direction = st.selectbox(
+            "🧭 形态方向",
+            ["全部方向", "🐂 仅看涨 (三重底)", "🐻 仅看跌 (三重顶)"],
+            index=0,
+            key="tp_filter_direction"
+        )
+    with col_f2:
+        st_patt = st.selectbox(
+            "🏷️ 形态子类",
+            [
+                "全部形态",
+                "完美形态 (Perfect)",
+                "头肩形态 (Head & Shoulders)",
+                "失败突破假破型 (Failed BO)",
+                "双顶底回调型 (Pullback)",
+                "楔形形态 (Wedge)",
+                "收敛三角形 (Triangle)"
+            ],
+            index=0,
+            key="tp_filter_pattern"
+        )
+    with col_f3:
+        st_period = st.multiselect(
+            "⏱️ 扫描周期",
+            options=list(TRIPLE_PATTERN_TIMEFRAMES.keys()),
+            default=list(TRIPLE_PATTERN_TIMEFRAMES.keys()),
+            format_func=lambda x: TRIPLE_PATTERN_TIMEFRAMES[x][2],
+            key="tp_filter_period"
+        )
+    with col_f4:
+        st_status = st.multiselect(
+            "📌 有效状态",
+            options=["观望中 (active)", "已突破 (confirmed)", "已失效 (invalidated)", "已过期 (expired)"],
+            default=["观望中 (active)", "已突破 (confirmed)"],
+            key="tp_filter_status"
+        )
+
+    # 映射 status
+    selected_statuses = []
+    for s in st_status:
+        if "active" in s: selected_statuses.append("active")
+        elif "confirmed" in s: selected_statuses.append("confirmed")
+        elif "invalidated" in s: selected_statuses.append("invalidated")
+        elif "expired" in s: selected_statuses.append("expired")
+
+    # 执行过滤
+    filtered = []
+    for r in all_patterns:
+        # 方向过滤
+        d = r.get("direction", "bullish")
+        if st_direction == "🐂 仅看涨 (三重底)" and d != "bullish":
+            continue
+        if st_direction == "🐻 仅看跌 (三重顶)" and d != "bearish":
+            continue
+
+        # 形态子类过滤
+        pname = r.get("pattern", "")
+        if st_patt == "完美形态 (Perfect)" and "完美" not in pname: continue
+        elif st_patt == "头肩形态 (Head & Shoulders)" and "头肩" not in pname: continue
+        elif st_patt == "失败突破假破型 (Failed BO)" and "失败突破" not in pname: continue
+        elif st_patt == "双顶底回调型 (Pullback)" and "回调" not in pname: continue
+        elif st_patt == "楔形形态 (Wedge)" and "楔形" not in pname: continue
+        elif st_patt == "收敛三角形 (Triangle)" and "三角" not in pname: continue
+
+        # 周期过滤
+        if r.get("period") not in st_period:
+            continue
+
+        # 状态过滤
+        st_val = r.get("status", "active")
+        if st_val not in selected_statuses:
+            continue
+
+        filtered.append(r)
+
+    # 搜索与排序
+    col_s1, col_s2, col_s3 = st.columns([2, 1.2, 1])
+    with col_s1:
+        search_query = st.text_input("🔍 搜索代码 / 名称", "", placeholder="输入股票代码或名称关键词...", key="tp_search_query")
+    with col_s2:
+        sort_by = st.selectbox(
+            "↕️ 排序方式",
+            ["置信度 (高 → 低)", "盈亏比 R:R (高 → 低)", "最新扫描时间 (新 → 旧)", "股票代码 (A → Z)"],
+            index=0,
+            key="tp_sort_by"
+        )
+    with col_s3:
+        page_size = st.selectbox("📄 每页条数", [20, 50, 100], index=0, key="tp_page_size")
+
+    if search_query.strip():
+        q = search_query.strip().upper()
+        filtered = [r for r in filtered if q in str(r.get("symbol", "")).upper() or q in _fetch_name(str(r.get("symbol", ""))).upper()]
+
+    if sort_by == "置信度 (高 → 低)":
+        filtered.sort(key=lambda x: (float(x.get("confidence", 0.0)), float(x.get("risk_reward", 1.0))), reverse=True)
+    elif sort_by == "盈亏比 R:R (高 → 低)":
+        filtered.sort(key=lambda x: float(x.get("risk_reward", 1.0)), reverse=True)
+    elif sort_by == "最新扫描时间 (新 → 旧)":
+        filtered.sort(key=lambda x: str(x.get("scan_time", "")), reverse=True)
+    elif sort_by == "股票代码 (A → Z)":
+        filtered.sort(key=lambda x: str(x.get("symbol", "")).upper())
+
+    total_items = len(filtered)
+    total_pages = max(1, (total_items + page_size - 1) // page_size)
+
+    # ── 页码状态管理 (双向绑定 URL 参数与按钮交互) ──
+    url_p_raw = str(st.query_params.get("_p", "") or st.query_params.get("p", "")).strip()
+    seen_url_p = str(st.session_state.get("_tp_url_p_seen", "")).strip()
+
+    if url_p_raw and url_p_raw != seen_url_p:
+        try:
+            st.session_state.tp_current_page = int(url_p_raw)
+        except Exception:
+            st.session_state.tp_current_page = 1
+        st.session_state._tp_url_p_seen = url_p_raw
+    elif "tp_current_page" not in st.session_state:
+        st.session_state.tp_current_page = 1
+        st.session_state._tp_url_p_seen = ""
+
+    current_page = max(1, min(total_pages, int(st.session_state.tp_current_page)))
+    st.session_state.tp_current_page = current_page
+    st.session_state._tp_url_p_seen = str(current_page)
+
+    try:
+        st.query_params["_p"] = str(current_page)
+    except Exception:
+        pass
+
+    def _set_tp_page(p_num: int):
+        target_p = max(1, min(total_pages, p_num))
+        st.session_state.tp_current_page = target_p
+
+    # 分页导航条（顶部）
+    col_p1, col_p2, col_p3, col_p4, col_p5 = st.columns([1, 1.2, 3, 1.2, 1])
+    with col_p1:
+        st.button("⏮ 首页", disabled=(current_page == 1), key="tp_first_page_top", on_click=_set_tp_page, args=(1,), use_container_width=True)
+    with col_p2:
+        st.button("◀ 上一页", disabled=(current_page == 1), key="tp_prev_page_top", on_click=_set_tp_page, args=(current_page - 1,), use_container_width=True)
+    with col_p3:
+        st.markdown(
+            f"<div style='text-align:center; line-height:36px; color:#cbd5e1; font-size:14px; font-weight:600;'>"
+            f"📄 第 <span style='color:#f59e0b;'>{current_page}</span> / {total_pages} 页 "
+            f"(共 <span style='color:#38bdf8;'>{total_items}</span> 条，显示 {(current_page-1)*page_size + 1 if total_items > 0 else 0} - {min(current_page*page_size, total_items)} 条)"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+    with col_p4:
+        st.button("下一页 ▶", disabled=(current_page == total_pages), key="tp_next_page_top", on_click=_set_tp_page, args=(current_page + 1,), use_container_width=True)
+    with col_p5:
+        st.button("末页 ⏭", disabled=(current_page == total_pages), key="tp_last_page_top", on_click=_set_tp_page, args=(total_pages,), use_container_width=True)
+
+    # 切片当前页数据
+    start_idx = (current_page - 1) * page_size
+    end_idx = min(start_idx + page_size, total_items)
+    page_items = filtered[start_idx:end_idx]
+
+    all_clicks_data = storage.get_all_link_clicks()
+    wl = storage.load_watchlist()
+    today_str_val = storage.get_today_str()
+
+    for i, r in enumerate(page_items):
+        item_idx = start_idx + i
+        ticker = r["symbol"]
+        period = r.get("period", "1d")
+        direction = r.get("direction", "bullish")
+        patt_desc = r.get("pattern", "形态")
+        conf = float(r.get("confidence", 0.8))
+        note = r.get("note", "")
+        status_val = r.get("status", "active")
+        status_reason = r.get("status_reason", "")
+        period_desc = TRIPLE_PATTERN_TIMEFRAMES.get(period, (None, None, period))[2]
+        name = _fetch_name(ticker)
+
+        # 方向徽章
+        if direction == "bullish":
+            dir_badge = "<span style='font-size:12px;background:rgba(34,197,94,0.18);color:#4ade80;border:1px solid rgba(34,197,94,0.4);padding:2px 8px;border-radius:4px;font-weight:700;'>🐂 看涨做多 · 三重底</span>"
+            card_class = "tp-card-bull"
+        else:
+            dir_badge = "<span style='font-size:12px;background:rgba(239,68,68,0.18);color:#f87171;border:1px solid rgba(239,68,68,0.4);padding:2px 8px;border-radius:4px;font-weight:700;'>🐻 看跌做空 · 三重顶</span>"
+            card_class = "tp-card-bear"
+
+        # 状态徽章
+        if status_val == "active":
+            status_badge = "<span style='font-size:12px;background:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>观望中</span>"
+        elif status_val == "confirmed":
+            status_badge = "<span style='font-size:12px;background:rgba(34,197,94,0.15);color:#86efac;border:1px solid rgba(34,197,94,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>已突破 🚀</span>"
+        elif status_val == "invalidated":
+            status_badge = "<span style='font-size:12px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>已失效 ❌</span>"
+        else:
+            status_badge = "<span style='font-size:12px;background:rgba(100,116,139,0.15);color:#94a3b8;border:1px solid rgba(100,116,139,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>已过期 ⏰</span>"
+
+        with st.container(border=True):
+            col_t1, col_t2 = st.columns([5, 3])
+            with col_t1:
+                st.markdown(
+                    f"<div style='margin-bottom:6px;'>"
+                    f"<span style='font-size:18px;font-weight:800;color:#f8fafc;'>{ticker}</span> "
+                    f"<span style='font-size:14px;color:#94a3b8;margin-right:8px;'>· {name}</span> "
+                    f"{dir_badge} "
+                    f"<span style='font-size:12px;background:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>{period_desc}</span> "
+                    f"<span style='font-size:12px;background:rgba(245,158,11,0.15);color:#fde047;border:1px solid rgba(245,158,11,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>置信度: {conf:.0%}</span> "
+                    f"{status_badge}"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+            with col_t2:
+                btn_col1, btn_col2, btn_col3 = st.columns(3)
+                chart_key = f"tp_chart_open_{ticker}_{period}_{direction}"
+                is_open = st.session_state.get(chart_key, False)
+
+                with btn_col1:
+                    if st.button("📊 K线图" if not is_open else "❌ 关闭图", key=f"tp_chart_btn_{item_idx}", use_container_width=True):
+                        st.session_state[chart_key] = not is_open
+                        st.rerun()
+
+                with btn_col2:
+                    click_entry = all_clicks_data.get(f"{ticker.upper()}:tv", {}) if isinstance(all_clicks_data, dict) else {}
+                    total_c = click_entry.get("total", 0) if isinstance(click_entry, dict) else 0
+                    by_date_map = click_entry.get("by_date", {}) if isinstance(click_entry, dict) else {}
+                    today_c = by_date_map.get(today_str_val, 0) if isinstance(by_date_map, dict) else 0
+
+                    if today_c > 0:
+                        click_badge_html = f'<span class="click-count-badge today-active">({today_c}/{total_c})</span>'
+                    elif total_c > 0:
+                        click_badge_html = f'<span class="click-count-badge history-active">({today_c}/{total_c})</span>'
+                    else:
+                        click_badge_html = f'<span class="click-count-badge no-clicks">(0/0)</span>'
+
+                    tv_url_val = _tv_link(ticker, period)
+                    st.markdown(
+                        f'<a href="{tv_url_val}" target="_blank" class="tv-btn" data-ticker="{ticker}" '
+                        f'style="display:block;text-align:center;padding:6px 0;background:rgba(30,144,255,0.15);'
+                        f'border:1px solid rgba(30,144,255,0.3);color:#38bdf8;'
+                        f'border-radius:4px;text-decoration:none;font-weight:600;font-size:13px;">'
+                        f'📈 TV {click_badge_html}</a>',
+                        unsafe_allow_html=True
+                    )
+
+                with btn_col3:
+                    is_fav = any(w.get("ticker", "").upper() == ticker.upper() for w in wl)
+                    if not is_fav:
+                        if st.button("⭐ 收藏", key=f"tp_add_wl_{item_idx}", use_container_width=True):
+                            ok = storage.add_to_watchlist(ticker=ticker, name=name, note=f"三重顶底扫描: {patt_desc}")
+                            if ok:
+                                st.toast(f"已添加 {ticker} 至自选收藏夹", icon="⭐")
+                                st.rerun()
+                    else:
+                        st.button("✅ 已加", disabled=True, key=f"tp_is_fav_{item_idx}", use_container_width=True)
+
+            # 形态特征说明
+            p1_val = r.get("p1", 0.0)
+            p2_val = r.get("p2", 0.0)
+            p3_val = r.get("p3", 0.0)
+            neckline_val = r.get("neckline", 0.0)
+            entry_p = r.get("entry_price", neckline_val)
+            sl_p = r.get("stop_loss", 0.0)
+            tp1_p = r.get("tp1", 0.0)
+            tp2_p = r.get("tp2", 0.0)
+            rr_val = r.get("risk_reward", 1.0)
+
+            p_label1 = "探底① (L1)" if direction == "bullish" else "冲顶① (H1)"
+            p_label2 = "探底② (L2)" if direction == "bullish" else "冲顶② (H2)"
+            p_label3 = "探底③ (L3)" if direction == "bullish" else "冲顶③ (H3)"
+            neck_label = "颈线阻力 (Neckline)" if direction == "bullish" else "颈线支撑 (Neckline)"
+
+            st.markdown(
+                f"""
+                <div style="font-size:13px; line-height:1.7; color:#cbd5e1; margin-top: 4px;">
+                    <div>🏷️ <b>形态分类</b>：<span style="color:#f59e0b; font-weight:600;">{patt_desc}</span></div>
+                    <div>🔍 <b>跟踪观察</b>：{status_reason}</div>
+                    <div style="color:#94a3b8; font-size:12px; margin-top:2px;">📝 <b>特征说明</b>：{note}</div>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
+                    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);padding:4px 10px;border-radius:6px;font-size:12px;">{p_label1}: <b>{p1_val:.3f}</b></div>
+                    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);padding:4px 10px;border-radius:6px;font-size:12px;">{p_label2}: <b>{p2_val:.3f}</b></div>
+                    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);padding:4px 10px;border-radius:6px;font-size:12px;">{p_label3}: <b>{p3_val:.3f}</b></div>
+                    <div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);padding:4px 10px;border-radius:6px;font-size:12px;color:#fde047;">{neck_label}: <b>{neckline_val:.3f}</b></div>
+                </div>
+                <div class="tp-plan-box">
+                    <div class="tp-plan-item">
+                        <span class="tp-plan-label">🎯 建议入场位</span>
+                        <span class="tp-plan-val" style="color:#38bdf8;">{entry_p:.3f}</span>
+                    </div>
+                    <div class="tp-plan-item">
+                        <span class="tp-plan-label">🛡️ 止损位 (SL)</span>
+                        <span class="tp-plan-val" style="color:#f87171;">{sl_p:.3f}</span>
+                    </div>
+                    <div class="tp-plan-item">
+                        <span class="tp-plan-label">🏁 目标1 (TP1 1:1)</span>
+                        <span class="tp-plan-val" style="color:#4ade80;">{tp1_p:.3f}</span>
+                    </div>
+                    <div class="tp-plan-item">
+                        <span class="tp-plan-label">🚀 目标2 (TP2 1.618)</span>
+                        <span class="tp-plan-val" style="color:#a855f7;">{tp2_p:.3f}</span>
+                    </div>
+                    <div class="tp-plan-item">
+                        <span class="tp-plan-label">⚖️ 盈亏比 (R:R)</span>
+                        <span class="tp-plan-val" style="color:#fbbf24;">{rr_val:.2f} : 1</span>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+            # ── 展开 K 线图展示（核心高光） ──
+            if st.session_state.get(chart_key):
+                with st.container(border=True):
+                    st.markdown(f"##### 📊 {ticker} - {period_desc} 蜡烛形态图与预测目标")
+                    with st.spinner("拉取行情并标绘形态中..."):
+                        try:
+                            from scanner import fetch_data
+                            interval, yf_period, _ = TRIPLE_PATTERN_TIMEFRAMES.get(period, ("1d", "2y", "日线"))
+                            df = fetch_data(ticker, interval=interval, period=yf_period)
+                            if df is not None and not df.empty:
+                                df_slice = df.tail(120).copy()
+                                if isinstance(df_slice.columns, pd.MultiIndex):
+                                    df_slice.columns = [c[0].lower() for c in df_slice.columns]
+                                else:
+                                    df_slice.columns = [c.lower() for c in df_slice.columns]
+                                
+                                df_slice = df_slice.reset_index()
+                                date_col = df_slice.columns[0]
+                                
+                                fig = go.Figure()
+                                fig.add_trace(go.Candlestick(
+                                    x=df_slice[date_col],
+                                    open=df_slice['open'],
+                                    high=df_slice['high'],
+                                    low=df_slice['low'],
+                                    close=df_slice['close'],
+                                    name='K线',
+                                    increasing_line_color='#22c55e',
+                                    decreasing_line_color='#ef4444'
+                                ))
+
+                                fig.add_hline(y=neckline_val, line_dash="dash", line_color="#f59e0b", annotation_text=f"颈线: {neckline_val:.3f}", annotation_position="top right")
+                                if sl_p > 0:
+                                    fig.add_hline(y=sl_p, line_dash="dot", line_color="#ef4444", annotation_text=f"止损(SL): {sl_p:.3f}", annotation_position="bottom right")
+                                if tp1_p > 0:
+                                    fig.add_hline(y=tp1_p, line_dash="dashdot", line_color="#22c55e", annotation_text=f"目标1(1:1): {tp1_p:.3f}", annotation_position="top right")
+                                if tp2_p > 0:
+                                    fig.add_hline(y=tp2_p, line_dash="dashdot", line_color="#a855f7", annotation_text=f"目标2(1.618): {tp2_p:.3f}", annotation_position="top right")
+
+                                fig.update_layout(
+                                    xaxis_rangeslider_visible=False,
+                                    height=340,
+                                    margin=dict(l=10, r=10, t=25, b=10),
+                                    template="plotly_dark",
+                                    plot_bgcolor="rgba(0,0,0,0)"
+                                )
+                                st.plotly_chart(fig, use_container_width=True, key=f"tp_fig_{ticker}_{period}_{direction}_{item_idx}")
+                            else:
+                                st.warning("未拉取到足够的历史 K 线数据，无法还原形态图。")
+                        except Exception as ex:
+                            st.error(f"渲染图形出错: {ex}")
+
+    # 分页导航条（底部）
+    if total_pages > 1:
+        st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
+        col_pb1, col_pb2, col_pb3, col_pb4, col_pb5 = st.columns([1, 1.2, 3, 1.2, 1])
+        with col_pb1:
+            st.button("⏮ 首页", disabled=(current_page == 1), key="tp_first_page_bot", on_click=_set_tp_page, args=(1,), use_container_width=True)
+        with col_pb2:
+            st.button("◀ 上一页", disabled=(current_page == 1), key="tp_prev_page_bot", on_click=_set_tp_page, args=(current_page - 1,), use_container_width=True)
+        with col_pb3:
+            st.markdown(
+                f"<div style='text-align:center; line-height:36px; color:#cbd5e1; font-size:14px; font-weight:600;'>"
+                f"📄 第 <span style='color:#f59e0b;'>{current_page}</span> / {total_pages} 页 "
+                f"(共 <span style='color:#38bdf8;'>{total_items}</span> 条)"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+        with col_pb4:
+            st.button("下一页 ▶", disabled=(current_page == total_pages), key="tp_next_page_bot", on_click=_set_tp_page, args=(current_page + 1,), use_container_width=True)
+        with col_pb5:
+            st.button("末页 ⏭", disabled=(current_page == total_pages), key="tp_last_page_bot", on_click=_set_tp_page, args=(total_pages,), use_container_width=True)
+
+
+if __name__ == "__main__":
+    render_triple_pattern_page()

@@ -858,6 +858,8 @@ F_WATCHLIST = os.path.join(_BASE, "data_watchlist.json")
 F_WATCHLIST_ARCHIVE = os.path.join(_BASE, "data_watchlist_archive.json")
 F_TRIPLE_BOTTOM = os.path.join(_BASE, "data_triple_bottom.json")
 F_TB_SNAPSHOT_DIR = os.path.join(_BASE, "triple_bottom_snapshots")
+F_TRIPLE_PATTERN = os.path.join(_BASE, "data_triple_pattern.json")
+F_TP_SNAPSHOT_DIR = os.path.join(_BASE, "triple_pattern_snapshots")
 
 
 
@@ -1918,6 +1920,195 @@ def restore_tb_snapshot(session_id: str) -> tuple:
         return False, "保存失败", 0
     except Exception as e:
         return False, f"恢复异常: {e}", 0
+
+
+# ── 🌟 三重顶底 (Triple Pattern: Bottom & Top) 双向扫描持久化 ─────────
+
+def load_triple_pattern() -> List[Dict]:
+    """返回三重顶底双向扫描结果，按 (symbol, period, direction, pattern) 自动去重并按置信度排序"""
+    res = _load(F_TRIPLE_PATTERN, [])
+    if not isinstance(res, list):
+        return []
+    seen = {}
+    for r in res:
+        if not isinstance(r, dict) or not r.get("symbol"):
+            continue
+        k = (
+            str(r.get("symbol")).upper(),
+            str(r.get("period", "")).lower(),
+            str(r.get("direction", "bullish")).lower(),
+            str(r.get("pattern", ""))
+        )
+        if k not in seen or float(r.get("confidence", 0)) > float(seen[k].get("confidence", 0)):
+            seen[k] = r
+    deduped = list(seen.values())
+    deduped.sort(key=lambda x: (float(x.get("confidence", 0.0)), float(x.get("risk_reward", 1.0))), reverse=True)
+    return deduped
+
+
+def save_triple_pattern(items: List[Dict], with_backup: bool = True) -> bool:
+    """保存三重顶底双向扫描结果"""
+    if with_backup:
+        ok = _save_with_backup(F_TRIPLE_PATTERN, items)
+    else:
+        ok = _save(F_TRIPLE_PATTERN, items)
+    if ok:
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                _async_push(cloud_sync.push_triple_pattern)
+        except Exception:
+            pass
+    return ok
+
+
+def append_triple_pattern_results(new_items: List[Dict], with_backup: bool = True) -> bool:
+    """增量合并三重顶底扫描结果：去重合并，保留最高置信度结果"""
+    if not new_items:
+        return True
+    current = load_triple_pattern()
+    item_map = {}
+    for it in current:
+        k = (
+            str(it.get("symbol", "")).upper(),
+            str(it.get("period", "")).lower(),
+            str(it.get("direction", "bullish")).lower(),
+            str(it.get("pattern", ""))
+        )
+        item_map[k] = it
+    for it in new_items:
+        k = (
+            str(it.get("symbol", "")).upper(),
+            str(it.get("period", "")).lower(),
+            str(it.get("direction", "bullish")).lower(),
+            str(it.get("pattern", ""))
+        )
+        if k not in item_map or float(it.get("confidence", 0.0)) >= float(item_map[k].get("confidence", 0.0)):
+            item_map[k] = it
+            
+    merged = list(item_map.values())
+    merged.sort(key=lambda x: (float(x.get("confidence", 0.0)), float(x.get("risk_reward", 1.0))), reverse=True)
+    return save_triple_pattern(merged, with_backup=with_backup)
+
+
+def clear_triple_pattern_results() -> bool:
+    """清空当前三重顶底扫描结果（清空前会自动进行备份快照）"""
+    current_items = load_triple_pattern()
+    if current_items:
+        backup_triple_pattern(current_items)
+    return save_triple_pattern([])
+
+
+# ── 三重顶底分批扫描状态持久化 ────────────────────────────────────
+F_TP_BATCH_STATE = os.path.join(_BASE, "data_tp_batch_state.json")
+
+def load_tp_batch_state() -> Dict:
+    """读取三重顶底分批扫描状态"""
+    default = {
+        "all_tickers": [],
+        "total_tickers": 0,
+        "selected_periods": ["1d", "1w", "1mo"],
+        "batch_size": 50,
+        "current_batch": 0,
+        "total_batches": 0,
+        "done_tickers": [],
+        "scan_params": {},
+        "auto_continue": True,
+        "status": "idle",
+        "updated_at": None,
+    }
+    st = _load(F_TP_BATCH_STATE, default)
+    if not isinstance(st, dict):
+        return default
+    return {**default, **st}
+
+
+def save_tp_batch_state(state: Dict) -> bool:
+    """保存三重顶底分批扫描状态"""
+    if isinstance(state, dict):
+        all_tks = state.get("all_tickers", [])
+        if all_tks:
+            state["total_tickers"] = len(all_tks)
+            bs = max(1, int(state.get("batch_size", 50)))
+            state["total_batches"] = (len(all_tks) + bs - 1) // bs
+        state["updated_at"] = _now_str()
+    return _save(F_TP_BATCH_STATE, state)
+
+
+def reset_tp_batch_state() -> bool:
+    """重置三重顶底分批扫描状态"""
+    return _save(F_TP_BATCH_STATE, {})
+
+
+def _ensure_tp_snapshot_dir():
+    os.makedirs(F_TP_SNAPSHOT_DIR, exist_ok=True)
+
+
+def backup_triple_pattern(items: List[Dict]) -> str:
+    """备份当前三重顶底扫描批次到快照文件夹，返回 session_id"""
+    if not items:
+        return ""
+    try:
+        _ensure_tp_snapshot_dir()
+        sid = f"tp_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        fpath = os.path.join(F_TP_SNAPSHOT_DIR, f"{sid}.json")
+        payload = {
+            "session_id": sid,
+            "scan_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "rows": items,
+            "saved_at": _now_str()
+        }
+        _save(fpath, payload)
+        return sid
+    except Exception as e:
+        logger.error(f"backup_triple_pattern error: {e}")
+        return ""
+
+
+def load_tp_snapshots() -> List[Dict]:
+    """获取所有三重顶底快照批次列表"""
+    try:
+        _ensure_tp_snapshot_dir()
+        candidates = []
+        for fname in os.listdir(F_TP_SNAPSHOT_DIR):
+            if fname.endswith(".json"):
+                fpath = os.path.join(F_TP_SNAPSHOT_DIR, fname)
+                data = _load(fpath, {})
+                if isinstance(data, dict):
+                    sid = data.get("session_id", os.path.splitext(fname)[0])
+                    scan_time = data.get("scan_time") or data.get("saved_at") or "—"
+                    rows = data.get("rows", [])
+                    candidates.append({
+                        "session_id": sid,
+                        "scan_time": scan_time,
+                        "count": len(rows),
+                        "mtime": os.path.getmtime(fpath)
+                    })
+        candidates.sort(key=lambda x: x["mtime"], reverse=True)
+        return candidates
+    except Exception as e:
+        logger.error(f"load_tp_snapshots error: {e}")
+        return []
+
+
+def restore_tp_snapshot(session_id: str) -> tuple:
+    """从备份快照恢复三重顶底扫描结果"""
+    try:
+        _ensure_tp_snapshot_dir()
+        sid = "".join(ch for ch in str(session_id) if ch.isalnum() or ch in ("_", "-"))
+        fpath = os.path.join(F_TP_SNAPSHOT_DIR, f"{sid}.json")
+        if not os.path.exists(fpath):
+            return False, f"快照文件不存在: {sid}", 0
+        data = _load(fpath, {})
+        rows = data.get("rows", [])
+        if not rows:
+            return False, "快照数据为空", 0
+        if save_triple_pattern(rows):
+            return True, f"成功恢复批次 {sid} (共 {len(rows)} 条)", len(rows)
+        return False, "保存失败", 0
+    except Exception as e:
+        return False, f"恢复异常: {e}", 0
+
 
 
 

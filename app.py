@@ -399,6 +399,7 @@ import page_chartink
 import page_neckline
 import page_schedule
 import page_triple_bottom
+import page_triple_pattern
 import page_symbols
 import page_ticker
 import cloud_sync
@@ -978,6 +979,7 @@ def sidebar():
             ("📊", "实时扫描",           "scanner"),
             ("⚡", "共振检测",           "confluence"),
             ("📐", "三重底扫描",         "triple_bottom"),
+            ("🌟", "三重顶底",           "triple_pattern"),
             ("📈", "4H Breakout",        "chartink"),
             ("⚡", "4H 结构颈线",        "neckline"),
             ("⏰", "定时扫描",           "schedule"),
@@ -1483,7 +1485,7 @@ def main():
 
     # ── URL 参数跳转与同步 ────────────────────────────────────────────
     _VALID_PAGES = ("watchlist","hotlist","scanner","confluence","alerts","settings",
-                    "history","cloud","universe","chartink","schedule","triple_bottom","symbols","alert_logs","ticker")
+                    "history","cloud","universe","chartink","neckline","schedule","triple_bottom","triple_pattern","symbols","alert_logs","ticker")
     _url_page = st.query_params.get("_page", "")
     if _url_page and _url_page in _VALID_PAGES:
         st.session_state["page"] = _url_page
@@ -1515,22 +1517,23 @@ def main():
 
     p = st.session_state.get("page", "scanner")
     dispatch = {
-        "scanner":       page_scanner.render,
-        "confluence":    page_confluence.render,
-        "triple_bottom": page_triple_bottom.render_triple_bottom_page,
-        "chartink":      getattr(page_chartink, "render_page_chartink", getattr(page_chartink, "render", None)),
-        "neckline":      getattr(page_neckline, "render_page_neckline", getattr(page_neckline, "render", None)),
-        "universe":      page_universe.render,
-        "watchlist":     page_watchlist.render,
-        "hotlist":       page_hotlist.render,
-        "history":       page_history.render,
-        "alerts":        page_alerts.render,
-        "alert_logs":    page_alerts.render_log_page,
-        "cloud":         page_cloud.render,
-        "settings":      page_settings.render,
-        "schedule":      page_schedule.render,
-        "symbols":       page_symbols.render,
-        "ticker":        page_ticker.render,
+        "scanner":        page_scanner.render,
+        "confluence":     page_confluence.render,
+        "triple_bottom":  page_triple_bottom.render_triple_bottom_page,
+        "triple_pattern": page_triple_pattern.render_triple_pattern_page,
+        "chartink":       getattr(page_chartink, "render_page_chartink", getattr(page_chartink, "render", None)),
+        "neckline":       getattr(page_neckline, "render_page_neckline", getattr(page_neckline, "render", None)),
+        "universe":       page_universe.render,
+        "watchlist":      page_watchlist.render,
+        "hotlist":        page_hotlist.render,
+        "history":        page_history.render,
+        "alerts":         page_alerts.render,
+        "alert_logs":     page_alerts.render_log_page,
+        "cloud":          page_cloud.render,
+        "settings":       page_settings.render,
+        "schedule":       page_schedule.render,
+        "symbols":        page_symbols.render,
+        "ticker":         page_ticker.render,
     }
     
     render_fn = dispatch.get(p, page_scanner.render)
@@ -1561,6 +1564,7 @@ def main():
                 "scanner": "实时扫描",
                 "confluence": "共振检测",
                 "triple_bottom": "三重底扫描",
+                "triple_pattern": "三重顶底",
                 "chartink": "4H Breakout",
                 "neckline": "4H 结构颈线",
                 "schedule": "定时扫描",
@@ -1584,7 +1588,7 @@ def main():
 
 
     # ── 移动端悬浮扫描按钮（FAB） ────────────────────────────────
-    _support_scan_pages = {"scanner", "triple_bottom", "chartink", "neckline", "universe"}
+    _support_scan_pages = {"scanner", "triple_bottom", "triple_pattern", "chartink", "neckline", "universe"}
     if p in _support_scan_pages:
         import bg_scan_manager
         is_running = bg_scan_manager.is_running()
@@ -1596,6 +1600,8 @@ def main():
                 fab_text = "⚡ 立即扫描"
             elif p == "triple_bottom":
                 fab_text = "📐 分析扫描"
+            elif p == "triple_pattern":
+                fab_text = "🌟 顶底扫描"
             elif p == "chartink":
                 fab_text = "📈 4H扫描"
             elif p == "neckline":

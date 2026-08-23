@@ -46,6 +46,8 @@ _LATEST_FILES = {
     "symbol_groups":       "symbol_groups.json",
     "triple_bottom":       "data_triple_bottom.json",
     "tb_batch_state":      "data_tb_batch_state.json",
+    "triple_pattern":      "data_triple_pattern.json",
+    "tp_batch_state":      "data_tp_batch_state.json",
     "chartink":            "data_chartink.json",
     "neckline":            "data_neckline.json",
     "scan_checkpoint":     "scan_checkpoint.json",
@@ -517,6 +519,34 @@ def pull_triple_bottom() -> Tuple[bool, str]:
         return False, f"pull_triple_bottom 异常：{e}"
 
 
+def push_triple_pattern() -> Tuple[bool, str]:
+    try:
+        import storage as loc
+        items = loc.load_triple_pattern()
+        ok, msg = _upload_latest("triple_pattern", items)
+        if ok:
+            return True, f"三重顶底已同步 {len(items)} 个结果"
+        return False, f"triple_pattern: {msg}"
+    except Exception as e:
+        return False, f"push_triple_pattern 异常：{e}"
+
+
+def pull_triple_pattern() -> Tuple[bool, str]:
+    try:
+        from storage import F_TRIPLE_PATTERN, _save, _load
+        local_items = _load(F_TRIPLE_PATTERN, [])
+        if isinstance(local_items, list) and len(local_items) > 0:
+            return True, f"本地已有三重顶底数据 ({len(local_items)} 条)，跳过云端下载"
+            
+        cloud_items = _download_latest("triple_pattern")
+        if not isinstance(cloud_items, list):
+            return False, "云端无三重顶底数据"
+        _save(F_TRIPLE_PATTERN, cloud_items)
+        return True, f"三重顶底已恢复 {len(cloud_items)} 个结果"
+    except Exception as e:
+        return False, f"pull_triple_pattern 异常：{e}"
+
+
 def push_tb_batch_state() -> Tuple[bool, str]:
     try:
         import storage as loc
@@ -913,6 +943,8 @@ def push_all(force: bool = False) -> Tuple[bool, str]:
         ("link_clicks",    lambda: loc.get_all_link_clicks()),
         ("triple_bottom",  lambda: loc.load_triple_bottom()),
         ("tb_batch_state", lambda: loc.load_tb_batch_state()),
+        ("triple_pattern", lambda: loc.load_triple_pattern()),
+        ("tp_batch_state", lambda: loc.load_tp_batch_state()),
     ]:
 
         try:
@@ -1045,6 +1077,9 @@ def pull_all() -> Dict[str, Any]:
 
     ok_tb, msg_tb = pull_triple_bottom()
     results["triple_bottom"] = (ok_tb, msg_tb)
+
+    ok_tp, msg_tp = pull_triple_pattern()
+    results["triple_pattern"] = (ok_tp, msg_tp)
 
     ok_tb_state, msg_tb_state = pull_tb_batch_state()
     results["tb_batch_state"] = (ok_tb_state, msg_tb_state)
