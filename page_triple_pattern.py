@@ -1,12 +1,12 @@
 """
 page_triple_pattern.py
 ======================================================================
-🌟 三重底 & 三重顶 (Triple Bottom & Triple Top) 双向形态扫描器
-- 🐂 看涨三重底 (Triple Bottom) 7 种变体分类
-- 🐻 看跌三重顶 (Triple Top) 7 种变体分类
-- 🎯 TFLab 风格入场位、止损位 (SL)、第一目标 (TP1 1:1)、第二目标 (TP2 1.618)、盈亏比 (R:R)
-- ⚡ 多周期扫描与秒级云端 Colab 脚本一键生成与导入
-- 📄 高性能分页检索与 TradingView 交互联动
+🌟 三重底 & 三重顶 (Triple Top Bottom Scan v4 / TFLab MT4) 双向形态扫描器
+- 🐂 看涨三重底 (Bullish Triple Bottom 1-2-3-4-5 波浪结构)
+- 🐻 看跌三重顶 (Bearish Triple Top 1-2-3-4-5 波浪结构)
+- 🎯 TFLab 风格 Entry, Stop Loss (粉色区), TP1 (61.8%), TP2 (100%), TP3 (161.8%) 斐波那契目标区
+- ⚖️ 风险点数 (Risk) 与 收益点数 (Reward) & 盈亏比 (Risk to Reward 1:4+)
+- 📈 深度还原 MT4 指标的 K 线图、粉绿多重目标阴影区与 1-2-3-4-5 拐点折线
 ======================================================================
 """
 
@@ -28,12 +28,13 @@ logger = logging.getLogger(__name__)
 
 # 支持的周期映射: (interval, yfinance_period, 显示文本)
 TRIPLE_PATTERN_TIMEFRAMES = {
-    "1d":  ("1d",  "2y",  "日线 (1D)"),
-    "1w":  ("1wk", "5y",  "周线 (1W)"),
-    "1mo": ("1mo", "10y", "月线 (1M)"),
-    "4h":  ("1h",  "730d", "4小时 (4H)"),
-    "60m": ("60m", "720d", "60分钟 (60M)"),
-    "30m": ("30m", "60d",  "30分钟 (30M)"),
+    "1d":  ("1d",  "2y",  "日线 (D1)"),
+    "1w":  ("1wk", "5y",  "周线 (W1)"),
+    "1mo": ("1mo", "10y", "月线 (MN)"),
+    "4h":  ("1h",  "730d", "4小时 (H4)"),
+    "60m": ("60m", "720d", "1小时 (H1)"),
+    "30m": ("30m", "60d",  "30分钟 (M30)"),
+    "15m": ("15m", "60d",  "15分钟 (M15)"),
 }
 
 
@@ -96,21 +97,15 @@ def render_triple_pattern_page():
             align-items: center;
             gap: 8px;
         }
-        .tp-card-bull {
-            border-left: 4px solid #22c55e !important;
-        }
-        .tp-card-bear {
-            border-left: 4px solid #ef4444 !important;
-        }
         .tp-plan-box {
-            background: rgba(15, 23, 42, 0.6);
+            background: rgba(15, 23, 42, 0.7);
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 8px;
-            padding: 10px 14px;
+            padding: 12px 14px;
             margin-top: 8px;
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-            gap: 8px;
+            grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+            gap: 10px;
         }
         .tp-plan-item {
             display: flex;
@@ -163,13 +158,13 @@ def render_triple_pattern_page():
         """
         <div class="tp-header">
             <div class="tp-title">
-                <span>🌟 三重底 & 三重顶 (Triple Pattern) 双向扫描器</span>
+                <span>🌟 三重底 & 三重顶 (Triple Top Bottom Scan v4)</span>
             </div>
         </div>
         """,
         unsafe_allow_html=True
     )
-    st.caption("基于 Al Brooks 价格行为学分类与 TFLab MT4 几何投影模型，实时全市场并发扫描看涨三重底与看跌三重顶，自动测算入场位、止损位与目标盈亏比。")
+    st.caption("对齐 TFLab MT4 经典 5 点波浪 (1-2-3-4-5) 几何反转形态与三段斐波那契目标体系 (TP1 61.8%, TP2 100%, TP3 161.8%)，全市场并发极速扫描。")
 
     total_patterns_cnt = len(all_patterns)
     bull_cnt = sum(1 for r in all_patterns if r.get("direction") == "bullish")
@@ -181,13 +176,13 @@ def render_triple_pattern_page():
     with col_m1:
         st.metric("📊 检出形态总数", f"{total_patterns_cnt} 条")
     with col_m2:
-        st.metric("🐂 看涨三重底", f"{bull_cnt} 条", delta=f"{bull_cnt/max(1, total_patterns_cnt):.1%}" if total_patterns_cnt else None)
+        st.metric("🐂 看涨三重底 (Bullish)", f"{bull_cnt} 条", delta=f"{bull_cnt/max(1, total_patterns_cnt):.1%}" if total_patterns_cnt else None)
     with col_m3:
-        st.metric("🐻 看跌三重顶", f"{bear_cnt} 条", delta=f"{bear_cnt/max(1, total_patterns_cnt):.1%}" if total_patterns_cnt else None, delta_color="inverse")
+        st.metric("🐻 看跌三重顶 (Bearish)", f"{bear_cnt} 条", delta=f"{bear_cnt/max(1, total_patterns_cnt):.1%}" if total_patterns_cnt else None, delta_color="inverse")
     with col_m4:
-        st.metric("🚀 已突破确认", f"{confirmed_cnt} 条")
+        st.metric("🚀 已突破/推进", f"{confirmed_cnt} 条")
     with col_m5:
-        st.metric("👀 形成观望中", f"{active_cnt} 条")
+        st.metric("👀 5点成型蓄势", f"{active_cnt} 条")
 
     # ── 2. Google Colab 独立云端扫描与 1 键导入 ──
     with st.expander("🚀 1. Google Colab 独立云端极速扫描与 1 键导入 (推荐 · 50+只/秒并发)", expanded=False):
@@ -261,7 +256,7 @@ def render_triple_pattern_page():
             if uploaded_file is not None:
                 try:
                     df_up = pd.read_csv(uploaded_file)
-                    req_fields = ["symbol", "pattern", "confidence", "direction", "idx1", "idx2", "idx3", "p1", "p2", "p3", "neckline"]
+                    req_fields = ["symbol", "pattern", "confidence", "direction", "idx1", "idx3", "idx5"]
                     missing = [f for f in req_fields if f not in df_up.columns]
                     if missing:
                         st.error(f"❌ CSV 格式校验未通过，缺少关键字段: {missing}")
@@ -408,7 +403,7 @@ def render_triple_pattern_page():
     with col_s2:
         sort_by = st.selectbox(
             "↕️ 排序方式",
-            ["置信度 (高 → 低)", "盈亏比 R:R (高 → 低)", "最新扫描时间 (新 → 旧)", "股票代码 (A → Z)"],
+            ["置信度 (高 → 低)", "TP3 黄金盈亏比 (高 → 低)", "TP2 颈线盈亏比 (高 → 低)", "最新扫描时间 (新 → 旧)", "股票代码 (A → Z)"],
             index=0,
             key="tp_sort_by"
         )
@@ -420,8 +415,10 @@ def render_triple_pattern_page():
         filtered = [r for r in filtered if q in str(r.get("symbol", "")).upper() or q in _fetch_name(str(r.get("symbol", ""))).upper()]
 
     if sort_by == "置信度 (高 → 低)":
-        filtered.sort(key=lambda x: (float(x.get("confidence", 0.0)), float(x.get("risk_reward", 1.0))), reverse=True)
-    elif sort_by == "盈亏比 R:R (高 → 低)":
+        filtered.sort(key=lambda x: (float(x.get("confidence", 0.0)), float(x.get("rr_tp3", 2.0))), reverse=True)
+    elif sort_by == "TP3 黄金盈亏比 (高 → 低)":
+        filtered.sort(key=lambda x: float(x.get("rr_tp3", x.get("risk_reward", 1.0))), reverse=True)
+    elif sort_by == "TP2 颈线盈亏比 (高 → 低)":
         filtered.sort(key=lambda x: float(x.get("risk_reward", 1.0)), reverse=True)
     elif sort_by == "最新扫描时间 (新 → 旧)":
         filtered.sort(key=lambda x: str(x.get("scan_time", "")), reverse=True)
@@ -499,21 +496,38 @@ def render_triple_pattern_page():
         period_desc = TRIPLE_PATTERN_TIMEFRAMES.get(period, (None, None, period))[2]
         name = _fetch_name(ticker)
 
+        # 5 点波浪与关键价位
+        pt1 = r.get("pt1", r.get("p1", 0.0))
+        pt2 = r.get("pt2", r.get("neckline", 0.0))
+        pt3 = r.get("pt3", r.get("p2", 0.0))
+        pt4 = r.get("pt4", r.get("neckline", 0.0))
+        pt5 = r.get("pt5", r.get("p3", 0.0))
+
+        entry_p = r.get("entry_price", pt5)
+        sl_p = r.get("stop_loss", 0.0)
+        tp1_p = r.get("tp1", 0.0)
+        tp2_p = r.get("tp2", 0.0)
+        tp3_p = r.get("tp3", 0.0)
+        risk_pips = r.get("risk", abs(entry_p - sl_p))
+        rr_tp1 = round(abs(tp1_p - entry_p) / max(0.001, risk_pips), 2)
+        rr_tp2 = r.get("risk_reward", round(abs(tp2_p - entry_p) / max(0.001, risk_pips), 2))
+        rr_tp3 = r.get("rr_tp3", round(abs(tp3_p - entry_p) / max(0.001, risk_pips), 2))
+
         # 方向徽章
         if direction == "bullish":
-            dir_badge = "<span style='font-size:12px;background:rgba(34,197,94,0.18);color:#4ade80;border:1px solid rgba(34,197,94,0.4);padding:2px 8px;border-radius:4px;font-weight:700;'>🐂 看涨做多 · 三重底</span>"
-            card_class = "tp-card-bull"
+            dir_badge = "<span style='font-size:12px;background:rgba(34,197,94,0.18);color:#4ade80;border:1px solid rgba(34,197,94,0.4);padding:2px 8px;border-radius:4px;font-weight:700;'>🐂 看涨三重底 (Bullish)</span>"
+            p_lbls = ["1: L1", "2: H1", "3: L2", "4: H2", "5: L3 (Entry)"]
         else:
-            dir_badge = "<span style='font-size:12px;background:rgba(239,68,68,0.18);color:#f87171;border:1px solid rgba(239,68,68,0.4);padding:2px 8px;border-radius:4px;font-weight:700;'>🐻 看跌做空 · 三重顶</span>"
-            card_class = "tp-card-bear"
+            dir_badge = "<span style='font-size:12px;background:rgba(239,68,68,0.18);color:#f87171;border:1px solid rgba(239,68,68,0.4);padding:2px 8px;border-radius:4px;font-weight:700;'>🐻 看跌三重顶 (Bearish)</span>"
+            p_lbls = ["1: H1", "2: L1", "3: H2", "4: L2", "5: H3 (Entry)"]
 
         # 状态徽章
         if status_val == "active":
-            status_badge = "<span style='font-size:12px;background:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>观望中</span>"
+            status_badge = "<span style='font-size:12px;background:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>5点蓄势中</span>"
         elif status_val == "confirmed":
-            status_badge = "<span style='font-size:12px;background:rgba(34,197,94,0.15);color:#86efac;border:1px solid rgba(34,197,94,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>已突破 🚀</span>"
+            status_badge = "<span style='font-size:12px;background:rgba(34,197,94,0.15);color:#86efac;border:1px solid rgba(34,197,94,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>已突破推进 🚀</span>"
         elif status_val == "invalidated":
-            status_badge = "<span style='font-size:12px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>已失效 ❌</span>"
+            status_badge = "<span style='font-size:12px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>已触及止损 ❌</span>"
         else:
             status_badge = "<span style='font-size:12px;background:rgba(100,116,139,0.15);color:#94a3b8;border:1px solid rgba(100,116,139,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>已过期 ⏰</span>"
 
@@ -537,7 +551,7 @@ def render_triple_pattern_page():
                 is_open = st.session_state.get(chart_key, False)
 
                 with btn_col1:
-                    if st.button("📊 K线图" if not is_open else "❌ 关闭图", key=f"tp_chart_btn_{item_idx}", use_container_width=True):
+                    if st.button("📊 MT4图" if not is_open else "❌ 关闭图", key=f"tp_chart_btn_{item_idx}", use_container_width=True):
                         st.session_state[chart_key] = not is_open
                         st.rerun()
 
@@ -568,29 +582,14 @@ def render_triple_pattern_page():
                     is_fav = any(w.get("ticker", "").upper() == ticker.upper() for w in wl)
                     if not is_fav:
                         if st.button("⭐ 收藏", key=f"tp_add_wl_{item_idx}", use_container_width=True):
-                            ok = storage.add_to_watchlist(ticker=ticker, name=name, note=f"三重顶底扫描: {patt_desc}")
+                            ok = storage.add_to_watchlist(ticker=ticker, name=name, note=f"三重顶底: {patt_desc}")
                             if ok:
                                 st.toast(f"已添加 {ticker} 至自选收藏夹", icon="⭐")
                                 st.rerun()
                     else:
                         st.button("✅ 已加", disabled=True, key=f"tp_is_fav_{item_idx}", use_container_width=True)
 
-            # 形态特征说明
-            p1_val = r.get("p1", 0.0)
-            p2_val = r.get("p2", 0.0)
-            p3_val = r.get("p3", 0.0)
-            neckline_val = r.get("neckline", 0.0)
-            entry_p = r.get("entry_price", neckline_val)
-            sl_p = r.get("stop_loss", 0.0)
-            tp1_p = r.get("tp1", 0.0)
-            tp2_p = r.get("tp2", 0.0)
-            rr_val = r.get("risk_reward", 1.0)
-
-            p_label1 = "探底① (L1)" if direction == "bullish" else "冲顶① (H1)"
-            p_label2 = "探底② (L2)" if direction == "bullish" else "冲顶② (H2)"
-            p_label3 = "探底③ (L3)" if direction == "bullish" else "冲顶③ (H3)"
-            neck_label = "颈线阻力 (Neckline)" if direction == "bullish" else "颈线支撑 (Neckline)"
-
+            # 5 点波浪与交易计划
             st.markdown(
                 f"""
                 <div style="font-size:13px; line-height:1.7; color:#cbd5e1; margin-top: 4px;">
@@ -598,43 +597,44 @@ def render_triple_pattern_page():
                     <div>🔍 <b>跟踪观察</b>：{status_reason}</div>
                     <div style="color:#94a3b8; font-size:12px; margin-top:2px;">📝 <b>特征说明</b>：{note}</div>
                 </div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
-                    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);padding:4px 10px;border-radius:6px;font-size:12px;">{p_label1}: <b>{p1_val:.3f}</b></div>
-                    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);padding:4px 10px;border-radius:6px;font-size:12px;">{p_label2}: <b>{p2_val:.3f}</b></div>
-                    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);padding:4px 10px;border-radius:6px;font-size:12px;">{p_label3}: <b>{p3_val:.3f}</b></div>
-                    <div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);padding:4px 10px;border-radius:6px;font-size:12px;color:#fde047;">{neck_label}: <b>{neckline_val:.3f}</b></div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+                    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);padding:3px 8px;border-radius:6px;font-size:11px;">{p_lbls[0]}: <b>{pt1:.3f}</b></div>
+                    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);padding:3px 8px;border-radius:6px;font-size:11px;">{p_lbls[1]}: <b>{pt2:.3f}</b></div>
+                    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);padding:3px 8px;border-radius:6px;font-size:11px;">{p_lbls[2]}: <b>{pt3:.3f}</b></div>
+                    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);padding:3px 8px;border-radius:6px;font-size:11px;">{p_lbls[3]}: <b>{pt4:.3f}</b></div>
+                    <div style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.4);padding:3px 8px;border-radius:6px;font-size:11px;color:#93c5fd;">{p_lbls[4]}: <b>{pt5:.3f}</b></div>
                 </div>
                 <div class="tp-plan-box">
                     <div class="tp-plan-item">
-                        <span class="tp-plan-label">🎯 建议入场位</span>
+                        <span class="tp-plan-label">🎯 Entry Point (5)</span>
                         <span class="tp-plan-val" style="color:#38bdf8;">{entry_p:.3f}</span>
                     </div>
                     <div class="tp-plan-item">
-                        <span class="tp-plan-label">🛡️ 止损位 (SL)</span>
-                        <span class="tp-plan-val" style="color:#f87171;">{sl_p:.3f}</span>
+                        <span class="tp-plan-label">🛡️ Stop Loss (粉色区)</span>
+                        <span class="tp-plan-val" style="color:#f43f5e;">{sl_p:.3f} <span style="font-size:10px;color:#94a3b8;">({risk_pips:.3f})</span></span>
                     </div>
                     <div class="tp-plan-item">
-                        <span class="tp-plan-label">🏁 目标1 (TP1 1:1)</span>
-                        <span class="tp-plan-val" style="color:#4ade80;">{tp1_p:.3f}</span>
+                        <span class="tp-plan-label">🏁 TP1 (61.8% Fibo)</span>
+                        <span class="tp-plan-val" style="color:#22c55e;">{tp1_p:.3f} <span style="font-size:10px;color:#86efac;">(1:{rr_tp1})</span></span>
                     </div>
                     <div class="tp-plan-item">
-                        <span class="tp-plan-label">🚀 目标2 (TP2 1.618)</span>
-                        <span class="tp-plan-val" style="color:#a855f7;">{tp2_p:.3f}</span>
+                        <span class="tp-plan-label">🎯 TP2 (100% 颈线)</span>
+                        <span class="tp-plan-val" style="color:#10b981;">{tp2_p:.3f} <span style="font-size:10px;color:#86efac;">(1:{rr_tp2})</span></span>
                     </div>
                     <div class="tp-plan-item">
-                        <span class="tp-plan-label">⚖️ 盈亏比 (R:R)</span>
-                        <span class="tp-plan-val" style="color:#fbbf24;">{rr_val:.2f} : 1</span>
+                        <span class="tp-plan-label">🚀 TP3 (161.8% 黄金)</span>
+                        <span class="tp-plan-val" style="color:#a855f7;">{tp3_p:.3f} <span style="font-size:10px;color:#d8b4fe;">(1:{rr_tp3})</span></span>
                     </div>
                 </div>
                 """,
                 unsafe_allow_html=True
             )
 
-            # ── 展开 K 线图展示（核心高光） ──
+            # ── 展开 MT4 风格深度 K 线图与粉绿目标阴影区 ──
             if st.session_state.get(chart_key):
                 with st.container(border=True):
-                    st.markdown(f"##### 📊 {ticker} - {period_desc} 蜡烛形态图与预测目标")
-                    with st.spinner("拉取行情并标绘形态中..."):
+                    st.markdown(f"##### 📊 {ticker} - {period_desc} MT4 Triple Top Bottom Scan v4 还原图")
+                    with st.spinner("拉取历史数据并渲染 1-2-3-4-5 波浪与斐波那契目标区..."):
                         try:
                             from scanner import fetch_data
                             interval, yf_period, _ = TRIPLE_PATTERN_TIMEFRAMES.get(period, ("1d", "2y", "日线"))
@@ -650,6 +650,7 @@ def render_triple_pattern_page():
                                 date_col = df_slice.columns[0]
                                 
                                 fig = go.Figure()
+                                # 1. 蜡烛图
                                 fig.add_trace(go.Candlestick(
                                     x=df_slice[date_col],
                                     open=df_slice['open'],
@@ -661,17 +662,63 @@ def render_triple_pattern_page():
                                     decreasing_line_color='#ef4444'
                                 ))
 
-                                fig.add_hline(y=neckline_val, line_dash="dash", line_color="#f59e0b", annotation_text=f"颈线: {neckline_val:.3f}", annotation_position="top right")
-                                if sl_p > 0:
-                                    fig.add_hline(y=sl_p, line_dash="dot", line_color="#ef4444", annotation_text=f"止损(SL): {sl_p:.3f}", annotation_position="bottom right")
-                                if tp1_p > 0:
-                                    fig.add_hline(y=tp1_p, line_dash="dashdot", line_color="#22c55e", annotation_text=f"目标1(1:1): {tp1_p:.3f}", annotation_position="top right")
-                                if tp2_p > 0:
-                                    fig.add_hline(y=tp2_p, line_dash="dashdot", line_color="#a855f7", annotation_text=f"目标2(1.618): {tp2_p:.3f}", annotation_position="top right")
+                                # 2. 标绘 1, 2, 3, 4, 5 点
+                                idx_map = [r.get("idx1"), r.get("idx2"), r.get("idx3"), r.get("idx4"), r.get("idx5")]
+                                pts_y = [pt1, pt2, pt3, pt4, pt5]
+                                valid_pts_x = []
+                                valid_pts_y = []
+                                valid_texts = []
+
+                                for p_i, idx_v in enumerate(idx_map):
+                                    if idx_v is not None and 0 <= idx_v < len(df_slice):
+                                        valid_pts_x.append(df_slice.loc[idx_v, date_col])
+                                        valid_pts_y.append(pts_y[p_i])
+                                        valid_texts.append(str(p_i + 1))
+
+                                if len(valid_pts_x) >= 3:
+                                    fig.add_trace(go.Scatter(
+                                        x=valid_pts_x,
+                                        y=valid_pts_y,
+                                        mode='lines+markers+text',
+                                        line=dict(color='#3b82f6', width=3),
+                                        marker=dict(size=12, color='#1d4ed8', line=dict(color='#93c5fd', width=2)),
+                                        text=valid_texts,
+                                        textposition="bottom center" if direction == "bullish" else "top center",
+                                        textfont=dict(color="#ffffff", size=13, family="monospace"),
+                                        name='1-2-3-4-5 波浪结构'
+                                    ))
+
+                                # 3. 绘制 Stop Loss (粉色带) 与 TP (绿色带) 阴影区域
+                                x_start = valid_pts_x[-1] if valid_pts_x else df_slice[date_col].iloc[-20]
+                                x_end = df_slice[date_col].iloc[-1]
+
+                                # 粉色止损阴影
+                                fig.add_hrect(
+                                    y0=min(entry_p, sl_p),
+                                    y1=max(entry_p, sl_p),
+                                    fillcolor="rgba(244, 63, 94, 0.22)",
+                                    line=dict(color="rgba(244, 63, 94, 0.7)", width=1, dash="dot"),
+                                    annotation_text=f"Stop Loss ({sl_p:.3f})",
+                                    annotation_position="bottom right" if direction == "bullish" else "top right"
+                                )
+
+                                # 绿色盈利目标阴影 (TP1 ~ TP3)
+                                fig.add_hrect(
+                                    y0=min(entry_p, tp3_p),
+                                    y1=max(entry_p, tp3_p),
+                                    fillcolor="rgba(34, 197, 94, 0.18)",
+                                    line=dict(color="rgba(34, 197, 94, 0.6)", width=1, dash="dash"),
+                                    annotation_text=f"TP3 161.8% ({tp3_p:.3f})",
+                                    annotation_position="top right" if direction == "bullish" else "bottom right"
+                                )
+
+                                # 目标参考线
+                                fig.add_hline(y=tp1_p, line_dash="dot", line_color="#22c55e", annotation_text=f"TP1 61.8%: {tp1_p:.3f}", annotation_position="right")
+                                fig.add_hline(y=tp2_p, line_dash="dash", line_color="#10b981", annotation_text=f"TP2 100%: {tp2_p:.3f}", annotation_position="right")
 
                                 fig.update_layout(
                                     xaxis_rangeslider_visible=False,
-                                    height=340,
+                                    height=360,
                                     margin=dict(l=10, r=10, t=25, b=10),
                                     template="plotly_dark",
                                     plot_bgcolor="rgba(0,0,0,0)"
