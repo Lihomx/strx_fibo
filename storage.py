@@ -85,7 +85,10 @@ def _save(path: str, data) -> bool:
     with IO_LOCK:
         try:
             with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+                if isinstance(data, list) and len(data) > 500:
+                    json.dump(data, f, ensure_ascii=False)
+                else:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
             try:
                 mtime = os.path.getmtime(path)
                 _prune_io_cache_if_needed()
@@ -1729,7 +1732,7 @@ def import_hotlist_json(json_str: str, merge: bool = True):
 
 
 def load_triple_bottom() -> List[Dict]:
-    """返回三重底扫描结果，自动去重并限制最大条数，保证极速读取"""
+    """返回三重底扫描结果，自动去重并按置信度排序，保证极速读取"""
     res = _load(F_TRIPLE_BOTTOM, [])
     if not isinstance(res, list):
         return []
@@ -1742,15 +1745,11 @@ def load_triple_bottom() -> List[Dict]:
             seen[k] = r
     deduped = list(seen.values())
     deduped.sort(key=lambda x: float(x.get("confidence", 0.0)), reverse=True)
-    return deduped[:5000]
+    return deduped
 
 
 def save_triple_bottom(items: List[Dict], with_backup: bool = True) -> bool:
     """保存三重底扫描结果"""
-    # 限制最大保存条数，按置信度排序保留头部高质量形态，防止 JSON 文件过大卡死
-    if isinstance(items, list) and len(items) > 5000:
-        items = sorted(items, key=lambda x: float(x.get("confidence", 0.0)), reverse=True)[:5000]
-        
     if with_backup:
         ok = _save_with_backup(F_TRIPLE_BOTTOM, items)
     else:
