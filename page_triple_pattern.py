@@ -953,24 +953,7 @@ def render_triple_pattern_page():
                         tk = tk.trim().toUpperCase();
                         var cbUrl = '/?_tv_click=' + encodeURIComponent(tk) + '&_cb=' + Date.now() + '_' + Math.floor(Math.random()*10000);
 
-                        // 1. fetch 强制 no-store 穿透所有浏览器/CDN 缓存
-                        try { fetch(cbUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
-
-                        // 2. sendBeacon 后台保障发送
-                        try { if (navigator.sendBeacon) { navigator.sendBeacon(cbUrl); } } catch(err) {}
-
-                        // 3. IFrame 静音发送（触发 Streamlit Python 执行数据落盘）
-                        try {
-                            var f = pDoc.createElement('iframe');
-                            f.style.display = 'none';
-                            f.src = cbUrl;
-                            pDoc.body.appendChild(f);
-                            setTimeout(function() {
-                                try { f.remove(); } catch(err) {}
-                            }, 6000);
-                        } catch(err) {}
-
-                        // 4. 前台 DOM 瞬间更新该 ticker 所有对应按钮数值 (秒级反馈)
+                        // 1. 前台 DOM 瞬间更新该 ticker 所有对应按钮数值 (秒级反馈)
                         try {
                             var allBtns = pDoc.querySelectorAll('.tv-btn, .sina-btn');
                             for (var i = 0; i < allBtns.length; i++) {
@@ -990,6 +973,17 @@ def render_triple_pattern_page():
                                         }
                                     }
                                 }
+                            }
+                        } catch(err) {}
+
+                        // 2. 通过 React WebSocket 桥接器直接通知 Python 后台永久落盘
+                        try {
+                            var inputEl = pDoc.querySelector('input[aria-label="global_tv_click_sink"]') || pDoc.querySelector('input[aria-label="tp_tv_click_proxy"]');
+                            if (inputEl) {
+                                var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                                nativeSetter.call(inputEl, tk);
+                                inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+                                inputEl.dispatchEvent(new Event('change', { bubbles: true }));
                             }
                         } catch(err) {}
                     }

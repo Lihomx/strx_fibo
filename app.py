@@ -217,17 +217,6 @@ _st_components.html(r"""<script>
                     try { fetch(cbUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
                     try { if (navigator.sendBeacon) { navigator.sendBeacon(cbUrl); } } catch(err) {}
 
-                    // IFrame 静音发送（Streamlit 必须通过 Iframe 触发 Python 脚本执行 query_params 解析与数据落盘）
-                    try {
-                        var f = pDoc.createElement('iframe');
-                        f.style.display = 'none';
-                        f.src = cbUrl;
-                        pDoc.body.appendChild(f);
-                        setTimeout(function() {
-                            try { f.remove(); } catch(err) {}
-                        }, 6000);
-                    } catch(err) {}
-
                     // 前台 DOM 瞬间更新该 ticker 的徽章
                     try {
                         var allBtns = pDoc.querySelectorAll('.tv-btn, .sina-btn');
@@ -248,6 +237,17 @@ _st_components.html(r"""<script>
                                     }
                                 }
                             }
+                        }
+                    } catch(err) {}
+
+                    // 1. 通过 React WebSocket 桥接器直接通知 Python 后台永久落盘
+                    try {
+                        var inputEl = pDoc.querySelector('input[aria-label="global_tv_click_sink"]') || pDoc.querySelector('input[aria-label="tp_tv_click_proxy"]');
+                        if (inputEl) {
+                            var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                            nativeSetter.call(inputEl, tk);
+                            inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+                            inputEl.dispatchEvent(new Event('change', { bubbles: true }));
                         }
                     } catch(err) {}
                 }
@@ -1422,6 +1422,18 @@ def main():
 
     # ── 应用显示风格和字体大小设置 ──────────────────────────────
     inject_custom_theme()
+
+    # ── 全局行情链接点击 React WebSocket 桥接器 ─────────────────
+    st.markdown("""<div style="display:none;height:0px;overflow:hidden;position:absolute;top:-9999px;">""", unsafe_allow_html=True)
+    _global_tv_sink = st.text_input("global_tv_click_sink", key="global_tv_click_sink", label_visibility="collapsed")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    if _global_tv_sink:
+        _clean_tk = str(_global_tv_sink).strip().upper()
+        if _clean_tk:
+            storage.increment_link_click(_clean_tk, "tv")
+        st.session_state["global_tv_click_sink"] = ""
+        st.rerun()
 
     # ── 全局浏览器桌面通知监听器 ──────────────────────────────
     try:
