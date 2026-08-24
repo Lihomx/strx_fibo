@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>TV Click Bridge</title>
+  <style>
+    body, html { margin: 0; padding: 0; overflow: hidden; height: 0px; width: 0px; background: transparent; }
+  </style>
+</head>
+<body>
+<script>
+(function() {
+  function sendToStreamlit(type, data) {
+    var outData = Object.assign({
+      isStreamlitMessage: true,
+      type: type
+    }, data || {});
+    window.parent.postMessage(outData, "*");
+  }
+
+  function init() {
+    sendToStreamlit("streamlit:componentReady", { apiVersion: 1 });
+    sendToStreamlit("streamlit:setFrameHeight", { height: 0 });
+  }
+
+  // 旡的的主窗口适知
+  window.addEventListener("message", function(e) {
+    if (e.data && e.data.type === "record_tv_click" && e.data.ticker) {
+      sendToStreamlit("streamlit:setComponentValue", {
+        value: {
+          ticker: String(e.data.ticker).trim().toUpperCase(),
+          ts: Date.now(),
+          rnd: Math.random()
+        }
+      });
+    }
+  });
+
+  // 直接在 parent window 暴露快换函数
+  try {
+    window.parent.__sendTvClickToStreamlit = function(ticker) {
+      if (ticker) {
+        sendToStreamlit("streamlit:setComponentValue", {
+          value: {
+            ticker: String(ticker).trim().toUpperCase(),
+            ts: Date.now(),
+            rnd: Math.random()
+          }
+        });
+      }
+    };
+  } catch(err) {}
+
+  if (document.readyState === "complete" || document.readyState === "interactive") {
+    init();
+  } else {
+    window.addEventListener("DOMContentLoaded", init);
+  }
+})();
+</script>
+</body>
+</html>

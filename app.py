@@ -240,14 +240,21 @@ _st_components.html(r"""<script>
                         }
                     } catch(err) {}
 
-                    // 1. 通过 React WebSocket 桥接器直接通知 Python 后台永久落盘
+                    // 1. 通过 Streamlit 双向组件桥接器通知 Python 后台永久落盘
                     try {
-                        var inputEl = pDoc.querySelector('input[aria-label="global_tv_click_sink"]') || pDoc.querySelector('input[aria-label="tp_tv_click_proxy"]');
-                        if (inputEl) {
-                            var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-                            nativeSetter.call(inputEl, tk);
-                            inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-                            inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+                        if (window.parent && window.parent.__sendTvClickToStreamlit) {
+                            window.parent.__sendTvClickToStreamlit(tk);
+                        }
+                    } catch(err) {}
+                    try {
+                        window.parent.postMessage({ type: "record_tv_click", ticker: tk }, "*");
+                    } catch(err) {}
+                    try {
+                        var iframes = pDoc.querySelectorAll('iframe');
+                        for (var j = 0; j < iframes.length; j++) {
+                            try {
+                                iframes[j].contentWindow.postMessage({ type: "record_tv_click", ticker: tk }, "*");
+                            } catch(err) {}
                         }
                     } catch(err) {}
                 }
@@ -1423,17 +1430,19 @@ def main():
     # ── 应用显示风格和字体大小设置 ──────────────────────────────
     inject_custom_theme()
 
-    # ── 全局行情链接点击 React WebSocket 桥接器 ─────────────────
-    st.markdown("""<div style="display:none;height:0px;overflow:hidden;position:absolute;top:-9999px;">""", unsafe_allow_html=True)
-    _global_tv_sink = st.text_input("global_tv_click_sink", key="global_tv_click_sink", label_visibility="collapsed")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    if _global_tv_sink:
-        _clean_tk = str(_global_tv_sink).strip().upper()
-        if _clean_tk:
-            storage.increment_link_click(_clean_tk, "tv")
-        st.session_state["global_tv_click_sink"] = ""
-        st.rerun()
+    # ── 全局行情链接点击双向 WebSocket 桥接器 ─────────────────
+    try:
+        import frontend_bridge
+        _bridge_data = frontend_bridge.render_tv_click_bridge(key="global_tv_bridge")
+        if _bridge_data and isinstance(_bridge_data, dict):
+            _tk = str(_bridge_data.get("ticker", "")).strip().upper()
+            _ts = _bridge_data.get("ts", 0)
+            _last_ts = st.session_state.get("_last_bridge_click_ts", 0)
+            if _tk and _ts != _last_ts:
+                st.session_state["_last_bridge_click_ts"] = _ts
+                storage.increment_link_click(_tk, "tv")
+    except Exception:
+        pass
 
     # ── 全局浏览器桌面通知监听器 ──────────────────────────────
     try:
