@@ -156,12 +156,72 @@ def render_triple_pattern_page():
             border-radius: 4px;
             transition: width 0.3s ease;
         }
+        .tp-pagination {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin: 14px 0;
+            padding: 8px 12px;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+        }
+        .tp-page-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 6px 14px;
+            background: rgba(59, 130, 246, 0.15);
+            color: #93c5fd !important;
+            border: 1px solid rgba(59, 130, 246, 0.35);
+            border-radius: 6px;
+            text-decoration: none !important;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+        .tp-page-btn:hover {
+            background: rgba(59, 130, 246, 0.3);
+            color: #ffffff !important;
+            border-color: rgba(59, 130, 246, 0.7);
+            text-decoration: none !important;
+        }
+        .tp-page-btn.disabled {
+            background: rgba(148, 163, 184, 0.08);
+            color: #64748b !important;
+            border-color: rgba(148, 163, 184, 0.15);
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+        .tp-page-info {
+            color: #cbd5e1;
+            font-size: 14px;
+            font-weight: 600;
+            text-align: center;
+            flex: 1;
+        }
         </style>
         """,
         unsafe_allow_html=True
     )
 
     all_patterns = storage.load_triple_pattern()
+
+    # ── 从 URL _dir 参数恢复「形态方向」下拉状态 ──
+    # 用户通过链接切换页面时 (_dir=bullish/bearish/all)，session_state 会丢失,
+    # 在 selectbox 渲染前注入正确值，保证方向不被重置。
+    _DIR_URL_MAP = {
+        "bullish": "🐂 仅看涨 (三重底)",
+        "bearish": "🐻 仅看跌 (三重顶)",
+        "all":     "全部方向",
+    }
+    _url_dir_raw = str(st.query_params.get("_dir", "")).strip().lower()
+    if _url_dir_raw in _DIR_URL_MAP:
+        _desired_dir = _DIR_URL_MAP[_url_dir_raw]
+        # 仅在与当前 session_state 不一致时写入，避免用户手动更改被覆盖
+        if st.session_state.get("tp_filter_direction") != _desired_dir:
+            st.session_state["tp_filter_direction"] = _desired_dir
 
     # ── 1. 顶部标题与形态总体统计 ──
     st.markdown(
@@ -333,12 +393,28 @@ def render_triple_pattern_page():
 
     # 筛选面板 第一行
     col_f1, col_f2, col_f3, col_f4 = st.columns([1.2, 1.5, 1.3, 1.8])
+
+    # 方向改变时写入 URL _dir 参数，保证翻页/刷新后可恢复
+    def _on_tp_dir_change():
+        _val = st.session_state.get("tp_filter_direction", "全部方向")
+        _DIR_REVERSE = {
+            "🐂 仅看涨 (三重底)": "bullish",
+            "🐻 仅看跌 (三重顶)": "bearish",
+        }
+        try:
+            st.query_params["_dir"] = _DIR_REVERSE.get(_val, "all")
+            # 方向变化时重置翻页到第 1 页
+            st.query_params["_p"] = "1"
+            st.session_state.tp_current_page = 1
+        except Exception:
+            pass
+
     with col_f1:
         st_direction = st.selectbox(
             "🧭 形态方向",
             ["全部方向", "🐂 仅看涨 (三重底)", "🐻 仅看跌 (三重顶)"],
-            index=0,
-            key="tp_filter_direction"
+            key="tp_filter_direction",
+            on_change=_on_tp_dir_change,
         )
     with col_f2:
         st_patt = st.selectbox(
@@ -521,28 +597,63 @@ def render_triple_pattern_page():
     except Exception:
         pass
 
-    def _set_tp_page(p_num: int):
-        target_p = max(1, min(total_pages, p_num))
-        st.session_state.tp_current_page = target_p
+    def _make_tp_page_url(target_page: int) -> str:
+        params = {}
+        for k, v in st.query_params.items():
+            params[k] = v
+        params["_page"] = "triple_pattern"
+        params["_p"] = str(target_page)
+        
+        _cur_dir = st.session_state.get("tp_filter_direction", "全部方向")
+        _DIR_MAP = {"🐂 仅看涨 (三重底)": "bullish", "🐻 仅看跌 (三重顶)": "bearish"}
+        if _cur_dir in _DIR_MAP:
+            params["_dir"] = _DIR_MAP[_cur_dir]
+        elif "_dir" in params and params["_dir"] not in ("bullish", "bearish"):
+            params["_dir"] = "all"
+            
+        qs = "&".join(f"{k}={v}" for k, v in params.items())
+        return f"/?{qs}"
 
-    # 分页导航条（顶部）
-    col_p1, col_p2, col_p3, col_p4, col_p5 = st.columns([1, 1.2, 3, 1.2, 1])
-    with col_p1:
-        st.button("⏮ 首页", disabled=(current_page == 1), key="tp_first_page_top", on_click=_set_tp_page, args=(1,), use_container_width=True)
-    with col_p2:
-        st.button("◀ 上一页", disabled=(current_page == 1), key="tp_prev_page_top", on_click=_set_tp_page, args=(current_page - 1,), use_container_width=True)
-    with col_p3:
+    def _render_tp_pagination_bar(cur_p: int, tot_p: int, tot_items: int, p_sz: int, is_bottom: bool = False):
+        first_url = _make_tp_page_url(1)
+        prev_url = _make_tp_page_url(max(1, cur_p - 1))
+        next_url = _make_tp_page_url(min(tot_p, cur_p + 1))
+        last_url = _make_tp_page_url(tot_p)
+        
+        first_cls = "tp-page-btn disabled" if cur_p <= 1 else "tp-page-btn"
+        prev_cls = "tp-page-btn disabled" if cur_p <= 1 else "tp-page-btn"
+        next_cls = "tp-page-btn disabled" if cur_p >= tot_p else "tp-page-btn"
+        last_cls = "tp-page-btn disabled" if cur_p >= tot_p else "tp-page-btn"
+        
+        start_n = (cur_p - 1) * p_sz + 1 if tot_items > 0 else 0
+        end_n = min(cur_p * p_sz, tot_items)
+        
+        if not is_bottom:
+            info_text = f"📄 第 <span style='color:#f59e0b;'>{cur_p}</span> / {tot_p} 页 (符合筛选 <span style='color:#38bdf8;'>{tot_items}</span> 条，显示 {start_n} - {end_n} 条)"
+        else:
+            info_text = f"📄 第 <span style='color:#f59e0b;'>{cur_p}</span> / {tot_p} 页 (共 <span style='color:#38bdf8;'>{tot_items}</span> 条)"
+            
         st.markdown(
-            f"<div style='text-align:center; line-height:36px; color:#cbd5e1; font-size:14px; font-weight:600;'>"
-            f"📄 第 <span style='color:#f59e0b;'>{current_page}</span> / {total_pages} 页 "
-            f"(符合筛选 <span style='color:#38bdf8;'>{total_items}</span> 条，显示 {(current_page-1)*page_size + 1 if total_items > 0 else 0} - {min(current_page*page_size, total_items)} 条)"
-            f"</div>",
+            f"""
+            <div class="tp-pagination">
+                <div style="display:flex;gap:6px;">
+                    <a href="{first_url}" target="_self" class="{first_cls}">⏮ 首页</a>
+                    <a href="{prev_url}" target="_self" class="{prev_cls}">◀ 上一页</a>
+                </div>
+                <div class="tp-page-info">
+                    {info_text}
+                </div>
+                <div style="display:flex;gap:6px;">
+                    <a href="{next_url}" target="_self" class="{next_cls}">下一页 ▶</a>
+                    <a href="{last_url}" target="_self" class="{last_cls}">末页 ⏭</a>
+                </div>
+            </div>
+            """,
             unsafe_allow_html=True
         )
-    with col_p4:
-        st.button("下一页 ▶", disabled=(current_page == total_pages), key="tp_next_page_top", on_click=_set_tp_page, args=(current_page + 1,), use_container_width=True)
-    with col_p5:
-        st.button("末页 ⏭", disabled=(current_page == total_pages), key="tp_last_page_top", on_click=_set_tp_page, args=(total_pages,), use_container_width=True)
+
+    # 分页导航条（顶部）
+    _render_tp_pagination_bar(current_page, total_pages, total_items, page_size, is_bottom=False)
 
     # 切片当前页数据
     start_idx = (current_page - 1) * page_size
@@ -823,23 +934,7 @@ def render_triple_pattern_page():
     # 分页导航条（底部）
     if total_pages > 1:
         st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
-        col_pb1, col_pb2, col_pb3, col_pb4, col_pb5 = st.columns([1, 1.2, 3, 1.2, 1])
-        with col_pb1:
-            st.button("⏮ 首页", disabled=(current_page == 1), key="tp_first_page_bot", on_click=_set_tp_page, args=(1,), use_container_width=True)
-        with col_pb2:
-            st.button("◀ 上一页", disabled=(current_page == 1), key="tp_prev_page_bot", on_click=_set_tp_page, args=(current_page - 1,), use_container_width=True)
-        with col_pb3:
-            st.markdown(
-                f"<div style='text-align:center; line-height:36px; color:#cbd5e1; font-size:14px; font-weight:600;'>"
-                f"📄 第 <span style='color:#f59e0b;'>{current_page}</span> / {total_pages} 页 "
-                f"(共 <span style='color:#38bdf8;'>{total_items}</span> 条)"
-                f"</div>",
-                unsafe_allow_html=True
-            )
-        with col_pb4:
-            st.button("下一页 ▶", disabled=(current_page == total_pages), key="tp_next_page_bot", on_click=_set_tp_page, args=(current_page + 1,), use_container_width=True)
-        with col_pb5:
-            st.button("末页 ⏭", disabled=(current_page == total_pages), key="tp_last_page_bot", on_click=_set_tp_page, args=(total_pages,), use_container_width=True)
+        _render_tp_pagination_bar(current_page, total_pages, total_items, page_size, is_bottom=True)
 
 
 if __name__ == "__main__":
