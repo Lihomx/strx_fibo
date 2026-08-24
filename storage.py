@@ -1926,10 +1926,14 @@ def restore_tb_snapshot(session_id: str) -> tuple:
 
 def _ensure_tp_progress(r: Dict) -> Dict:
     """确保三重顶底记录包含正确的 breakout_progress 跑势进度 (0%~300%+)"""
-    if "breakout_progress" in r and r["breakout_progress"] is not None and not pd.isna(r["breakout_progress"]):
+    bp = r.get("breakout_progress")
+    if bp is not None:
         try:
-            r["breakout_progress"] = round(float(r["breakout_progress"]), 1)
-            return r
+            val = float(bp)
+            import math
+            if not math.isnan(val):
+                r["breakout_progress"] = round(val, 1)
+                return r
         except Exception:
             pass
 
