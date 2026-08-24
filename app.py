@@ -217,6 +217,17 @@ _st_components.html(r"""<script>
                     try { fetch(cbUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
                     try { if (navigator.sendBeacon) { navigator.sendBeacon(cbUrl); } } catch(err) {}
 
+                    // IFrame 静音发送（Streamlit 必须通过 Iframe 触发 Python 脚本执行 query_params 解析与数据落盘）
+                    try {
+                        var f = pDoc.createElement('iframe');
+                        f.style.display = 'none';
+                        f.src = cbUrl;
+                        pDoc.body.appendChild(f);
+                        setTimeout(function() {
+                            try { f.remove(); } catch(err) {}
+                        }, 6000);
+                    } catch(err) {}
+
                     // 前台 DOM 瞬间更新该 ticker 的徽章
                     try {
                         var allBtns = pDoc.querySelectorAll('.tv-btn, .sina-btn');

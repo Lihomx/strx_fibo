@@ -652,16 +652,16 @@ def increment_link_click(ticker: str, link_type: str = "tv") -> None:
         return
     today = get_today_str()
 
-    # ── 先从云端拉取最新数据（Streamlit Cloud 文件系统是临时性的，
-    #    重启后本地文件为空，必须先 pull 才能拿到真实历史计数）──
-    try:
-        import cloud_sync
-        if cloud_sync.is_configured():
-            cloud_sync.pull_link_clicks()
-    except Exception:
-        pass
-
     data = _load(F_LINK_CLICKS, {})
+    if not data:
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                cloud_sync.pull_link_clicks()
+                data = _load(F_LINK_CLICKS, {})
+        except Exception:
+            pass
+
     if not isinstance(data, dict):
         data = {}
     key = f"{str(ticker).upper()}:{link_type}"
@@ -677,7 +677,7 @@ def increment_link_click(ticker: str, link_type: str = "tv") -> None:
     try:
         import cloud_sync
         if cloud_sync.is_configured():
-            cloud_sync.push_link_clicks()
+            _async_push(cloud_sync.push_link_clicks)
     except Exception:
         pass
 
