@@ -416,9 +416,13 @@ def render_triple_pattern_page():
             "🐻 仅看跌 (三重顶)": "bearish",
         }
         try:
-            st.query_params["_dir"] = _DIR_REVERSE.get(_val, "all")
-            # 方向变化时重置翻页到第 1 页
-            st.query_params["_p"] = "1"
+            _qp = dict(st.query_params)
+            if "_p" in _qp:
+                del _qp["_p"]
+            _qp["_dir"] = _DIR_REVERSE.get(_val, "all")
+            _qp["_p"] = "1"
+            st.query_params.clear()
+            st.query_params.update(_qp)
             st.session_state.tp_current_page = 1
         except Exception:
             pass
@@ -607,16 +611,31 @@ def render_triple_pattern_page():
     st.session_state._tp_url_p_seen = str(current_page)
 
     try:
-        st.query_params["_p"] = str(current_page)
+        # 保证 st.query_params 中 _p 处于字典和 URL 最末尾
+        _qp = dict(st.query_params)
+        if "_p" in _qp:
+            del _qp["_p"]
+        _cur_dir = st.session_state.get("tp_filter_direction", "全部方向")
+        _DIR_MAP = {"🐂 仅看涨 (三重底)": "bullish", "🐻 仅看跌 (三重顶)": "bearish"}
+        if _cur_dir in _DIR_MAP:
+            _qp["_dir"] = _DIR_MAP[_cur_dir]
+        elif "_dir" in _qp and _qp["_dir"] not in ("bullish", "bearish"):
+            _qp["_dir"] = "all"
+        _qp["_p"] = str(current_page)
+        st.query_params.clear()
+        st.query_params.update(_qp)
     except Exception:
-        pass
+        try:
+            st.query_params["_p"] = str(current_page)
+        except Exception:
+            pass
 
     def _make_tp_page_url(target_page: int) -> str:
         params = {}
         for k, v in st.query_params.items():
-            params[k] = v
+            if k != "_p":
+                params[k] = v
         params["_page"] = "triple_pattern"
-        params["_p"] = str(target_page)
         
         _cur_dir = st.session_state.get("tp_filter_direction", "全部方向")
         _DIR_MAP = {"🐂 仅看涨 (三重底)": "bullish", "🐻 仅看跌 (三重顶)": "bearish"}
@@ -624,6 +643,10 @@ def render_triple_pattern_page():
             params["_dir"] = _DIR_MAP[_cur_dir]
         elif "_dir" in params and params["_dir"] not in ("bullish", "bearish"):
             params["_dir"] = "all"
+            
+        # 确保 _p 永远排在 URL 查询参数的最后一个
+        params.pop("_p", None)
+        params["_p"] = str(target_page)
             
         qs = "&".join(f"{k}={v}" for k, v in params.items())
         return f"/?{qs}"
