@@ -101,6 +101,9 @@ class PatternMatch:
     status_reason: str = ""      # 状态原因
     bars_since_p5: int = 0       # 距第5点已过 K 线根数
     latest_close: float = 0.0    # 最新收盘价
+    volume: float = 0.0          # 最新一根 K 线的成交量
+    avg_volume_20: float = 0.0   # 20 根 K 线的平均成交量
+    turnover: float = 0.0        # 平均成交额 (avg_volume_20 * latest_close)
     scan_time: str = ""          # 扫描生成时间
     breakout_progress: float = 0.0  # 🏃 跑势进度 (%): active=0%, confirmed=(close-neckline)/pattern_height×100%
 
@@ -259,6 +262,16 @@ def scan_triple_patterns(
 
     latest_close = float(df.loc[df.index[-1], "close"])
     total_bars = len(df)
+
+    # 📊 成交量与日均成交额统计 (20 根 K 线均量)
+    latest_vol = float(df.loc[df.index[-1], "volume"]) if "volume" in df.columns and len(df) > 0 and pd.notna(df.loc[df.index[-1], "volume"]) else 0.0
+    if "volume" in df.columns and len(df) > 0:
+        vol_slice = df["volume"].dropna().tail(20)
+        avg_vol_20 = float(vol_slice.mean()) if len(vol_slice) > 0 else latest_vol
+    else:
+        avg_vol_20 = 0.0
+    avg_turnover = round(avg_vol_20 * latest_close, 2)
+
     matches: List[PatternMatch] = []
 
     # ==================================================================
@@ -364,6 +377,9 @@ def scan_triple_patterns(
                 status_reason=status_reason,
                 bars_since_p5=bars_since_p5,
                 latest_close=round(latest_close, 3),
+                volume=round(latest_vol, 1),
+                avg_volume_20=round(avg_vol_20, 1),
+                turnover=avg_turnover,
                 breakout_progress=breakout_progress,
             ))
 
@@ -470,6 +486,9 @@ def scan_triple_patterns(
                 status_reason=status_reason,
                 bars_since_p5=bars_since_p5,
                 latest_close=round(latest_close, 3),
+                volume=round(latest_vol, 1),
+                avg_volume_20=round(avg_vol_20, 1),
+                turnover=avg_turnover,
                 breakout_progress=breakout_progress,
             ))
 

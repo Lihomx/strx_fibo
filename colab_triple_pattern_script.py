@@ -14,7 +14,7 @@ colab_triple_pattern_script.py — Google Colab 独立大规模「三重底 & �
 
 import json
 
-def generate_colab_script_for_tickers(tickers: list[str], pool_name: str = "系统品种库", selected_tfs: list[str] = None) -> str:
+def generate_colab_script_for_tickers(tickers: list[str], pool_name: str = "系统品种库", selected_tfs: list[str] = None, min_volume: int = 100000) -> str:
     """生成内置指定股票池代码与扫描周期的 Google Colab 完整扫描脚本"""
     tickers_json = json.dumps(tickers, ensure_ascii=False)
     
@@ -98,6 +98,10 @@ MIN_SPACING = 3       # 三点最小间距
 MIN_CONFIDENCE = 0.5  # 最小置信度阈值
 FLAT_TOL = 0.02       # 持平容差 (2%)
 BREAK_TOL = 0.01      # 突破容差 (1%)
+
+# 📊 成交量/流动性过滤阈值 (0 表示不限制，默认 100,000 股过滤僵尸股/低流动性股票)
+MIN_AVG_VOLUME = {min_volume}
+MIN_TURNOVER = 0      # 20日日均成交额阈值 (0 表示不限制，例如 1000000 表示日均 100 万)
 
 SCAN_TICKERS = {tickers_json}
 
@@ -194,6 +198,16 @@ def scan_patterns(df, symbol="", period="1d", swing_window=3, lookback_bars=150,
     swing_high_idx = df.index[df["is_swing_high"]].tolist()
     latest_close = float(df.loc[df.index[-1], "close"])
     total_bars = len(df)
+
+    # 📊 成交量与日均成交额统计 (20 根 K 线均量)
+    latest_vol = float(df.loc[df.index[-1], "volume"]) if "volume" in df.columns and len(df) > 0 and pd.notna(df.loc[df.index[-1], "volume"]) else 0.0
+    if "volume" in df.columns and len(df) > 0:
+        vol_slice = df["volume"].dropna().tail(20)
+        avg_vol_20 = float(vol_slice.mean()) if len(vol_slice) > 0 else latest_vol
+    else:
+        avg_vol_20 = 0.0
+    avg_turnover = round(avg_vol_20 * latest_close, 2)
+
     results = []
 
     # 🐂 1. 看涨三重底 (1-2-3-4-5 波浪结构)
@@ -294,6 +308,9 @@ def scan_patterns(df, symbol="", period="1d", swing_window=3, lookback_bars=150,
                     "status_reason": reason,
                     "bars_since_p5": bars_since,
                     "latest_close": round(latest_close, 4),
+                    "volume": round(latest_vol, 1),
+                    "avg_volume_20": round(avg_vol_20, 1),
+                    "turnover": avg_turnover,
                     "breakout_progress": breakout_progress,
                 }})
 
@@ -395,6 +412,9 @@ def scan_patterns(df, symbol="", period="1d", swing_window=3, lookback_bars=150,
                     "status_reason": reason,
                     "bars_since_p5": bars_since,
                     "latest_close": round(latest_close, 4),
+                    "volume": round(latest_vol, 1),
+                    "avg_volume_20": round(avg_vol_20, 1),
+                    "turnover": avg_turnover,
                     "breakout_progress": breakout_progress,
                 }})
 
@@ -462,6 +482,17 @@ def _scan_single_ticker(ticker):
         df_daily = _fetch_direct_chart(ticker, range_str="10y", interval="1d")
         if df_daily is None or df_daily.empty:
             return []
+
+        # 📊 流动性预过滤 (过滤低日均量/僵尸股，大幅提升云端扫描速度)
+        if MIN_AVG_VOLUME > 0 or MIN_TURNOVER > 0:
+            vol_slice = df_daily["volume"].dropna().tail(20) if "volume" in df_daily.columns else pd.Series()
+            c_vol = float(vol_slice.mean()) if len(vol_slice) > 0 else 0.0
+            c_close = float(df_daily["close"].iloc[-1]) if len(df_daily) > 0 else 0.0
+            c_turnover = c_vol * c_close
+            if MIN_AVG_VOLUME > 0 and c_vol < MIN_AVG_VOLUME:
+                return []
+            if MIN_TURNOVER > 0 and c_turnover < MIN_TURNOVER:
+                return []
 
         # 1. 扫描日线 (1d)
         if "1d" in TIMEFRAMES:
@@ -628,7 +659,9 @@ if all_results:
         "pt1", "pt2", "pt3", "pt4", "pt5", "neckline",
         "entry_price", "stop_loss", "tp1", "tp2", "tp3",
         "risk", "reward_tp1", "reward_tp2", "reward_tp3",
-        "risk_reward", "rr_tp3", "note", "status", "status_reason", "bars_since_p5", "latest_close", "breakout_progress", "scan_time"
+        "risk_reward", "rr_tp3", "note", "status", "status_reason", "bars_since_p5",
+        "latest_close", "volume", "avg_volume_20", "turnover",
+        "breakout_progress", "scan_time"
     ]
     existing_cols = [c for c in cols if c in df_res.columns]
     df_res = df_res[existing_cols]

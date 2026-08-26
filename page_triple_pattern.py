@@ -286,7 +286,7 @@ def render_triple_pattern_page():
                 if g.get("name"):
                     pool_options.append(f"📁 分组: {g.get('name')}")
 
-            c_p1, c_p2 = st.columns([2, 1])
+            c_p1, c_p2, c_p3 = st.columns([1.5, 1.1, 1.4])
             with c_p1:
                 selected_pool = st.selectbox(
                     "🎯 选择扫描股票池",
@@ -302,6 +302,28 @@ def render_triple_pattern_page():
                     format_func=lambda x: TRIPLE_PATTERN_TIMEFRAMES[x][2],
                     key="tp_colab_tf_select"
                 )
+            with c_p3:
+                vol_option = st.selectbox(
+                    "📊 最低成交量过滤",
+                    [
+                        "🔥 20日均量 ≥ 10 万股 (推荐)",
+                        "🔥 20日均量 ≥ 30 万股",
+                        "🔥 20日均量 ≥ 50 万股",
+                        "🔥 20日均量 ≥ 100 万股",
+                        "全部扫描 (不限制成交量)"
+                    ],
+                    index=0,
+                    key="tp_colab_min_vol_select",
+                    help="在 Colab 云端扫描时自动剔除低流动性僵尸股/仙股，不仅形态质量更高，还能大幅提升云端扫描速度 3~5 倍！"
+                )
+                _VOL_MAP = {
+                    "🔥 20日均量 ≥ 10 万股 (推荐)": 100000,
+                    "🔥 20日均量 ≥ 30 万股": 300000,
+                    "🔥 20日均量 ≥ 50 万股": 500000,
+                    "🔥 20日均量 ≥ 100 万股": 1000000,
+                    "全部扫描 (不限制成交量)": 0,
+                }
+                min_vol_val = _VOL_MAP.get(vol_option, 100000)
 
             export_tickers = []
             if selected_pool == "🌐 全部组去重合并 (全量市场)":
@@ -323,10 +345,11 @@ def render_triple_pattern_page():
                 export_tickers = ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "GOOGL", "META"]
 
             export_tickers = list(dict.fromkeys([t.strip().upper() for t in export_tickers if t and isinstance(t, str)]))
-            st.info(f"📋 选定股票池: **{len(export_tickers)}** 支品种 | 周期: **{', '.join(tf_map_keys)}** (代码已内置)：")
+            vol_hint = f" | 均量: **{vol_option.split(' ')[1]}**" if min_vol_val > 0 else ""
+            st.info(f"📋 选定股票池: **{len(export_tickers)}** 支品种 | 周期: **{', '.join(tf_map_keys)}**{vol_hint} (代码已内置)：")
 
             colab_code = colab_triple_pattern_script.generate_colab_script_for_tickers(
-                export_tickers, pool_name=selected_pool, selected_tfs=tf_map_keys
+                export_tickers, pool_name=selected_pool, selected_tfs=tf_map_keys, min_volume=min_vol_val
             )
             st.code(colab_code, language="python", line_numbers=True)
 
@@ -475,8 +498,8 @@ def render_triple_pattern_page():
             key="tp_filter_status"
         )
 
-    # 筛选面板 第二行：跑势进度上限滑块
-    col_sl1, col_sl2 = st.columns([2.5, 1])
+    # 筛选面板 第二行：跑势进度上限滑块 + 成交量/活跃度过滤
+    col_sl1, col_vol = st.columns([1.5, 1.5])
     with col_sl1:
         progress_limit = st.slider(
             "🏃 跑势进度上限 (0% ~ 300%)",
@@ -487,12 +510,22 @@ def render_triple_pattern_page():
             help="【核心过滤】：默认 20%，只保留 5 点成型蓄势中 (0%) 以及突破颈线 20% 形态高度以内的标的。已突破跑很远 (>20%) 的标的将被自动过滤。向右拉大滑块可查看更多推进中的形态。",
             key="tp_progress_slider"
         )
-    with col_sl2:
-        st.markdown(
-            f"<div style='margin-top:28px;font-size:13px;color:#38bdf8;font-weight:600;'>"
-            f"🎯 当前过滤: <b>0% ~ {progress_limit}%</b>"
-            f"</div>",
-            unsafe_allow_html=True
+    with col_vol:
+        st_vol_filter = st.selectbox(
+            "📊 最低成交量 / 活跃度过滤",
+            [
+                "全部成交量 (不限制)",
+                "🔥 20日均量 ≥ 10 万股",
+                "🔥 20日均量 ≥ 30 万股",
+                "🔥 20日均量 ≥ 50 万股",
+                "🔥 20日均量 ≥ 100 万股",
+                "💎 日均成交额 ≥ 50 万 (USD/RMB)",
+                "💎 日均成交额 ≥ 100 万 (USD/RMB)",
+                "💎 日均成交额 ≥ 500 万 (USD/RMB)"
+            ],
+            index=0,
+            key="tp_filter_volume",
+            help="过滤低流动性/仙股/僵尸股，确保标的具备充沛交易活跃度与流动性。"
         )
 
     # 执行过滤
@@ -546,6 +579,25 @@ def render_triple_pattern_page():
         if st_val in ("active", "confirmed") and prog > progress_limit:
             continue
 
+        # 成交量与流动性过滤
+        if st_vol_filter != "全部成交量 (不限制)":
+            r_vol = float(r.get("avg_volume_20") or r.get("volume") or 0.0)
+            r_turnover = float(r.get("turnover") or (r_vol * float(r.get("latest_close", 0.0))))
+            if "≥ 10 万股" in st_vol_filter and r_vol < 100_000:
+                continue
+            elif "≥ 30 万股" in st_vol_filter and r_vol < 300_000:
+                continue
+            elif "≥ 50 万股" in st_vol_filter and r_vol < 500_000:
+                continue
+            elif "≥ 100 万股" in st_vol_filter and r_vol < 1_000_000:
+                continue
+            elif "≥ 50 万" in st_vol_filter and r_turnover < 500_000:
+                continue
+            elif "≥ 100 万" in st_vol_filter and r_turnover < 1_000_000:
+                continue
+            elif "≥ 500 万" in st_vol_filter and r_turnover < 5_000_000:
+                continue
+
         filtered.append(r)
 
     # 搜索与排序
@@ -557,6 +609,8 @@ def render_triple_pattern_page():
             "↕️ 排序方式",
             [
                 "🏃 跑势进度 (低 → 高 · 优先蓄势/刚突破)",
+                "📊 20日均量 (高 → 低 · 流动性优先)",
+                "💰 日均成交额 (高 → 低)",
                 "置信度 (高 → 低)",
                 "TP3 黄金盈亏比 (高 → 低)",
                 "TP2 颈线盈亏比 (高 → 低)",
@@ -576,6 +630,10 @@ def render_triple_pattern_page():
 
     if sort_by == "🏃 跑势进度 (低 → 高 · 优先蓄势/刚突破)":
         filtered.sort(key=lambda x: (float(x.get("breakout_progress", 0.0)), -float(x.get("confidence", 0.0))))
+    elif sort_by == "📊 20日均量 (高 → 低 · 流动性优先)":
+        filtered.sort(key=lambda x: float(x.get("avg_volume_20") or x.get("volume") or 0.0), reverse=True)
+    elif sort_by == "💰 日均成交额 (高 → 低)":
+        filtered.sort(key=lambda x: float(x.get("turnover") or (float(x.get("avg_volume_20") or x.get("volume") or 0.0) * float(x.get("latest_close", 0.0)))), reverse=True)
     elif sort_by == "🏃 跑势进度 (高 → 低)":
         filtered.sort(key=lambda x: (float(x.get("breakout_progress", 0.0)), float(x.get("confidence", 0.0))), reverse=True)
     elif sort_by == "置信度 (高 → 低)":
@@ -767,6 +825,27 @@ def render_triple_pattern_page():
             bar_color = "#64748b"
             bar_width = 0
 
+        # 📊 成交量徽章
+        vol_num = float(r.get("avg_volume_20") or r.get("volume") or 0.0)
+        if vol_num > 0:
+            if ticker.endswith((".SS", ".SZ", ".BJ")):
+                if vol_num >= 1e8:
+                    v_txt = f"{vol_num/1e8:.2f}亿股"
+                elif vol_num >= 1e4:
+                    v_txt = f"{vol_num/1e4:.1f}万股"
+                else:
+                    v_txt = f"{vol_num:,.0f}股"
+            else:
+                if vol_num >= 1e6:
+                    v_txt = f"{vol_num/1e6:.2f}M"
+                elif vol_num >= 1e3:
+                    v_txt = f"{vol_num/1e3:.1f}K"
+                else:
+                    v_txt = f"{vol_num:,.0f}"
+            vol_badge = f"<span style='font-size:12px;background:rgba(168,85,247,0.15);color:#d8b4fe;border:1px solid rgba(168,85,247,0.3);padding:2px 8px;border-radius:4px;font-weight:600;' title='20日日均成交量'>📊 均量: {v_txt}</span> "
+        else:
+            vol_badge = ""
+
         with st.container(border=True):
             col_t1, col_t2 = st.columns([5, 3])
             with col_t1:
@@ -777,6 +856,7 @@ def render_triple_pattern_page():
                     f"{dir_badge} "
                     f"<span style='font-size:12px;background:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>{period_desc}</span> "
                     f"<span style='font-size:12px;background:rgba(245,158,11,0.15);color:#fde047;border:1px solid rgba(245,158,11,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>置信度: {conf:.0%}</span> "
+                    f"{vol_badge}"
                     f"{status_badge}"
                     f"</div>",
                     unsafe_allow_html=True
