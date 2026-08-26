@@ -23,31 +23,35 @@
     sendToStreamlit("streamlit:setFrameHeight", { height: 0 });
   }
 
-  // 旡的的主窗口适知
+  var _lastSentTicker = "";
+  var _lastSentTime = 0;
+
+  function doSend(tk) {
+    if (!tk) return;
+    tk = String(tk).trim().toUpperCase();
+    var now = Date.now();
+    if (tk === _lastSentTicker && (now - _lastSentTime) < 600) return;
+    _lastSentTicker = tk;
+    _lastSentTime = now;
+    sendToStreamlit("streamlit:setComponentValue", {
+      value: {
+        ticker: tk,
+        ts: now
+      }
+    });
+  }
+
+  // 监听来自主窗口的点击通知
   window.addEventListener("message", function(e) {
     if (e.data && e.data.type === "record_tv_click" && e.data.ticker) {
-      sendToStreamlit("streamlit:setComponentValue", {
-        value: {
-          ticker: String(e.data.ticker).trim().toUpperCase(),
-          ts: Date.now(),
-          rnd: Math.random()
-        }
-      });
+      doSend(e.data.ticker);
     }
   });
 
-  // 直接在 parent window 暴露快换函数
+  // 直接在 parent window 暴露快捷函数
   try {
     window.parent.__sendTvClickToStreamlit = function(ticker) {
-      if (ticker) {
-        sendToStreamlit("streamlit:setComponentValue", {
-          value: {
-            ticker: String(ticker).trim().toUpperCase(),
-            ts: Date.now(),
-            rnd: Math.random()
-          }
-        });
-      }
+      doSend(ticker);
     };
   } catch(err) {}
 

@@ -1013,21 +1013,12 @@ def render_triple_pattern_page():
                             }
                         } catch(err) {}
 
-                        // 2. 通过 Streamlit 双向组件桥接器通知 Python 后台永久落盘
+                        // 2. 后台静默落盘通知（由 st.fragment 后台隔离接收，不触发整页刷新）
                         try {
                             if (window.parent && window.parent.__sendTvClickToStreamlit) {
                                 window.parent.__sendTvClickToStreamlit(tk);
-                            }
-                        } catch(err) {}
-                        try {
-                            window.parent.postMessage({ type: "record_tv_click", ticker: tk }, "*");
-                        } catch(err) {}
-                        try {
-                            var iframes = pDoc.querySelectorAll('iframe');
-                            for (var j = 0; j < iframes.length; j++) {
-                                try {
-                                    iframes[j].contentWindow.postMessage({ type: "record_tv_click", ticker: tk }, "*");
-                                } catch(err) {}
+                            } else {
+                                window.parent.postMessage({ type: "record_tv_click", ticker: tk }, "*");
                             }
                         } catch(err) {}
                     }

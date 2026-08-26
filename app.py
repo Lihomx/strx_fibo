@@ -225,9 +225,6 @@ _st_components.html(r"""<script>
                 var tk = tvBtn.getAttribute('data-ticker');
                 if (tk) {
                     tk = tk.trim().toUpperCase();
-                    var cbUrl = '/?_tv_click=' + encodeURIComponent(tk) + '&_cb=' + Date.now() + '_' + Math.floor(Math.random()*10000);
-                    try { fetch(cbUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
-                    try { if (navigator.sendBeacon) { navigator.sendBeacon(cbUrl); } } catch(err) {}
 
                     // 前台 DOM 瞬间更新该 ticker 的徽章
                     try {
@@ -252,21 +249,12 @@ _st_components.html(r"""<script>
                         }
                     } catch(err) {}
 
-                    // 1. 通过 Streamlit 双向组件桥接器通知 Python 后台永久落盘
+                    // 后台静默落盘通知（由 st.fragment 后台隔离接收，不触发整页刷新）
                     try {
                         if (window.parent && window.parent.__sendTvClickToStreamlit) {
                             window.parent.__sendTvClickToStreamlit(tk);
-                        }
-                    } catch(err) {}
-                    try {
-                        window.parent.postMessage({ type: "record_tv_click", ticker: tk }, "*");
-                    } catch(err) {}
-                    try {
-                        var iframes = pDoc.querySelectorAll('iframe');
-                        for (var j = 0; j < iframes.length; j++) {
-                            try {
-                                iframes[j].contentWindow.postMessage({ type: "record_tv_click", ticker: tk }, "*");
-                            } catch(err) {}
+                        } else {
+                            window.parent.postMessage({ type: "record_tv_click", ticker: tk }, "*");
                         }
                     } catch(err) {}
                 }
