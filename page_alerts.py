@@ -831,9 +831,9 @@ def render_alert_log_table(full_page: bool = True):
                 st.rerun()
         with col_btn2:
             auto_refresh = st.checkbox("⏱️ 开启自动检测刷新 (30s)", 
-                                       value=True, 
+                                       value=False, 
                                        key=f"alert_log_auto_refresh_chk_{'full' if full_page else 'tab'}",
-                                       help="每30秒自动检测并刷新最新的告警日志")
+                                       help="每30秒自动检测并刷新最新的告警日志（默认关闭，保持页面稳定不刷新）")
         with col_btn3:
             if st.button("🗑️ 清空日志", key=f"alert_log_clear_top_{'full' if full_page else 'tab'}", use_container_width=True):
                 storage.clear_alert_log()
@@ -842,10 +842,13 @@ def render_alert_log_table(full_page: bool = True):
         with col_btn4:
             pass
 
-        # 启用自动刷新
+        # 仅在用户主动勾选时启用自动刷新
         if auto_refresh:
-            from streamlit_autorefresh import st_autorefresh
-            st_autorefresh(interval=30000, key=f"alert_log_autorefresh_runner_{'full' if full_page else 'tab'}")
+            try:
+                from streamlit_autorefresh import st_autorefresh
+                st_autorefresh(interval=30000, key=f"alert_log_autorefresh_runner_{'full' if full_page else 'tab'}")
+            except Exception:
+                pass
 
         # ── 列表渲染 ─────────────────────────────────────────────────
         if df.empty:

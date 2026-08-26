@@ -139,6 +139,18 @@ div[data-testid="stSidebar"] .stButton>button:hover{background:var(--secondary-b
     .main .block-container { padding: 0.3rem 0.5rem 2rem !important; }
     h2 { font-size: 18px !important; }
     .stButton > button { font-size: 11px !important; padding: 5px 6px !important; }
+/* ── 彻底消除 Streamlit 执行/重载时的灰色蒙层与半透明闪烁 ── */
+.stApp[data-test-script-state="running"] > .main,
+.stApp[data-test-script-state="running"] {
+    opacity: 1 !important;
+    filter: none !important;
+}
+div[data-testid="stAppViewBlockContainer"] {
+    opacity: 1 !important;
+    filter: none !important;
+}
+div[data-testid="stStatusWidget"] {
+    visibility: hidden !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -1486,16 +1498,6 @@ def main():
                 st.session_state["prev_alert_log_ids"] = current_log_ids
     except Exception as e:
         pass
-
-    # ── 全局启用后台 25 秒轻量心跳轮询（保证有新告警时网页能自动发现并弹出通知） ──
-    try:
-        from streamlit_autorefresh import st_autorefresh
-        st_autorefresh(interval=25000, key="global_notification_autorefresh")
-    except Exception:
-        pass
-
-
-
 
     # ── 旧 Secrets 收藏夹恢复（兼容旧版本）────────────────────────
     if not st.session_state.get("_secrets_restored"):
