@@ -495,3 +495,177 @@ def scan_triple_patterns(
     # 最近的排在最前
     matches.sort(key=lambda m: (m.idx5, m.confidence), reverse=True)
     return matches
+
+
+# ----------------------------------------------------------------------
+# 7. 📈 周线收盘线双底 (Weekly Close-Line W-Bottom) 识别算法
+# ----------------------------------------------------------------------
+
+def find_swing_points_on_close(df: pd.DataFrame, window: int = 2) -> pd.DataFrame:
+    """在收盘价 (close) 序列上标记局部波谷与波峰，对齐 TradingView 收盘折线 (Line Chart) 模式"""
+    df = df.copy()
+    closes = df["close"].values
+    n = len(df)
+
+    is_low = np.zeros(n, dtype=bool)
+    is_high = np.zeros(n, dtype=bool)
+
+    for i in range(window, n - window):
+        local_slice = closes[i - window: i + window + 1]
+        if closes[i] == local_slice.min() and (local_slice == closes[i]).sum() == 1:
+            is_low[i] = True
+        if closes[i] == local_slice.max() and (local_slice == closes[i]).sum() == 1:
+            is_high[i] = True
+
+    df["is_swing_low"] = is_low
+    df["is_swing_high"] = is_high
+    return df
+
+
+def scan_w_bottom_patterns(
+    df: pd.DataFrame,
+    symbol: str = "",
+    period: str = "1w",
+    swing_window: int = 2,
+    lookback_bars: int = 150,
+    min_spacing: int = 2,
+    max_spacing: int = 50,
+) -> List[PatternMatch]:
+    """
+    基于收盘价折线 (Close Line Chart) 扫描周线双底 (W-Bottom) 形态：
+      - 刺穿假跌破型双底 (Failed Breakdown W-Bottom / Lower Low Trap)
+      - 抬高双底 (Higher Low W-Bottom)
+      - 持平双底 (Equal Low W-Bottom)
+    """
+    if df is None or len(df) < swing_window * 2 + 6:
+        return []
+
+    df = df.tail(lookback_bars).reset_index(drop=True)
+    df.columns = [str(c).lower() for c in df.columns]
+
+    df = find_swing_points_on_close(df, window=swing_window)
+    swing_low_idx = df.index[df["is_swing_low"]].tolist()
+
+    latest_close = float(df.loc[df.index[-1], "close"])
+    total_bars = len(df)
+
+    latest_vol = float(df.loc[df.index[-1], "volume"]) if "volume" in df.columns and len(df) > 0 and pd.notna(df.loc[df.index[-1], "volume"]) else 0.0
+    if "volume" in df.columns and len(df) > 0:
+        vol_slice = df["volume"].dropna().tail(20)
+        avg_vol_20 = float(vol_slice.mean()) if len(vol_slice) > 0 else latest_vol
+    else:
+        avg_vol_20 = 0.0
+    avg_turnover = round(avg_vol_20 * latest_close, 2)
+
+    matches: List[PatternMatch] = []
+
+    if len(swing_low_idx) >= 2:
+        for a in range(len(swing_low_idx) - 1):
+            i1, i3 = swing_low_idx[a], swing_low_idx[a + 1]
+            if not (min_spacing <= (i3 - i1) <= max_spacing):
+                continue
+
+            low1 = float(df.loc[i1, "close"])
+            low2 = float(df.loc[i3, "close"])
+
+            # 寻找两底之间的收盘价波峰 (颈线位)
+            seg_13 = df.loc[i1:i3, "close"]
+            i2 = int(seg_13.idxmax()) if len(seg_13) else i1 + (i3 - i1) // 2
+            neckline = float(df.loc[i2, "close"])
+
+            # 过滤无效或过度扁平的结构（颈线必须比两底高出至少 3%）
+            if neckline <= low1 * 1.03 or neckline <= low2 * 1.03:
+                continue
+
+            # 子形态判定
+            diff_pct = (low2 - low1) / max(low1, 1e-9)
+            if diff_pct < -0.015:
+                pattern_name = "周线假跌破双底 (W-Bottom)"
+                conf = 0.92
+                note = f"右底 (L2={low2:.2f}) 刺穿左底 (L1={low1:.2f}) 探底回升，经典空头陷阱/洗盘反转"
+            elif diff_pct > 0.015:
+                pattern_name = "周线抬高双底 (W-Bottom)"
+                conf = 0.90
+                note = f"右底 (L2={low2:.2f}) 显著高于左底 (L1={low1:.2f})，多头力量逐步增强"
+            else:
+                pattern_name = "周线持平双底 (W-Bottom)"
+                conf = 0.88
+                note = f"双底极度平齐 (L1={low1:.2f}, L2={low2:.2f})，筑造坚实双底支撑"
+
+            # 目标位与交易计划
+            lowest_point = min(low1, low2)
+            pattern_height = max(neckline - lowest_point, neckline * 0.01)
+
+            entry_price = round(low2, 3)
+            stop_loss = round(lowest_point * 0.99, 3)
+
+            # 斐波那契三段目标位 (对齐用户选定的大周期目标)
+            tp1 = round(neckline, 3)                                          # TP1: 突破颈线位 (100% 形态高度)
+            tp2 = round(neckline + pattern_height * 0.618, 3)                 # TP2: 1.618倍黄金扩展
+            tp3 = round(neckline + pattern_height * 1.0, 3)                   # TP3: 2.0倍对称倍幅目标
+
+            risk = max(entry_price - stop_loss, entry_price * 0.005)
+            reward1 = max(0.001, tp1 - entry_price)
+            reward2 = max(0.001, tp2 - entry_price)
+            reward3 = max(0.001, tp3 - entry_price)
+
+            rr_tp2 = round(reward2 / risk, 2)
+            rr_tp3 = round(reward3 / risk, 2)
+
+            # 状态判定
+            bars_since_p3 = int(total_bars - 1 - i3)
+            seg_post = df.loc[i3:]
+            has_broken_sup = bool((seg_post["close"] < lowest_point * 0.985).any())
+            has_broken_neck = bool((seg_post["close"] > neckline).any())
+
+            if has_broken_sup:
+                status = "invalidated"
+                status_reason = f"已失效：周线收盘跌破止损 {stop_loss:.2f}"
+            elif bars_since_p3 > 35:
+                status = "expired"
+                status_reason = f"已过期：形态后已有 {bars_since_p3} 周未达成目标"
+            elif has_broken_neck:
+                status = "confirmed"
+                status_reason = f"已突破确认：周收盘站上颈线 {neckline:.2f}，朝 TP2 ({tp2:.2f}) / TP3 ({tp3:.2f}) 推进"
+            else:
+                status = "active"
+                status_reason = f"右底蓄势中：周收盘在 {lowest_point:.2f} ~ {neckline:.2f} 企稳反弹"
+
+            # 跑势进度
+            if status == "confirmed":
+                breakout_progress = round(max(0.0, (latest_close - neckline) / pattern_height * 100), 1)
+            else:
+                breakout_progress = 0.0
+
+            matches.append(PatternMatch(
+                symbol=symbol,
+                direction="bullish",
+                pattern=pattern_name,
+                period=period,
+                idx1=i1, idx2=i2, idx3=i3, idx4=i2, idx5=i3,
+                pt1=round(low1, 3), pt2=round(neckline, 3), pt3=round(low2, 3), pt4=round(neckline, 3), pt5=round(low2, 3),
+                p1=round(low1, 3), p2=round(neckline, 3), p3=round(low2, 3),
+                neckline=round(neckline, 3),
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                tp1=tp1, tp2=tp2, tp3=tp3,
+                risk=round(risk, 3),
+                reward_tp1=round(reward1, 3),
+                reward_tp2=round(reward2, 3),
+                reward_tp3=round(reward3, 3),
+                risk_reward=rr_tp2,
+                rr_tp3=rr_tp3,
+                confidence=conf,
+                note=note,
+                status=status,
+                status_reason=status_reason,
+                bars_since_p5=bars_since_p3,
+                latest_close=round(latest_close, 3),
+                volume=round(latest_vol, 1),
+                avg_volume_20=round(avg_vol_20, 1),
+                turnover=avg_turnover,
+                breakout_progress=breakout_progress,
+            ))
+
+    matches.sort(key=lambda m: (m.idx5, m.confidence), reverse=True)
+    return matches

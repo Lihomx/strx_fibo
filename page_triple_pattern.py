@@ -626,17 +626,22 @@ def render_triple_pattern_page():
             on_change=_on_tp_dir_change,
         )
     with col_f2:
+        _PATT_OPTIONS = [
+            "全部形态",
+            "🌟 全部 W 双底形态 (W-Bottom)",
+            "🔥 周线假跌破双底 (刺穿探底拉回)",
+            "🚀 周线抬高双底 (强势多头)",
+            "⚓ 周线持平双底 (水平支撑)",
+            "完美形态 (Perfect)",
+            "头肩形态 (Head & Shoulders)",
+            "失败突破假破型 (Failed BO)",
+            "双顶底回调型 (Pullback)",
+            "楔形形态 (Wedge)",
+            "收敛三角形 (Triangle)"
+        ]
         st_patt = st.selectbox(
             "🏷️ 形态子类",
-            [
-                "全部形态",
-                "完美形态 (Perfect)",
-                "头肩形态 (Head & Shoulders)",
-                "失败突破假破型 (Failed BO)",
-                "双顶底回调型 (Pullback)",
-                "楔形形态 (Wedge)",
-                "收敛三角形 (Triangle)"
-            ],
+            _PATT_OPTIONS,
             index=0,
             key="tp_filter_pattern"
         )
@@ -702,7 +707,11 @@ def render_triple_pattern_page():
 
         # 形态子类过滤
         pname = r.get("pattern", "")
-        if st_patt == "完美形态 (Perfect)" and "完美" not in pname: continue
+        if st_patt == "🌟 全部 W 双底形态 (W-Bottom)" and ("双底" not in pname and "W-Bottom" not in pname): continue
+        elif st_patt == "🔥 周线假跌破双底 (刺穿探底拉回)" and "假跌破双底" not in pname: continue
+        elif st_patt == "🚀 周线抬高双底 (强势多头)" and "抬高双底" not in pname: continue
+        elif st_patt == "⚓ 周线持平双底 (水平支撑)" and "持平双底" not in pname: continue
+        elif st_patt == "完美形态 (Perfect)" and "完美" not in pname: continue
         elif st_patt == "头肩形态 (Head & Shoulders)" and "头肩" not in pname: continue
         elif st_patt == "失败突破假破型 (Failed BO)" and "失败突破" not in pname: continue
         elif st_patt == "双顶底回调型 (Pullback)" and "回调" not in pname: continue
@@ -974,8 +983,13 @@ def render_triple_pattern_page():
         rr_tp2 = r.get("risk_reward", round(abs(tp2_p - entry_p) / max(0.001, risk_pips), 2))
         rr_tp3 = r.get("rr_tp3", round(abs(tp3_p - entry_p) / max(0.001, risk_pips), 2))
 
+        is_w_bottom = ("双底" in patt_desc or "W-Bottom" in patt_desc)
+
         # 方向徽章
-        if direction == "bullish":
+        if is_w_bottom:
+            dir_badge = "<span style='font-size:12px;background:rgba(34,197,94,0.18);color:#4ade80;border:1px solid rgba(34,197,94,0.4);padding:2px 8px;border-radius:4px;font-weight:700;'>📈 周线双底 (W-Bottom)</span>"
+            p_lbls = ["1: 左底 (L1)", "2: 颈线 (Neckline)", "3: 右底 (L2/Entry)"]
+        elif direction == "bullish":
             dir_badge = "<span style='font-size:12px;background:rgba(34,197,94,0.18);color:#4ade80;border:1px solid rgba(34,197,94,0.4);padding:2px 8px;border-radius:4px;font-weight:700;'>🐂 看涨三重底 (Bullish)</span>"
             p_lbls = ["1: L1", "2: H1", "3: L2", "4: H2", "5: L3 (Entry)"]
         else:
@@ -984,7 +998,7 @@ def render_triple_pattern_page():
 
         # 状态与跑势进度徽章
         if status_val == "active":
-            status_badge = "<span style='font-size:12px;background:rgba(59,130,246,0.18);color:#93c5fd;border:1px solid rgba(59,130,246,0.4);padding:2px 8px;border-radius:4px;font-weight:700;'>👀 5点蓄势中 (0%)</span>"
+            status_badge = "<span style='font-size:12px;background:rgba(59,130,246,0.18);color:#93c5fd;border:1px solid rgba(59,130,246,0.4);padding:2px 8px;border-radius:4px;font-weight:700;'>👀 蓄势成型中 (0%)</span>" if is_w_bottom else "<span style='font-size:12px;background:rgba(59,130,246,0.18);color:#93c5fd;border:1px solid rgba(59,130,246,0.4);padding:2px 8px;border-radius:4px;font-weight:700;'>👀 5点蓄势中 (0%)</span>"
             bar_color = "#3b82f6"
             bar_width = 5
         elif status_val == "confirmed":
@@ -1100,33 +1114,64 @@ def render_triple_pattern_page():
                     <div>🔍 <b>跟踪观察</b>：{status_reason}</div>
                     <div style="color:#94a3b8; font-size:12px; margin-top:2px;">📝 <b>特征说明</b>：{note}</div>
                 </div>
-                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
-                    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);padding:3px 8px;border-radius:6px;font-size:11px;">{p_lbls[0]}: <b>{pt1:.3f}</b></div>
-                    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);padding:3px 8px;border-radius:6px;font-size:11px;">{p_lbls[1]}: <b>{pt2:.3f}</b></div>
-                    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);padding:3px 8px;border-radius:6px;font-size:11px;">{p_lbls[2]}: <b>{pt3:.3f}</b></div>
-                    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);padding:3px 8px;border-radius:6px;font-size:11px;">{p_lbls[3]}: <b>{pt4:.3f}</b></div>
-                    <div style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.4);padding:3px 8px;border-radius:6px;font-size:11px;color:#93c5fd;">{p_lbls[4]}: <b>{pt5:.3f}</b></div>
-                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+            # 点位展示
+            if is_w_bottom:
+                st.markdown(
+                    f"""
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+                        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);padding:3px 8px;border-radius:6px;font-size:11px;">{p_lbls[0]}: <b>{pt1:.3f}</b></div>
+                        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);padding:3px 8px;border-radius:6px;font-size:11px;">{p_lbls[1]}: <b>{pt2:.3f}</b></div>
+                        <div style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.4);padding:3px 8px;border-radius:6px;font-size:11px;color:#93c5fd;">{p_lbls[2]}: <b>{pt3:.3f}</b></div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+            else:
+                st.markdown(
+                    f"""
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+                        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);padding:3px 8px;border-radius:6px;font-size:11px;">{p_lbls[0]}: <b>{pt1:.3f}</b></div>
+                        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);padding:3px 8px;border-radius:6px;font-size:11px;">{p_lbls[1]}: <b>{pt2:.3f}</b></div>
+                        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);padding:3px 8px;border-radius:6px;font-size:11px;">{p_lbls[2]}: <b>{pt3:.3f}</b></div>
+                        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);padding:3px 8px;border-radius:6px;font-size:11px;">{p_lbls[3]}: <b>{pt4:.3f}</b></div>
+                        <div style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.4);padding:3px 8px;border-radius:6px;font-size:11px;color:#93c5fd;">{p_lbls[4]}: <b>{pt5:.3f}</b></div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+            # 交易计划
+            entry_lbl = "🎯 Entry (右底进场)" if is_w_bottom else "🎯 Entry Point (5)"
+            tp1_lbl = "🏁 TP1 (颈线突破)" if is_w_bottom else "🏁 TP1 (61.8% Fibo)"
+            tp2_lbl = "🎯 TP2 (100% 颈线)" if is_w_bottom else "🎯 TP2 (100% 颈线)"
+            tp3_lbl = "🚀 TP3 (161.8% 黄金)" if is_w_bottom else "🚀 TP3 (161.8% 黄金)"
+
+            st.markdown(
+                f"""
                 <div class="tp-plan-box">
                     <div class="tp-plan-item">
-                        <span class="tp-plan-label">🎯 Entry Point (5)</span>
+                        <span class="tp-plan-label">{entry_lbl}</span>
                         <span class="tp-plan-val" style="color:#38bdf8;">{entry_p:.3f}</span>
                     </div>
                     <div class="tp-plan-item">
-                        <span class="tp-plan-label">🛡️ Stop Loss (粉色区)</span>
+                        <span class="tp-plan-label">🛡️ Stop Loss (止损位)</span>
                         <span class="tp-plan-val" style="color:#f43f5e;">{sl_p:.3f} <span style="font-size:10px;color:#94a3b8;">({risk_pips:.3f})</span></span>
                     </div>
                     <div class="tp-plan-item">
-                        <span class="tp-plan-label">🏁 TP1 (61.8% Fibo)</span>
+                        <span class="tp-plan-label">{tp1_lbl}</span>
                         <span class="tp-plan-val" style="color:#22c55e;">{tp1_p:.3f} <span style="font-size:10px;color:#86efac;">(1:{rr_tp1})</span></span>
                     </div>
                     <div class="tp-plan-item">
-                        <span class="tp-plan-label">🎯 TP2 (100% 颈线)</span>
+                        <span class="tp-plan-label">{tp2_lbl}</span>
                         <span class="tp-plan-val" style="color:#10b981;">{tp2_p:.3f} <span style="font-size:10px;color:#86efac;">(1:{rr_tp2})</span></span>
                     </div>
                     <div class="tp-plan-item">
-                        <span class="tp-plan-label">🚀 TP3 (161.8% 黄金)</span>
-                        <span class="tp-plan-val" style="color:#a855f7;">{tp3_p:.3f} <span style="font-size:10px;color:#d8b4fe;">(1:{rr_tp3})</span></span>
+                        <span class="tp-plan-label">{tp3_lbl}</span>
+                        <span class="tp-plan-val" style="color:#34d399;">{tp3_p:.3f} <span style="font-size:10px;color:#86efac;">(1:{rr_tp3})</span></span>
                     </div>
                 </div>
                 """,

@@ -420,6 +420,149 @@ def scan_patterns(df, symbol="", period="1d", swing_window=3, lookback_bars=150,
 
     return results
 
+def find_swing_points_on_close(df, window=2):
+    df = df.copy()
+    closes = df["close"].values
+    n = len(df)
+    is_low = np.zeros(n, dtype=bool)
+    is_high = np.zeros(n, dtype=bool)
+    for i in range(window, n - window):
+        local_slice = closes[i - window: i + window + 1]
+        if closes[i] == local_slice.min() and (local_slice == closes[i]).sum() == 1:
+            is_low[i] = True
+        if closes[i] == local_slice.max() and (local_slice == closes[i]).sum() == 1:
+            is_high[i] = True
+    df["is_swing_low"] = is_low
+    df["is_swing_high"] = is_high
+    return df
+
+def scan_w_bottom_patterns(df, symbol="", period="1w", swing_window=2, lookback_bars=150, min_spacing=2, max_spacing=50):
+    if len(df) < swing_window * 2 + 6:
+        return []
+
+    df = df.tail(lookback_bars).reset_index(drop=True)
+    df.columns = [str(c).lower() for c in df.columns]
+    df = find_swing_points_on_close(df, window=swing_window)
+    swing_low_idx = df.index[df["is_swing_low"]].tolist()
+
+    latest_close = float(df.loc[df.index[-1], "close"])
+    total_bars = len(df)
+
+    latest_vol = float(df.loc[df.index[-1], "volume"]) if "volume" in df.columns and len(df) > 0 and pd.notna(df.loc[df.index[-1], "volume"]) else 0.0
+    if "volume" in df.columns and len(df) > 0:
+        vol_slice = df["volume"].dropna().tail(20)
+        avg_vol_20 = float(vol_slice.mean()) if len(vol_slice) > 0 else latest_vol
+    else:
+        avg_vol_20 = 0.0
+    avg_turnover = round(avg_vol_20 * latest_close, 2)
+
+    results = []
+    if len(swing_low_idx) >= 2:
+        for a in range(len(swing_low_idx) - 1):
+            i1, i3 = swing_low_idx[a], swing_low_idx[a + 1]
+            if not (min_spacing <= (i3 - i1) <= max_spacing):
+                continue
+
+            low1 = float(df.loc[i1, "close"])
+            low2 = float(df.loc[i3, "close"])
+
+            seg_13 = df.loc[i1:i3, "close"]
+            i2 = int(seg_13.idxmax()) if len(seg_13) else i1 + (i3 - i1) // 2
+            neckline = float(df.loc[i2, "close"])
+
+            if neckline <= low1 * 1.03 or neckline <= low2 * 1.03:
+                continue
+
+            diff_pct = (low2 - low1) / max(low1, 1e-9)
+            if diff_pct < -0.015:
+                pattern_name = "周线假跌破双底 (W-Bottom)"
+                conf = 0.92
+                note = f"右底 (L2={{low2:.2f}}) 刺穿左底 (L1={{low1:.2f}}) 探底回升，经典空头陷阱/洗盘反转"
+            elif diff_pct > 0.015:
+                pattern_name = "周线抬高双底 (W-Bottom)"
+                conf = 0.90
+                note = f"右底 (L2={{low2:.2f}}) 显著高于左底 (L1={{low1:.2f}})，多头力量逐步增强"
+            else:
+                pattern_name = "周线持平双底 (W-Bottom)"
+                conf = 0.88
+                note = f"双底极度平齐 (L1={{low1:.2f}}, L2={{low2:.2f}})，筑造坚实双底支撑"
+
+            lowest_point = min(low1, low2)
+            pattern_height = max(neckline - lowest_point, neckline * 0.01)
+
+            entry = round(low2, 3)
+            sl = round(lowest_point * 0.99, 3)
+
+            tp1 = round(neckline, 3)
+            tp2 = round(neckline + pattern_height * 0.618, 3)
+            tp3 = round(neckline + pattern_height * 1.0, 3)
+
+            risk = max(entry - sl, entry * 0.005)
+            reward1 = max(0.001, tp1 - entry)
+            reward2 = max(0.001, tp2 - entry)
+            reward3 = max(0.001, tp3 - entry)
+
+            rr_tp2 = round(reward2 / risk, 2)
+            rr_tp3 = round(reward3 / risk, 2)
+
+            bars_since = int(total_bars - 1 - i3)
+            seg_post = df.loc[i3:]
+            has_broken_sup = bool((seg_post["close"] < lowest_point * 0.985).any())
+            has_broken_neck = bool((seg_post["close"] > neckline).any())
+
+            if has_broken_sup:
+                status = "invalidated"
+                reason = f"已失效：周线收盘跌破止损 {{sl:.2f}}"
+            elif bars_since > 35:
+                status = "expired"
+                reason = f"已过期：形态后已有 {{bars_since}} 周未达成目标"
+            elif has_broken_neck:
+                status = "confirmed"
+                reason = f"已突破确认：周收盘站上颈线 {{neckline:.2f}}，朝 TP2 ({{tp2:.2f}}) / TP3 ({{tp3:.2f}}) 推进"
+            else:
+                status = "active"
+                reason = f"右底蓄势中：周收盘在 {{lowest_point:.2f}} ~ {{neckline:.2f}} 企稳反弹"
+
+            if status == "confirmed":
+                breakout_progress = round(max(0.0, (latest_close - neckline) / pattern_height * 100), 1)
+            else:
+                breakout_progress = 0.0
+
+            if status in ("active", "confirmed"):
+                results.append({{
+                    "symbol": symbol,
+                    "direction": "bullish",
+                    "pattern": pattern_name,
+                    "period": period,
+                    "confidence": round(float(conf), 4),
+                    "idx1": int(i1), "idx2": int(i2), "idx3": int(i3), "idx4": int(i2), "idx5": int(i3),
+                    "pt1": round(low1, 4), "pt2": round(neckline, 4), "pt3": round(low2, 4), "pt4": round(neckline, 4), "pt5": round(low2, 4),
+                    "p1": round(low1, 4), "p2": round(neckline, 4), "p3": round(low2, 4),
+                    "neckline": round(neckline, 4),
+                    "entry_price": entry,
+                    "stop_loss": sl,
+                    "tp1": tp1,
+                    "tp2": tp2,
+                    "tp3": tp3,
+                    "risk": round(risk, 4),
+                    "reward_tp1": round(reward1, 4),
+                    "reward_tp2": round(reward2, 4),
+                    "reward_tp3": round(reward3, 4),
+                    "risk_reward": rr_tp2,
+                    "rr_tp3": rr_tp3,
+                    "note": note,
+                    "status": status,
+                    "status_reason": reason,
+                    "bars_since_p5": bars_since,
+                    "latest_close": round(latest_close, 4),
+                    "volume": round(latest_vol, 1),
+                    "avg_volume_20": round(avg_vol_20, 1),
+                    "turnover": avg_turnover,
+                    "breakout_progress": breakout_progress,
+                }})
+
+    return results
+
 
 # ------------------------------------------------------------------------------
 # 🚀 批量多周期超高速并发扫描
@@ -511,7 +654,7 @@ def _scan_single_ticker(ticker):
                     m["scan_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     results.append(m)
 
-        # 2. 周线 (1w)
+        # 2. 周线 (1w) - 三重顶底 + 周线收盘线双底 (W-Bottom)
         if "1w" in TIMEFRAMES:
             df_weekly = _resample_ohlc(df_daily, 'W')
             if df_weekly is not None and len(df_weekly) >= 30:
@@ -526,6 +669,19 @@ def _scan_single_ticker(ticker):
                     break_tol=BREAK_TOL,
                 )
                 for m in matches_1w:
+                    if m["confidence"] >= MIN_CONFIDENCE:
+                        m["scan_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        results.append(m)
+
+                # 📈 周线收盘折线双底识别 (Weekly Close-Line W-Bottom)
+                matches_w_bottom = scan_w_bottom_patterns(
+                    df_weekly.tail(260),
+                    symbol=ticker,
+                    period="1w",
+                    swing_window=2,
+                    lookback_bars=150,
+                )
+                for m in matches_w_bottom:
                     if m["confidence"] >= MIN_CONFIDENCE:
                         m["scan_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         results.append(m)
