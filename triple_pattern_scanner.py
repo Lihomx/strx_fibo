@@ -526,28 +526,28 @@ def scan_w_bottom_patterns(
     df: pd.DataFrame,
     symbol: str = "",
     period: str = "1w",
-    swing_window: int = 2,
+    min_span_weeks: int = 2,
+    max_span_weeks: int = 8,
+    max_bars_since: int = 6,
     lookback_bars: int = 150,
-    min_spacing: int = 2,
-    max_spacing: int = 50,
 ) -> List[PatternMatch]:
     """
-    基于收盘价折线 (Close Line Chart) 扫描周线双底 (W-Bottom) 形态：
-      - 刺穿假跌破型双底 (Failed Breakdown W-Bottom / Lower Low Trap)
-      - 抬高双底 (Higher Low W-Bottom)
-      - 持平双底 (Equal Low W-Bottom)
+    基于周线收盘价折线 (Weekly Close-Line) 扫描 1~2 个月内的紧凑型周线 W 底形态：
+      - 时间跨度：两底间距严格限制在 2 ~ 8 根周 K 线（约 0.5 ~ 2 个月）
+      - 形态新鲜度：右底 L2 距今不超过 6 周（蓄势中或刚突破）
+      - 子形态：
+        * 🔥 周线假跌破双底 (1-2月刺穿探底拉回): 右底 L2 刺穿跌破 L1（空头陷阱反转，如 MRVL）
+        * 🚀 周线抬高双底 (1-2月强势多头): 右底 L2 明显高于 L1（强势逐级抬升，如 600547）
+        * ⚓ 周线持平双底 (1-2月水平支撑): 双底水平极度平齐
     """
-    if df is None or len(df) < swing_window * 2 + 6:
+    if df is None or len(df) < 15:
         return []
 
     df = df.tail(lookback_bars).reset_index(drop=True)
     df.columns = [str(c).lower() for c in df.columns]
-
-    df = find_swing_points_on_close(df, window=swing_window)
-    swing_low_idx = df.index[df["is_swing_low"]].tolist()
-
-    latest_close = float(df.loc[df.index[-1], "close"])
-    total_bars = len(df)
+    closes = df["close"].values
+    n = len(closes)
+    latest_close = float(closes[-1])
 
     latest_vol = float(df.loc[df.index[-1], "volume"]) if "volume" in df.columns and len(df) > 0 and pd.notna(df.loc[df.index[-1], "volume"]) else 0.0
     if "volume" in df.columns and len(df) > 0:
@@ -557,52 +557,53 @@ def scan_w_bottom_patterns(
         avg_vol_20 = 0.0
     avg_turnover = round(avg_vol_20 * latest_close, 2)
 
-    matches: List[PatternMatch] = []
+    candidates = []
 
-    if len(swing_low_idx) >= 2:
-        for a in range(len(swing_low_idx) - 1):
-            i1, i3 = swing_low_idx[a], swing_low_idx[a + 1]
-            if not (min_spacing <= (i3 - i1) <= max_spacing):
+    for i3 in range(max(2, n - max_bars_since), n):
+        low2 = float(closes[i3])
+        for i1 in range(max(0, i3 - max_span_weeks), i3 - min_span_weeks + 1):
+            low1 = float(closes[i1])
+            sub = closes[i1 + 1:i3]
+            if len(sub) == 0:
+                continue
+            peak_offset = int(np.argmax(sub)) + 1
+            i2 = i1 + peak_offset
+            neckline = float(closes[i2])
+
+            if neckline <= low1 * 1.025 or neckline <= low2 * 1.025:
                 continue
 
-            low1 = float(df.loc[i1, "close"])
-            low2 = float(df.loc[i3, "close"])
+            is_l1_min = (i1 == 0 or low1 <= closes[i1 - 1] * 1.005) and (low1 < neckline)
+            is_l2_min = (low2 < neckline) and (i3 == n - 1 or low2 <= closes[i3 + 1] * 1.005 or closes[-1] > low2)
 
-            # 寻找两底之间的收盘价波峰 (颈线位)
-            seg_13 = df.loc[i1:i3, "close"]
-            i2 = int(seg_13.idxmax()) if len(seg_13) else i1 + (i3 - i1) // 2
-            neckline = float(df.loc[i2, "close"])
-
-            # 过滤无效或过度扁平的结构（颈线必须比两底高出至少 3%）
-            if neckline <= low1 * 1.03 or neckline <= low2 * 1.03:
+            if not (is_l1_min and is_l2_min):
                 continue
 
-            # 子形态判定
+            span_weeks = i3 - i1
             diff_pct = (low2 - low1) / max(low1, 1e-9)
-            if diff_pct < -0.015:
-                pattern_name = "周线假跌破双底 (W-Bottom)"
-                conf = 0.92
-                note = f"右底 (L2={low2:.2f}) 刺穿左底 (L1={low1:.2f}) 探底回升，经典空头陷阱/洗盘反转"
-            elif diff_pct > 0.015:
-                pattern_name = "周线抬高双底 (W-Bottom)"
-                conf = 0.90
-                note = f"右底 (L2={low2:.2f}) 显著高于左底 (L1={low1:.2f})，多头力量逐步增强"
-            else:
-                pattern_name = "周线持平双底 (W-Bottom)"
-                conf = 0.88
-                note = f"双底极度平齐 (L1={low1:.2f}, L2={low2:.2f})，筑造坚实双底支撑"
 
-            # 目标位与交易计划
+            if diff_pct < -0.005:
+                pattern_name = "周线假跌破双底 (1-2月刺穿探底)"
+                conf = 0.94
+                note = f"1~2个月紧凑W底：右底 ({low2:.2f}) 刺穿左底 ({low1:.2f}) 探底强力拉回，典型洗盘假破"
+            elif diff_pct > 0.01:
+                pattern_name = "周线抬高双底 (1-2月强势多头)"
+                conf = 0.92
+                note = f"1~2个月紧凑W底：右底 ({low2:.2f}) 高于左底 ({low1:.2f})，多头强势逐级抬升"
+            else:
+                pattern_name = "周线持平双底 (1-2月水平支撑)"
+                conf = 0.90
+                note = f"1~2个月紧凑W底：双底在 {low1:.2f} 水平支撑位极度平齐"
+
             lowest_point = min(low1, low2)
             pattern_height = max(neckline - lowest_point, neckline * 0.01)
 
             entry_price = round(low2, 3)
             stop_loss = round(lowest_point * 0.99, 3)
 
-            # 斐波那契三段目标位 (对齐用户选定的大周期目标)
-            tp1 = round(neckline, 3)                                          # TP1: 突破颈线位 (100% 形态高度)
-            tp2 = round(neckline + pattern_height * 0.618, 3)                 # TP2: 1.618倍黄金扩展
-            tp3 = round(neckline + pattern_height * 1.0, 3)                   # TP3: 2.0倍对称倍幅目标
+            tp1 = round(neckline, 3)
+            tp2 = round(neckline + pattern_height * 0.618, 3)
+            tp3 = round(neckline + pattern_height * 1.0, 3)
 
             risk = max(entry_price - stop_loss, entry_price * 0.005)
             reward1 = max(0.001, tp1 - entry_price)
@@ -612,32 +613,29 @@ def scan_w_bottom_patterns(
             rr_tp2 = round(reward2 / risk, 2)
             rr_tp3 = round(reward3 / risk, 2)
 
-            # 状态判定
-            bars_since_p3 = int(total_bars - 1 - i3)
-            seg_post = df.loc[i3:]
-            has_broken_sup = bool((seg_post["close"] < lowest_point * 0.985).any())
-            has_broken_neck = bool((seg_post["close"] > neckline).any())
+            bars_since_p3 = int(n - 1 - i3)
+            seg_post = closes[i3:]
+            has_broken_sup = bool((seg_post < lowest_point * 0.985).any())
+            has_broken_neck = bool((seg_post > neckline).any())
 
             if has_broken_sup:
                 status = "invalidated"
                 status_reason = f"已失效：周线收盘跌破止损 {stop_loss:.2f}"
-            elif bars_since_p3 > 35:
-                status = "expired"
-                status_reason = f"已过期：形态后已有 {bars_since_p3} 周未达成目标"
             elif has_broken_neck:
                 status = "confirmed"
-                status_reason = f"已突破确认：周收盘站上颈线 {neckline:.2f}，朝 TP2 ({tp2:.2f}) / TP3 ({tp3:.2f}) 推进"
+                status_reason = f"已突破确认：周收盘站上颈线 {neckline:.2f}，跨度 {span_weeks} 周 (约{span_weeks/4.3:.1f}个月)"
             else:
                 status = "active"
-                status_reason = f"右底蓄势中：周收盘在 {lowest_point:.2f} ~ {neckline:.2f} 企稳反弹"
+                status_reason = f"右底蓄势中：周收盘在 {lowest_point:.2f} ~ {neckline:.2f} 企稳，跨度 {span_weeks} 周"
 
-            # 跑势进度
             if status == "confirmed":
                 breakout_progress = round(max(0.0, (latest_close - neckline) / pattern_height * 100), 1)
             else:
                 breakout_progress = 0.0
 
-            matches.append(PatternMatch(
+            score = conf * 10.0 + (pattern_height / neckline) * 20.0 - (span_weeks * 0.5)
+
+            candidates.append((score, PatternMatch(
                 symbol=symbol,
                 direction="bullish",
                 pattern=pattern_name,
@@ -665,7 +663,15 @@ def scan_w_bottom_patterns(
                 avg_volume_20=round(avg_vol_20, 1),
                 turnover=avg_turnover,
                 breakout_progress=breakout_progress,
-            ))
+            )))
 
-    matches.sort(key=lambda m: (m.idx5, m.confidence), reverse=True)
-    return matches
+    candidates.sort(key=lambda x: (x[1].status == "confirmed", x[0]), reverse=True)
+    deduped = []
+    used_i3 = set()
+    for sc, pm in candidates:
+        if pm.idx3 not in used_i3:
+            used_i3.add(pm.idx3)
+            deduped.append(pm)
+            if len(deduped) >= 2:
+                break
+    return deduped

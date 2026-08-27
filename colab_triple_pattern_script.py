@@ -436,17 +436,15 @@ def find_swing_points_on_close(df, window=2):
     df["is_swing_high"] = is_high
     return df
 
-def scan_w_bottom_patterns(df, symbol="", period="1w", swing_window=2, lookback_bars=150, min_spacing=2, max_spacing=50):
-    if len(df) < swing_window * 2 + 6:
+def scan_w_bottom_patterns(df, symbol="", period="1w", min_span_weeks=2, max_span_weeks=8, max_bars_since=6, lookback_bars=150):
+    if len(df) < 15:
         return []
 
     df = df.tail(lookback_bars).reset_index(drop=True)
     df.columns = [str(c).lower() for c in df.columns]
-    df = find_swing_points_on_close(df, window=swing_window)
-    swing_low_idx = df.index[df["is_swing_low"]].tolist()
-
-    latest_close = float(df.loc[df.index[-1], "close"])
-    total_bars = len(df)
+    closes = df["close"].values
+    n = len(closes)
+    latest_close = float(closes[-1])
 
     latest_vol = float(df.loc[df.index[-1], "volume"]) if "volume" in df.columns and len(df) > 0 and pd.notna(df.loc[df.index[-1], "volume"]) else 0.0
     if "volume" in df.columns and len(df) > 0:
@@ -456,36 +454,43 @@ def scan_w_bottom_patterns(df, symbol="", period="1w", swing_window=2, lookback_
         avg_vol_20 = 0.0
     avg_turnover = round(avg_vol_20 * latest_close, 2)
 
-    results = []
-    if len(swing_low_idx) >= 2:
-        for a in range(len(swing_low_idx) - 1):
-            i1, i3 = swing_low_idx[a], swing_low_idx[a + 1]
-            if not (min_spacing <= (i3 - i1) <= max_spacing):
+    candidates = []
+
+    for i3 in range(max(2, n - max_bars_since), n):
+        low2 = float(closes[i3])
+        for i1 in range(max(0, i3 - max_span_weeks), i3 - min_span_weeks + 1):
+            low1 = float(closes[i1])
+            sub = closes[i1 + 1:i3]
+            if len(sub) == 0:
+                continue
+            peak_offset = int(np.argmax(sub)) + 1
+            i2 = i1 + peak_offset
+            neckline = float(closes[i2])
+
+            if neckline <= low1 * 1.025 or neckline <= low2 * 1.025:
                 continue
 
-            low1 = float(df.loc[i1, "close"])
-            low2 = float(df.loc[i3, "close"])
+            is_l1_min = (i1 == 0 or low1 <= closes[i1 - 1] * 1.005) and (low1 < neckline)
+            is_l2_min = (low2 < neckline) and (i3 == n - 1 or low2 <= closes[i3 + 1] * 1.005 or closes[-1] > low2)
 
-            seg_13 = df.loc[i1:i3, "close"]
-            i2 = int(seg_13.idxmax()) if len(seg_13) else i1 + (i3 - i1) // 2
-            neckline = float(df.loc[i2, "close"])
-
-            if neckline <= low1 * 1.03 or neckline <= low2 * 1.03:
+            if not (is_l1_min and is_l2_min):
                 continue
 
+            span_weeks = i3 - i1
             diff_pct = (low2 - low1) / max(low1, 1e-9)
-            if diff_pct < -0.015:
-                pattern_name = "周线假跌破双底 (W-Bottom)"
+
+            if diff_pct < -0.005:
+                pattern_name = "周线假跌破双底 (1-2月刺穿探底)"
+                conf = 0.94
+                note = f"1~2个月紧凑W底：右底 ({{low2:.2f}}) 刺穿左底 ({{low1:.2f}}) 探底强力拉回，典型洗盘假破"
+            elif diff_pct > 0.01:
+                pattern_name = "周线抬高双底 (1-2月强势多头)"
                 conf = 0.92
-                note = f"右底 (L2={{low2:.2f}}) 刺穿左底 (L1={{low1:.2f}}) 探底回升，经典空头陷阱/洗盘反转"
-            elif diff_pct > 0.015:
-                pattern_name = "周线抬高双底 (W-Bottom)"
-                conf = 0.90
-                note = f"右底 (L2={{low2:.2f}}) 显著高于左底 (L1={{low1:.2f}})，多头力量逐步增强"
+                note = f"1~2个月紧凑W底：右底 ({{low2:.2f}}) 高于左底 ({{low1:.2f}})，多头强势逐级抬升"
             else:
-                pattern_name = "周线持平双底 (W-Bottom)"
-                conf = 0.88
-                note = f"双底极度平齐 (L1={{low1:.2f}}, L2={{low2:.2f}})，筑造坚实双底支撑"
+                pattern_name = "周线持平双底 (1-2月水平支撑)"
+                conf = 0.90
+                note = f"1~2个月紧凑W底：双底在 {{low1:.2f}} 水平支撑位极度平齐"
 
             lowest_point = min(low1, low2)
             pattern_height = max(neckline - lowest_point, neckline * 0.01)
@@ -505,23 +510,20 @@ def scan_w_bottom_patterns(df, symbol="", period="1w", swing_window=2, lookback_
             rr_tp2 = round(reward2 / risk, 2)
             rr_tp3 = round(reward3 / risk, 2)
 
-            bars_since = int(total_bars - 1 - i3)
-            seg_post = df.loc[i3:]
-            has_broken_sup = bool((seg_post["close"] < lowest_point * 0.985).any())
-            has_broken_neck = bool((seg_post["close"] > neckline).any())
+            bars_since = int(n - 1 - i3)
+            seg_post = closes[i3:]
+            has_broken_sup = bool((seg_post < lowest_point * 0.985).any())
+            has_broken_neck = bool((seg_post > neckline).any())
 
             if has_broken_sup:
                 status = "invalidated"
                 reason = f"已失效：周线收盘跌破止损 {{sl:.2f}}"
-            elif bars_since > 35:
-                status = "expired"
-                reason = f"已过期：形态后已有 {{bars_since}} 周未达成目标"
             elif has_broken_neck:
                 status = "confirmed"
-                reason = f"已突破确认：周收盘站上颈线 {{neckline:.2f}}，朝 TP2 ({{tp2:.2f}}) / TP3 ({{tp3:.2f}}) 推进"
+                reason = f"已突破确认：周收盘站上颈线 {{neckline:.2f}}，跨度 {{span_weeks}} 周 (约{{span_weeks/4.3:.1f}}个月)"
             else:
                 status = "active"
-                reason = f"右底蓄势中：周收盘在 {{lowest_point:.2f}} ~ {{neckline:.2f}} 企稳反弹"
+                reason = f"右底蓄势中：周收盘在 {{lowest_point:.2f}} ~ {{neckline:.2f}} 企稳，跨度 {{span_weeks}} 周"
 
             if status == "confirmed":
                 breakout_progress = round(max(0.0, (latest_close - neckline) / pattern_height * 100), 1)
@@ -529,7 +531,8 @@ def scan_w_bottom_patterns(df, symbol="", period="1w", swing_window=2, lookback_
                 breakout_progress = 0.0
 
             if status in ("active", "confirmed"):
-                results.append({{
+                score = conf * 10.0 + (pattern_height / neckline) * 20.0 - (span_weeks * 0.5)
+                candidates.append((score, {{
                     "symbol": symbol,
                     "direction": "bullish",
                     "pattern": pattern_name,
@@ -559,9 +562,18 @@ def scan_w_bottom_patterns(df, symbol="", period="1w", swing_window=2, lookback_
                     "avg_volume_20": round(avg_vol_20, 1),
                     "turnover": avg_turnover,
                     "breakout_progress": breakout_progress,
-                }})
+                }}))
 
-    return results
+    candidates.sort(key=lambda x: (x[1]["status"] == "confirmed", x[0]), reverse=True)
+    deduped = []
+    used_i3 = set()
+    for sc, pm in candidates:
+        if pm["idx3"] not in used_i3:
+            used_i3.add(pm["idx3"])
+            deduped.append(pm)
+            if len(deduped) >= 2:
+                break
+    return deduped
 
 
 # ------------------------------------------------------------------------------

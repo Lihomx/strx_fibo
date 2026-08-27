@@ -628,10 +628,10 @@ def render_triple_pattern_page():
     with col_f2:
         _PATT_OPTIONS = [
             "全部形态",
-            "🌟 全部 W 双底形态 (W-Bottom)",
-            "🔥 周线假跌破双底 (刺穿探底拉回)",
-            "🚀 周线抬高双底 (强势多头)",
-            "⚓ 周线持平双底 (水平支撑)",
+            "🌟 全部 1~2个月周线 W 底 (W-Bottom)",
+            "🔥 周线假跌破双底 (1-2月刺穿探底)",
+            "🚀 周线抬高双底 (1-2月强势多头)",
+            "⚓ 周线持平双底 (1-2月水平支撑)",
             "完美形态 (Perfect)",
             "头肩形态 (Head & Shoulders)",
             "失败突破假破型 (Failed BO)",
@@ -707,10 +707,11 @@ def render_triple_pattern_page():
 
         # 形态子类过滤
         pname = r.get("pattern", "")
-        if st_patt == "🌟 全部 W 双底形态 (W-Bottom)" and ("双底" not in pname and "W-Bottom" not in pname): continue
-        elif st_patt == "🔥 周线假跌破双底 (刺穿探底拉回)" and "假跌破双底" not in pname: continue
-        elif st_patt == "🚀 周线抬高双底 (强势多头)" and "抬高双底" not in pname: continue
-        elif st_patt == "⚓ 周线持平双底 (水平支撑)" and "持平双底" not in pname: continue
+        if "W 底" in st_patt or "W-Bottom" in st_patt:
+            if "双底" not in pname and "W-Bottom" not in pname: continue
+        elif "假跌破双底" in st_patt and "假跌破双底" not in pname: continue
+        elif "抬高双底" in st_patt and "抬高双底" not in pname: continue
+        elif "持平双底" in st_patt and "持平双底" not in pname: continue
         elif st_patt == "完美形态 (Perfect)" and "完美" not in pname: continue
         elif st_patt == "头肩形态 (Head & Shoulders)" and "头肩" not in pname: continue
         elif st_patt == "失败突破假破型 (Failed BO)" and "失败突破" not in pname: continue
