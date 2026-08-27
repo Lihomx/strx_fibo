@@ -288,7 +288,24 @@ def render_triple_pattern_page():
     }
     _VOL_REVERSE_MAP = {v: k for k, v in _VOL_URL_MAP.items()}
 
-    # ── 从 URL 参数恢复「形态方向」、「排序方式」与「成交量过滤」状态 ──
+    _TIME_OPTIONS = [
+        "🌟 近 2 个月内成型 (≤8周 · 推荐)",
+        "🔥 近 1 个月内成型 (≤4周)",
+        "⏱️ 近 3 个月内成型 (≤12周)",
+        "🗓️ 近半年内成型 (≤26周)",
+        "全部时间 (不限制)"
+    ]
+
+    _TIME_URL_MAP = {
+        "2m":  "🌟 近 2 个月内成型 (≤8周 · 推荐)",
+        "1m":  "🔥 近 1 个月内成型 (≤4周)",
+        "3m":  "⏱️ 近 3 个月内成型 (≤12周)",
+        "6m":  "🗓️ 近半年内成型 (≤26周)",
+        "all": "全部时间 (不限制)"
+    }
+    _TIME_REVERSE_MAP = {v: k for k, v in _TIME_URL_MAP.items()}
+
+    # ── 从 URL 参数恢复「形态方向」、「排序方式」、「成交量过滤」与「形态时效」状态 ──
     _url_dir_raw = str(st.query_params.get("_dir", "")).strip().lower()
     if _url_dir_raw in _DIR_URL_MAP:
         _desired_dir = _DIR_URL_MAP[_url_dir_raw]
@@ -306,6 +323,14 @@ def render_triple_pattern_page():
         _desired_vol = _VOL_URL_MAP[_url_vol_raw]
         if st.session_state.get("tp_filter_volume") != _desired_vol:
             st.session_state["tp_filter_volume"] = _desired_vol
+
+    _url_time_raw = str(st.query_params.get("_time", "")).strip().lower()
+    if _url_time_raw in _TIME_URL_MAP:
+        _desired_time = _TIME_URL_MAP[_url_time_raw]
+        if st.session_state.get("tp_filter_time") != _desired_time:
+            st.session_state["tp_filter_time"] = _desired_time
+    elif "tp_filter_time" not in st.session_state:
+        st.session_state["tp_filter_time"] = _TIME_OPTIONS[0]
 
     # ── 1. 顶部标题与形态总体统计 ──
     st.markdown(
@@ -615,6 +640,24 @@ def render_triple_pattern_page():
         except Exception:
             pass
 
+    def _on_tp_time_change():
+        _val = st.session_state.get("tp_filter_time", _TIME_OPTIONS[0])
+        _k = _TIME_REVERSE_MAP.get(_val, "2m")
+        try:
+            _qp = dict(st.query_params)
+            if "_p" in _qp:
+                del _qp["_p"]
+            if _k != "2m":
+                _qp["_time"] = _k
+            else:
+                _qp.pop("_time", None)
+            _qp["_p"] = "1"
+            st.query_params.clear()
+            st.query_params.update(_qp)
+            st.session_state.tp_current_page = 1
+        except Exception:
+            pass
+
     with col_f1:
         _cur_dir_val = st.session_state.get("tp_filter_direction", "全部方向")
         _cur_dir_idx = ["全部方向", "🐂 仅看涨 (三重底)", "🐻 仅看跌 (三重顶)"].index(_cur_dir_val) if _cur_dir_val in ["全部方向", "🐂 仅看涨 (三重底)", "🐻 仅看跌 (三重顶)"] else 0
@@ -671,8 +714,8 @@ def render_triple_pattern_page():
             key="tp_filter_status"
         )
 
-    # 筛选面板 第二行：跑势进度上限滑块 + 成交量/活跃度过滤
-    col_sl1, col_vol = st.columns([1.5, 1.5])
+    # 筛选面板 第二行：跑势进度上限滑块 + 形态时效 + 成交量/活跃度过滤
+    col_sl1, col_time, col_vol = st.columns([1.2, 1.3, 1.5])
     with col_sl1:
         progress_limit = st.slider(
             "🏃 跑势进度上限 (0% ~ 300%)",
@@ -680,8 +723,19 @@ def render_triple_pattern_page():
             max_value=300,
             value=20,
             step=5,
-            help="【核心过滤】：默认 20%，只保留 5 点成型蓄势中 (0%) 以及突破颈线 20% 形态高度以内的标的。已突破跑很远 (>20%) 的标的将被自动过滤。向右拉大滑块可查看更多推进中的形态。",
+            help="【核心过滤】：默认 20%，只保留成型蓄势中 (0%) 以及突破颈线 20% 形态高度以内的标的。已突破跑很远 (>20%) 的标的将被自动过滤。向右拉大滑块可查看更多推进中的形态。",
             key="tp_progress_slider"
+        )
+    with col_time:
+        _cur_time_val = st.session_state.get("tp_filter_time", _TIME_OPTIONS[0])
+        _cur_time_idx = _TIME_OPTIONS.index(_cur_time_val) if _cur_time_val in _TIME_OPTIONS else 0
+        st_time_filter = st.selectbox(
+            "⏳ 形态时效 (发生时间)",
+            _TIME_OPTIONS,
+            index=_cur_time_idx,
+            key="tp_filter_time",
+            on_change=_on_tp_time_change,
+            help="【时效筛选】：默认近 2 个月内成型 (≤8周)。过滤数月甚至数年前的老旧历史形态，确保只聚焦最新刚在当前行情中筑底反弹的标的。"
         )
     with col_vol:
         _cur_vol_val = st.session_state.get("tp_filter_volume", _VOL_OPTIONS[0])
@@ -707,14 +761,15 @@ def render_triple_pattern_page():
 
         # 形态子类过滤
         pname = r.get("pattern", "")
-        if "W 底" in st_patt or "W-Bottom" in st_patt:
-            if "双底" not in pname and "W-Bottom" not in pname: continue
+        if "1~2个月周线 W 底" in st_patt or "全部 1~2个月周线 W 底" in st_patt or ("W 底" in st_patt and "全部" in st_patt):
+            if not (("周线" in pname and ("双底" in pname or "W-Bottom" in pname)) or ("假跌破双底" in pname or "抬高双底" in pname or "持平双底" in pname)):
+                continue
         elif "假跌破双底" in st_patt and "假跌破双底" not in pname: continue
         elif "抬高双底" in st_patt and "抬高双底" not in pname: continue
         elif "持平双底" in st_patt and "持平双底" not in pname: continue
         elif st_patt == "完美形态 (Perfect)" and "完美" not in pname: continue
         elif st_patt == "头肩形态 (Head & Shoulders)" and "头肩" not in pname: continue
-        elif st_patt == "失败突破假破型 (Failed BO)" and "失败突破" not in pname: continue
+        elif st_patt == "失败突破假破型 (Failed BO)" and ("失败突破" not in pname and "跌破失败" not in pname): continue
         elif st_patt == "双顶底回调型 (Pullback)" and "回调" not in pname: continue
         elif st_patt == "楔形形态 (Wedge)" and "楔形" not in pname: continue
         elif st_patt == "收敛三角形 (Triangle)" and "三角" not in pname: continue
@@ -768,6 +823,31 @@ def render_triple_pattern_page():
             elif "≥ 100 万" in st_vol_filter and r_turnover < 1_000_000:
                 continue
             elif "≥ 500 万" in st_vol_filter and r_turnover < 5_000_000:
+                continue
+
+        # ⏳ 形态时效 (发生时间) 过滤
+        if st_time_filter != "全部时间 (不限制)":
+            bars_since = int(r.get("bars_since_p5", r.get("bars_since_l2", 0)))
+            period_val = r.get("period", "1w")
+            
+            if period_val == "1w":
+                weeks_since = float(bars_since)
+            elif period_val == "1d":
+                weeks_since = bars_since / 5.0
+            elif period_val == "4h":
+                weeks_since = bars_since / 30.0
+            elif period_val == "1h":
+                weeks_since = bars_since / 120.0
+            else:
+                weeks_since = float(bars_since)
+                
+            if "近 1 个月" in st_time_filter and weeks_since > 4.5:
+                continue
+            elif "近 2 个月" in st_time_filter and weeks_since > 8.5:
+                continue
+            elif "近 3 个月" in st_time_filter and weeks_since > 12.5:
+                continue
+            elif "近半年" in st_time_filter and weeks_since > 26.5:
                 continue
 
         filtered.append(r)
@@ -859,6 +939,13 @@ def render_triple_pattern_page():
         else:
             _qp.pop("_vol", None)
 
+        _cur_time = st.session_state.get("tp_filter_time", _TIME_OPTIONS[0])
+        _time_k = _TIME_REVERSE_MAP.get(_cur_time, "2m")
+        if _time_k != "2m":
+            _qp["_time"] = _time_k
+        else:
+            _qp.pop("_time", None)
+
         _qp["_p"] = str(current_page)
         st.query_params.clear()
         st.query_params.update(_qp)
@@ -895,6 +982,13 @@ def render_triple_pattern_page():
             params["_vol"] = _vol_k
         else:
             params.pop("_vol", None)
+
+        _cur_time = st.session_state.get("tp_filter_time", _TIME_OPTIONS[0])
+        _time_k = _TIME_REVERSE_MAP.get(_cur_time, "2m")
+        if _time_k != "2m":
+            params["_time"] = _time_k
+        else:
+            params.pop("_time", None)
 
         # 确保 _p 永远排在 URL 查询参数的最后一个
         params.pop("_p", None)
@@ -1024,6 +1118,23 @@ def render_triple_pattern_page():
             bar_color = "#64748b"
             bar_width = 0
 
+        # ⏳ 时效徽章
+        bars_since_val = int(r.get("bars_since_p5", 0))
+        if period == "1w":
+            if bars_since_val == 0:
+                t_str = "本周成型"
+            elif bars_since_val <= 4:
+                t_str = f"近{bars_since_val}周前"
+            elif bars_since_val <= 8:
+                t_str = f"约{bars_since_val//4}月前({bars_since_val}周)"
+            else:
+                t_str = f"{bars_since_val}周前"
+        elif period == "1d":
+            t_str = f"近{bars_since_val}日前" if bars_since_val > 0 else "今日成型"
+        else:
+            t_str = f"近{bars_since_val}根K线"
+        time_badge = f"<span style='font-size:12px;background:rgba(234,179,8,0.15);color:#fde047;border:1px solid rgba(234,179,8,0.3);padding:2px 8px;border-radius:4px;font-weight:600;' title='形态成型距今时间 (新鲜度)'>⏳ {t_str}</span> "
+
         # 📊 成交量徽章
         vol_num = float(r.get("avg_volume_20") or r.get("volume") or 0.0)
         if vol_num > 0:
@@ -1054,6 +1165,7 @@ def render_triple_pattern_page():
                     f"<span style='font-size:14px;color:#94a3b8;margin-right:8px;'>· {name}</span> "
                     f"{dir_badge} "
                     f"<span style='font-size:12px;background:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>{period_desc}</span> "
+                    f"{time_badge}"
                     f"<span style='font-size:12px;background:rgba(245,158,11,0.15);color:#fde047;border:1px solid rgba(245,158,11,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>置信度: {conf:.0%}</span> "
                     f"{vol_badge}"
                     f"{status_badge}"
