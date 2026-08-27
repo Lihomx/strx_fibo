@@ -220,6 +220,16 @@ def render_triple_pattern_page():
     except Exception:
         pass
 
+    # ── 自动同步云端数据库 ──
+    if "tp_synced_cloud" not in st.session_state:
+        st.session_state.tp_synced_cloud = True
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                cloud_sync.pull_triple_pattern()
+        except Exception:
+            pass
+
     all_patterns = storage.load_triple_pattern()
 
     # ── 从 URL _dir 参数恢复「形态方向」下拉状态 ──
@@ -404,7 +414,66 @@ def render_triple_pattern_page():
             else:
                 st.caption("暂无历史快照备份。")
         with c_bk2:
-            st.markdown("⚠️ **数据维护**")
+            st.markdown("⚠️ **数据维护与增强**")
+            missing_vol_cnt = sum(1 for it in all_patterns if float(it.get("avg_volume_20") or it.get("volume") or 0.0) == 0.0)
+            if missing_vol_cnt > 0:
+                if st.button(f"⚡ 一键为历史数据补全成交量 ({missing_vol_cnt}条)", key="tp_btn_backfill_vol", help="自动并行抓取所有历史记录中缺失的20日均量与成交额数据并保存", use_container_width=True):
+                    with st.spinner("正在高速并行补齐成交量与成交额数据..."):
+                        from concurrent.futures import ThreadPoolExecutor, as_completed
+                        import requests
+                        from requests.adapters import HTTPAdapter
+                        
+                        tickers_to_fill = list(set(it.get("symbol") for it in all_patterns if float(it.get("avg_volume_20") or it.get("volume") or 0.0) == 0.0 and it.get("symbol")))
+                        
+                        s_sess = requests.Session()
+                        s_ad = HTTPAdapter(pool_connections=64, pool_maxsize=64, max_retries=1)
+                        s_sess.mount("https://", s_ad)
+                        s_sess.mount("http://", s_ad)
+                        s_sess.headers.update({"User-Agent": "Mozilla/5.0"})
+                        
+                        def _fetch_v(tk):
+                            try:
+                                u = f"https://query1.finance.yahoo.com/v8/finance/chart/{tk}?range=1mo&interval=1d"
+                                r = s_sess.get(u, timeout=3.5)
+                                if r.status_code == 200:
+                                    d = r.json()
+                                    q = d.get("chart", {}).get("result", [{}])[0].get("indicators", {}).get("quote", [{}])[0]
+                                    vs = [v for v in q.get("volume", []) if v is not None]
+                                    cs = [c for c in q.get("close", []) if c is not None]
+                                    if vs:
+                                        av = float(np.mean(vs[-20:]))
+                                        lv = float(vs[-1])
+                                        lc = float(cs[-1]) if cs else 0.0
+                                        return tk, lv, av, round(av * lc, 2)
+                            except Exception:
+                                pass
+                            return tk, 0.0, 0.0, 0.0
+                        
+                        v_map = {}
+                        with ThreadPoolExecutor(max_workers=48) as ex:
+                            futs = {ex.submit(_fetch_v, tk): tk for tk in tickers_to_fill}
+                            for f in as_completed(futs):
+                                tk, lv, av, to = f.result()
+                                v_map[tk] = (lv, av, to)
+                        
+                        for it in all_patterns:
+                            sym = it.get("symbol")
+                            if sym in v_map and v_map[sym][1] > 0:
+                                it["volume"] = round(v_map[sym][0], 1)
+                                it["avg_volume_20"] = round(v_map[sym][1], 1)
+                                it["turnover"] = v_map[sym][2]
+                        
+                        storage.save_triple_pattern(all_patterns)
+                        try:
+                            import cloud_sync
+                            if cloud_sync.is_configured():
+                                cloud_sync.push_triple_pattern()
+                        except Exception:
+                            pass
+                        st.toast(f"✅ 成功补齐 {len(tickers_to_fill)} 只品种的成交量与成交额数据！", icon="🎉")
+                        time.sleep(1)
+                        st.rerun()
+
             if st.button("🗑️ 清空当前结果库", key="tp_btn_clear_data", use_container_width=True):
                 storage.clear_triple_pattern_results()
                 st.toast("已清空结果库并自动创建安全快照", icon="🗑️")
