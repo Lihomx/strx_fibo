@@ -232,20 +232,80 @@ def render_triple_pattern_page():
 
     all_patterns = storage.load_triple_pattern()
 
-    # ── 从 URL _dir 参数恢复「形态方向」下拉状态 ──
-    # 用户通过链接切换页面时 (_dir=bullish/bearish/all)，session_state 会丢失,
-    # 在 selectbox 渲染前注入正确值，保证方向不被重置。
+    # ── URL 参数映射字典 ──
     _DIR_URL_MAP = {
         "bullish": "🐂 仅看涨 (三重底)",
         "bearish": "🐻 仅看跌 (三重顶)",
         "all":     "全部方向",
     }
+    _DIR_REVERSE_MAP = {v: k for k, v in _DIR_URL_MAP.items()}
+
+    _SORT_OPTIONS = [
+        "🏃 跑势进度 (低 → 高 · 优先蓄势/刚突破)",
+        "📊 20日均量 (高 → 低 · 流动性优先)",
+        "💰 日均成交额 (高 → 低)",
+        "置信度 (高 → 低)",
+        "TP3 黄金盈亏比 (高 → 低)",
+        "TP2 颈线盈亏比 (高 → 低)",
+        "🏃 跑势进度 (高 → 低)",
+        "最新扫描时间 (新 → 旧)",
+        "股票代码 (A → Z)"
+    ]
+
+    _SORT_URL_MAP = {
+        "progress_asc":  "🏃 跑势进度 (低 → 高 · 优先蓄势/刚突破)",
+        "volume_desc":    "📊 20日均量 (高 → 低 · 流动性优先)",
+        "turnover_desc":  "💰 日均成交额 (高 → 低)",
+        "conf_desc":      "置信度 (高 → 低)",
+        "rr_tp3_desc":    "TP3 黄金盈亏比 (高 → 低)",
+        "rr_tp2_desc":    "TP2 颈线盈亏比 (高 → 低)",
+        "progress_desc": "🏃 跑势进度 (高 → 低)",
+        "time_desc":      "最新扫描时间 (新 → 旧)",
+        "ticker_asc":     "股票代码 (A → Z)"
+    }
+    _SORT_REVERSE_MAP = {v: k for k, v in _SORT_URL_MAP.items()}
+
+    _VOL_OPTIONS = [
+        "全部成交量 (不限制)",
+        "🔥 20日均量 ≥ 10 万股",
+        "🔥 20日均量 ≥ 30 万股",
+        "🔥 20日均量 ≥ 50 万股",
+        "🔥 20日均量 ≥ 100 万股",
+        "💎 日均成交额 ≥ 50 万 (USD/RMB)",
+        "💎 日均成交额 ≥ 100 万 (USD/RMB)",
+        "💎 日均成交额 ≥ 500 万 (USD/RMB)"
+    ]
+
+    _VOL_URL_MAP = {
+        "all":      "全部成交量 (不限制)",
+        "100k":     "🔥 20日均量 ≥ 10 万股",
+        "300k":     "🔥 20日均量 ≥ 30 万股",
+        "500k":     "🔥 20日均量 ≥ 50 万股",
+        "1m":       "🔥 20日均量 ≥ 100 万股",
+        "500k_to":  "💎 日均成交额 ≥ 50 万 (USD/RMB)",
+        "1m_to":    "💎 日均成交额 ≥ 100 万 (USD/RMB)",
+        "5m_to":    "💎 日均成交额 ≥ 500 万 (USD/RMB)"
+    }
+    _VOL_REVERSE_MAP = {v: k for k, v in _VOL_URL_MAP.items()}
+
+    # ── 从 URL 参数恢复「形态方向」、「排序方式」与「成交量过滤」状态 ──
     _url_dir_raw = str(st.query_params.get("_dir", "")).strip().lower()
     if _url_dir_raw in _DIR_URL_MAP:
         _desired_dir = _DIR_URL_MAP[_url_dir_raw]
-        # 仅在与当前 session_state 不一致时写入，避免用户手动更改被覆盖
         if st.session_state.get("tp_filter_direction") != _desired_dir:
             st.session_state["tp_filter_direction"] = _desired_dir
+
+    _url_sort_raw = str(st.query_params.get("_sort", "")).strip().lower()
+    if _url_sort_raw in _SORT_URL_MAP:
+        _desired_sort = _SORT_URL_MAP[_url_sort_raw]
+        if st.session_state.get("tp_sort_by") != _desired_sort:
+            st.session_state["tp_sort_by"] = _desired_sort
+
+    _url_vol_raw = str(st.query_params.get("_vol", "")).strip().lower()
+    if _url_vol_raw in _VOL_URL_MAP:
+        _desired_vol = _VOL_URL_MAP[_url_vol_raw]
+        if st.session_state.get("tp_filter_volume") != _desired_vol:
+            st.session_state["tp_filter_volume"] = _desired_vol
 
     # ── 1. 顶部标题与形态总体统计 ──
     st.markdown(
@@ -503,15 +563,51 @@ def render_triple_pattern_page():
     # 方向改变时写入 URL _dir 参数，保证翻页/刷新后可恢复
     def _on_tp_dir_change():
         _val = st.session_state.get("tp_filter_direction", "全部方向")
-        _DIR_REVERSE = {
-            "🐂 仅看涨 (三重底)": "bullish",
-            "🐻 仅看跌 (三重顶)": "bearish",
-        }
+        _k = _DIR_REVERSE_MAP.get(_val, "all")
         try:
             _qp = dict(st.query_params)
             if "_p" in _qp:
                 del _qp["_p"]
-            _qp["_dir"] = _DIR_REVERSE.get(_val, "all")
+            if _k != "all":
+                _qp["_dir"] = _k
+            else:
+                _qp.pop("_dir", None)
+            _qp["_p"] = "1"
+            st.query_params.clear()
+            st.query_params.update(_qp)
+            st.session_state.tp_current_page = 1
+        except Exception:
+            pass
+
+    def _on_tp_sort_change():
+        _val = st.session_state.get("tp_sort_by", _SORT_OPTIONS[0])
+        _k = _SORT_REVERSE_MAP.get(_val, "progress_asc")
+        try:
+            _qp = dict(st.query_params)
+            if "_p" in _qp:
+                del _qp["_p"]
+            if _k != "progress_asc":
+                _qp["_sort"] = _k
+            else:
+                _qp.pop("_sort", None)
+            _qp["_p"] = "1"
+            st.query_params.clear()
+            st.query_params.update(_qp)
+            st.session_state.tp_current_page = 1
+        except Exception:
+            pass
+
+    def _on_tp_vol_change():
+        _val = st.session_state.get("tp_filter_volume", "全部成交量 (不限制)")
+        _k = _VOL_REVERSE_MAP.get(_val, "all")
+        try:
+            _qp = dict(st.query_params)
+            if "_p" in _qp:
+                del _qp["_p"]
+            if _k != "all":
+                _qp["_vol"] = _k
+            else:
+                _qp.pop("_vol", None)
             _qp["_p"] = "1"
             st.query_params.clear()
             st.query_params.update(_qp)
@@ -520,9 +616,12 @@ def render_triple_pattern_page():
             pass
 
     with col_f1:
+        _cur_dir_val = st.session_state.get("tp_filter_direction", "全部方向")
+        _cur_dir_idx = ["全部方向", "🐂 仅看涨 (三重底)", "🐻 仅看跌 (三重顶)"].index(_cur_dir_val) if _cur_dir_val in ["全部方向", "🐂 仅看涨 (三重底)", "🐻 仅看跌 (三重顶)"] else 0
         st_direction = st.selectbox(
             "🧭 形态方向",
             ["全部方向", "🐂 仅看涨 (三重底)", "🐻 仅看跌 (三重顶)"],
+            index=_cur_dir_idx,
             key="tp_filter_direction",
             on_change=_on_tp_dir_change,
         )
@@ -580,20 +679,14 @@ def render_triple_pattern_page():
             key="tp_progress_slider"
         )
     with col_vol:
+        _cur_vol_val = st.session_state.get("tp_filter_volume", _VOL_OPTIONS[0])
+        _cur_vol_idx = _VOL_OPTIONS.index(_cur_vol_val) if _cur_vol_val in _VOL_OPTIONS else 0
         st_vol_filter = st.selectbox(
             "📊 最低成交量 / 活跃度过滤",
-            [
-                "全部成交量 (不限制)",
-                "🔥 20日均量 ≥ 10 万股",
-                "🔥 20日均量 ≥ 30 万股",
-                "🔥 20日均量 ≥ 50 万股",
-                "🔥 20日均量 ≥ 100 万股",
-                "💎 日均成交额 ≥ 50 万 (USD/RMB)",
-                "💎 日均成交额 ≥ 100 万 (USD/RMB)",
-                "💎 日均成交额 ≥ 500 万 (USD/RMB)"
-            ],
-            index=0,
+            _VOL_OPTIONS,
+            index=_cur_vol_idx,
             key="tp_filter_volume",
+            on_change=_on_tp_vol_change,
             help="过滤低流动性/仙股/僵尸股，确保标的具备充沛交易活跃度与流动性。"
         )
 
@@ -674,21 +767,14 @@ def render_triple_pattern_page():
     with col_s1:
         search_query = st.text_input("🔍 搜索代码 / 名称", "", placeholder="输入股票代码或名称关键词...", key="tp_search_query")
     with col_s2:
+        _cur_sort_val = st.session_state.get("tp_sort_by", _SORT_OPTIONS[0])
+        _cur_sort_idx = _SORT_OPTIONS.index(_cur_sort_val) if _cur_sort_val in _SORT_OPTIONS else 0
         sort_by = st.selectbox(
             "↕️ 排序方式",
-            [
-                "🏃 跑势进度 (低 → 高 · 优先蓄势/刚突破)",
-                "📊 20日均量 (高 → 低 · 流动性优先)",
-                "💰 日均成交额 (高 → 低)",
-                "置信度 (高 → 低)",
-                "TP3 黄金盈亏比 (高 → 低)",
-                "TP2 颈线盈亏比 (高 → 低)",
-                "🏃 跑势进度 (高 → 低)",
-                "最新扫描时间 (新 → 旧)",
-                "股票代码 (A → Z)"
-            ],
-            index=0,
-            key="tp_sort_by"
+            _SORT_OPTIONS,
+            index=_cur_sort_idx,
+            key="tp_sort_by",
+            on_change=_on_tp_sort_change,
         )
     with col_s3:
         page_size = st.selectbox("📄 每页条数", [20, 50, 100], index=0, key="tp_page_size")
@@ -738,7 +824,7 @@ def render_triple_pattern_page():
     st.session_state._tp_url_p_seen = str(current_page)
 
     try:
-        # 保证 st.query_params 中 _p 处于字典和 URL 最末尾
+        # 保证 st.query_params 中参数有序，且 _p 处于字典和 URL 最末尾
         _qp = dict(st.query_params)
         if "_p" in _qp:
             del _qp["_p"]
@@ -748,6 +834,21 @@ def render_triple_pattern_page():
             _qp["_dir"] = _DIR_MAP[_cur_dir]
         elif "_dir" in _qp and _qp["_dir"] not in ("bullish", "bearish"):
             _qp["_dir"] = "all"
+
+        _cur_sort = st.session_state.get("tp_sort_by", _SORT_OPTIONS[0])
+        _sort_k = _SORT_REVERSE_MAP.get(_cur_sort, "progress_asc")
+        if _sort_k != "progress_asc":
+            _qp["_sort"] = _sort_k
+        else:
+            _qp.pop("_sort", None)
+
+        _cur_vol = st.session_state.get("tp_filter_volume", "全部成交量 (不限制)")
+        _vol_k = _VOL_REVERSE_MAP.get(_cur_vol, "all")
+        if _vol_k != "all":
+            _qp["_vol"] = _vol_k
+        else:
+            _qp.pop("_vol", None)
+
         _qp["_p"] = str(current_page)
         st.query_params.clear()
         st.query_params.update(_qp)
@@ -770,7 +871,21 @@ def render_triple_pattern_page():
             params["_dir"] = _DIR_MAP[_cur_dir]
         elif "_dir" in params and params["_dir"] not in ("bullish", "bearish"):
             params["_dir"] = "all"
-            
+
+        _cur_sort = st.session_state.get("tp_sort_by", _SORT_OPTIONS[0])
+        _sort_k = _SORT_REVERSE_MAP.get(_cur_sort, "progress_asc")
+        if _sort_k != "progress_asc":
+            params["_sort"] = _sort_k
+        else:
+            params.pop("_sort", None)
+
+        _cur_vol = st.session_state.get("tp_filter_volume", "全部成交量 (不限制)")
+        _vol_k = _VOL_REVERSE_MAP.get(_cur_vol, "all")
+        if _vol_k != "all":
+            params["_vol"] = _vol_k
+        else:
+            params.pop("_vol", None)
+
         # 确保 _p 永远排在 URL 查询参数的最后一个
         params.pop("_p", None)
         params["_p"] = str(target_page)
