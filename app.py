@@ -1154,6 +1154,7 @@ def _check_password() -> bool:
             # 1. 优先验证新版持久化 token
             if _verify_persistent_token(url_token, required_pw):
                 st.session_state["_authenticated"] = True
+                st.session_state["_t"] = url_token
                 return True
             # 2. 兼容旧版日期 token（当天 & 昨天）
             today_str = _time.strftime("%Y-%m-%d")
@@ -1163,6 +1164,7 @@ def _check_password() -> bool:
                 # 旧 token 验证通过 → 升级为新持久化 token
                 new_token = _make_token(required_pw)
                 st.session_state["_authenticated"] = True
+                st.session_state["_t"] = new_token
                 try:
                     st.query_params["_t"] = new_token
                 except Exception:
@@ -1201,6 +1203,7 @@ def _check_password() -> bool:
             # 登录成功 → 写入 30 天持久化 token
             try:
                 new_token = _make_token(required_pw)
+                st.session_state["_t"] = new_token
                 st.query_params["_t"] = new_token
             except Exception:
                 pass

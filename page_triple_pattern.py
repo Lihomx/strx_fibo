@@ -677,6 +677,11 @@ def render_triple_pattern_page():
     def _sync_tp_url_params(target_page: int = 1):
         """将当前 session_state 中所有 10 项筛选状态统一写回 st.query_params"""
         params = {}
+        # 必须持久保留认证 token _t
+        _t_val = st.query_params.get("_t", "") or st.session_state.get("_t", "")
+        if _t_val:
+            params["_t"] = _t_val
+
         for k, v in st.query_params.items():
             if not k.startswith("_"):
                 params[k] = v
@@ -1017,6 +1022,11 @@ def render_triple_pattern_page():
 
     def _make_tp_page_url(target_page: int) -> str:
         params = {}
+        # 必须持久保留认证 token _t，防止点击分页链接跳转登录页
+        _t_val = st.query_params.get("_t", "") or st.session_state.get("_t", "")
+        if _t_val:
+            params["_t"] = _t_val
+
         for k, v in st.query_params.items():
             if not k.startswith("_"):
                 params[k] = v
