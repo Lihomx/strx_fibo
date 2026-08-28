@@ -232,7 +232,8 @@ def render_triple_pattern_page():
 
     all_patterns = storage.load_triple_pattern()
 
-    # ── URL 参数映射字典 ──
+    # ── 1. 形态方向映射 ──
+    _DIR_OPTIONS = ["全部方向", "🐂 仅看涨 (三重底)", "🐻 仅看跌 (三重顶)"]
     _DIR_URL_MAP = {
         "bullish": "🐂 仅看涨 (三重底)",
         "bearish": "🐻 仅看跌 (三重顶)",
@@ -240,6 +241,59 @@ def render_triple_pattern_page():
     }
     _DIR_REVERSE_MAP = {v: k for k, v in _DIR_URL_MAP.items()}
 
+    # ── 2. 形态子类映射 ──
+    _PATT_OPTIONS = [
+        "全部形态",
+        "🌟 全部 1~2个月周线 W 底 (W-Bottom)",
+        "🔥 周线假跌破双底 (1-2月刺穿探底)",
+        "🚀 周线抬高双底 (1-2月强势多头)",
+        "⚓ 周线持平双底 (1-2月水平支撑)",
+        "完美形态 (Perfect)",
+        "头肩形态 (Head & Shoulders)",
+        "失败突破假破型 (Failed BO)",
+        "双顶底回调型 (Pullback)",
+        "楔形形态 (Wedge)",
+        "收敛三角形 (Triangle)"
+    ]
+    _PATT_URL_MAP = {
+        "all":            "全部形态",
+        "w_all":          "🌟 全部 1~2个月周线 W 底 (W-Bottom)",
+        "w_fake":         "🔥 周线假跌破双底 (1-2月刺穿探底)",
+        "w_high":         "🚀 周线抬高双底 (1-2月强势多头)",
+        "w_flat":         "⚓ 周线持平双底 (1-2月水平支撑)",
+        "perfect":        "完美形态 (Perfect)",
+        "head_shoulders": "头肩形态 (Head & Shoulders)",
+        "failed_bo":      "失败突破假破型 (Failed BO)",
+        "pullback":       "双顶底回调型 (Pullback)",
+        "wedge":          "楔形形态 (Wedge)",
+        "triangle":       "收敛三角形 (Triangle)"
+    }
+    _PATT_REVERSE_MAP = {v: k for k, v in _PATT_URL_MAP.items()}
+
+    # ── 3. 扫描周期映射 ──
+    _ALL_PERIODS = list(TRIPLE_PATTERN_TIMEFRAMES.keys())  # ["1d", "1w", "1mo", "4h", "1h", "30m", "15m"]
+
+    # ── 4. 形态阶段状态映射 ──
+    _STAT_OPTIONS = [
+        "👀 观望蓄势中 (active 0%)",
+        "🚀 刚突破 (confirmed ≤20%)",
+        "⚡ 推进中 (confirmed 20~100%)",
+        "🏁 已超TP2目标 (confirmed >100%)",
+        "❌ 已失效 (invalidated)",
+        "⏰ 已过期 (expired)"
+    ]
+    _STAT_URL_MAP = {
+        "active":      "👀 观望蓄势中 (active 0%)",
+        "early":       "🚀 刚突破 (confirmed ≤20%)",
+        "mid":         "⚡ 推进中 (confirmed 20~100%)",
+        "far":         "🏁 已超TP2目标 (confirmed >100%)",
+        "invalidated": "❌ 已失效 (invalidated)",
+        "expired":     "⏰ 已过期 (expired)"
+    }
+    _STAT_REVERSE_MAP = {v: k for k, v in _STAT_URL_MAP.items()}
+    _DEFAULT_STATS = ["👀 观望蓄势中 (active 0%)", "🚀 刚突破 (confirmed ≤20%)"]
+
+    # ── 5. 排序方式映射 ──
     _SORT_OPTIONS = [
         "🏃 跑势进度 (低 → 高 · 优先蓄势/刚突破)",
         "📊 20日均量 (高 → 低 · 流动性优先)",
@@ -251,7 +305,6 @@ def render_triple_pattern_page():
         "最新扫描时间 (新 → 旧)",
         "股票代码 (A → Z)"
     ]
-
     _SORT_URL_MAP = {
         "progress_asc":  "🏃 跑势进度 (低 → 高 · 优先蓄势/刚突破)",
         "volume_desc":    "📊 20日均量 (高 → 低 · 流动性优先)",
@@ -265,6 +318,7 @@ def render_triple_pattern_page():
     }
     _SORT_REVERSE_MAP = {v: k for k, v in _SORT_URL_MAP.items()}
 
+    # ── 6. 成交量过滤映射 ──
     _VOL_OPTIONS = [
         "全部成交量 (不限制)",
         "🔥 20日均量 ≥ 10 万股",
@@ -275,7 +329,6 @@ def render_triple_pattern_page():
         "💎 日均成交额 ≥ 100 万 (USD/RMB)",
         "💎 日均成交额 ≥ 500 万 (USD/RMB)"
     ]
-
     _VOL_URL_MAP = {
         "all":      "全部成交量 (不限制)",
         "100k":     "🔥 20日均量 ≥ 10 万股",
@@ -288,6 +341,7 @@ def render_triple_pattern_page():
     }
     _VOL_REVERSE_MAP = {v: k for k, v in _VOL_URL_MAP.items()}
 
+    # ── 7. 形态时效映射 ──
     _TIME_OPTIONS = [
         "🌟 近 2 个月内成型 (≤8周 · 推荐)",
         "🔥 近 1 个月内成型 (≤4周)",
@@ -295,7 +349,6 @@ def render_triple_pattern_page():
         "🗓️ 近半年内成型 (≤26周)",
         "全部时间 (不限制)"
     ]
-
     _TIME_URL_MAP = {
         "2m":  "🌟 近 2 个月内成型 (≤8周 · 推荐)",
         "1m":  "🔥 近 1 个月内成型 (≤4周)",
@@ -305,32 +358,71 @@ def render_triple_pattern_page():
     }
     _TIME_REVERSE_MAP = {v: k for k, v in _TIME_URL_MAP.items()}
 
-    # ── 从 URL 参数恢复「形态方向」、「排序方式」、「成交量过滤」与「形态时效」状态 ──
+    # ── 8. 从 URL 参数恢复所有 10 项筛选状态 ──
     _url_dir_raw = str(st.query_params.get("_dir", "")).strip().lower()
     if _url_dir_raw in _DIR_URL_MAP:
-        _desired_dir = _DIR_URL_MAP[_url_dir_raw]
-        if st.session_state.get("tp_filter_direction") != _desired_dir:
-            st.session_state["tp_filter_direction"] = _desired_dir
+        st.session_state["tp_filter_direction"] = _DIR_URL_MAP[_url_dir_raw]
+    elif "tp_filter_direction" not in st.session_state:
+        st.session_state["tp_filter_direction"] = "全部方向"
 
-    _url_sort_raw = str(st.query_params.get("_sort", "")).strip().lower()
-    if _url_sort_raw in _SORT_URL_MAP:
-        _desired_sort = _SORT_URL_MAP[_url_sort_raw]
-        if st.session_state.get("tp_sort_by") != _desired_sort:
-            st.session_state["tp_sort_by"] = _desired_sort
+    _url_patt_raw = str(st.query_params.get("_patt", "")).strip().lower()
+    if _url_patt_raw in _PATT_URL_MAP:
+        st.session_state["tp_filter_pattern"] = _PATT_URL_MAP[_url_patt_raw]
+    elif "tp_filter_pattern" not in st.session_state:
+        st.session_state["tp_filter_pattern"] = "全部形态"
 
-    _url_vol_raw = str(st.query_params.get("_vol", "")).strip().lower()
-    if _url_vol_raw in _VOL_URL_MAP:
-        _desired_vol = _VOL_URL_MAP[_url_vol_raw]
-        if st.session_state.get("tp_filter_volume") != _desired_vol:
-            st.session_state["tp_filter_volume"] = _desired_vol
+    _url_tf_raw = str(st.query_params.get("_tf", "")).strip().lower()
+    if _url_tf_raw:
+        _tfs = [t.strip() for t in _url_tf_raw.split(",") if t.strip() in _ALL_PERIODS]
+        if _tfs:
+            st.session_state["tp_filter_period"] = _tfs
+    if "tp_filter_period" not in st.session_state:
+        st.session_state["tp_filter_period"] = list(_ALL_PERIODS)
+
+    _url_stat_raw = str(st.query_params.get("_stat", "")).strip().lower()
+    if _url_stat_raw:
+        _stats = [_STAT_URL_MAP[s.strip()] for s in _url_stat_raw.split(",") if s.strip() in _STAT_URL_MAP]
+        if _stats:
+            st.session_state["tp_filter_status"] = _stats
+    if "tp_filter_status" not in st.session_state:
+        st.session_state["tp_filter_status"] = list(_DEFAULT_STATS)
+
+    _url_prog_raw = str(st.query_params.get("_prog", "")).strip()
+    if _url_prog_raw.isdigit():
+        _p_val = max(0, min(300, int(_url_prog_raw)))
+        st.session_state["tp_progress_slider"] = _p_val
+    elif "tp_progress_slider" not in st.session_state:
+        st.session_state["tp_progress_slider"] = 20
 
     _url_time_raw = str(st.query_params.get("_time", "")).strip().lower()
     if _url_time_raw in _TIME_URL_MAP:
-        _desired_time = _TIME_URL_MAP[_url_time_raw]
-        if st.session_state.get("tp_filter_time") != _desired_time:
-            st.session_state["tp_filter_time"] = _desired_time
+        st.session_state["tp_filter_time"] = _TIME_URL_MAP[_url_time_raw]
     elif "tp_filter_time" not in st.session_state:
         st.session_state["tp_filter_time"] = _TIME_OPTIONS[0]
+
+    _url_vol_raw = str(st.query_params.get("_vol", "")).strip().lower()
+    if _url_vol_raw in _VOL_URL_MAP:
+        st.session_state["tp_filter_volume"] = _VOL_URL_MAP[_url_vol_raw]
+    elif "tp_filter_volume" not in st.session_state:
+        st.session_state["tp_filter_volume"] = _VOL_OPTIONS[0]
+
+    _url_q_raw = str(st.query_params.get("_q", "")).strip()
+    if _url_q_raw:
+        st.session_state["tp_search_query"] = _url_q_raw
+    elif "tp_search_query" not in st.session_state:
+        st.session_state["tp_search_query"] = ""
+
+    _url_sort_raw = str(st.query_params.get("_sort", "")).strip().lower()
+    if _url_sort_raw in _SORT_URL_MAP:
+        st.session_state["tp_sort_by"] = _SORT_URL_MAP[_url_sort_raw]
+    elif "tp_sort_by" not in st.session_state:
+        st.session_state["tp_sort_by"] = _SORT_OPTIONS[0]
+
+    _url_ps_raw = str(st.query_params.get("_ps", "")).strip()
+    if _url_ps_raw in ("20", "50", "100"):
+        st.session_state["tp_page_size"] = int(_url_ps_raw)
+    elif "tp_page_size" not in st.session_state:
+        st.session_state["tp_page_size"] = 20
 
     # ── 1. 顶部标题与形态总体统计 ──
     st.markdown(
@@ -582,149 +674,136 @@ def render_triple_pattern_page():
         )
         return
 
+    def _sync_tp_url_params(target_page: int = 1):
+        """将当前 session_state 中所有 10 项筛选状态统一写回 st.query_params"""
+        params = {}
+        for k, v in st.query_params.items():
+            if not k.startswith("_"):
+                params[k] = v
+        params["_page"] = "triple_pattern"
+
+        # 1. 方向 _dir
+        _cur_dir = st.session_state.get("tp_filter_direction", "全部方向")
+        _dir_k = _DIR_REVERSE_MAP.get(_cur_dir, "all")
+        if _dir_k != "all":
+            params["_dir"] = _dir_k
+
+        # 2. 形态子类 _patt
+        _cur_patt = st.session_state.get("tp_filter_pattern", "全部形态")
+        _patt_k = _PATT_REVERSE_MAP.get(_cur_patt, "all")
+        if _patt_k != "all":
+            params["_patt"] = _patt_k
+
+        # 3. 扫描周期 _tf
+        _cur_tfs = st.session_state.get("tp_filter_period", _ALL_PERIODS)
+        if set(_cur_tfs) != set(_ALL_PERIODS):
+            params["_tf"] = ",".join(_cur_tfs)
+
+        # 4. 阶段状态 _stat
+        _cur_stats = st.session_state.get("tp_filter_status", _DEFAULT_STATS)
+        if set(_cur_stats) != set(_DEFAULT_STATS):
+            _stat_ks = [_STAT_REVERSE_MAP[s] for s in _cur_stats if s in _STAT_REVERSE_MAP]
+            params["_stat"] = ",".join(_stat_ks)
+
+        # 5. 跑势上限 _prog
+        _cur_prog = st.session_state.get("tp_progress_slider", 20)
+        if _cur_prog != 20:
+            params["_prog"] = str(_cur_prog)
+
+        # 6. 形态时效 _time
+        _cur_time = st.session_state.get("tp_filter_time", _TIME_OPTIONS[0])
+        _time_k = _TIME_REVERSE_MAP.get(_cur_time, "2m")
+        if _time_k != "2m":
+            params["_time"] = _time_k
+
+        # 7. 成交量 _vol
+        _cur_vol = st.session_state.get("tp_filter_volume", _VOL_OPTIONS[0])
+        _vol_k = _VOL_REVERSE_MAP.get(_cur_vol, "all")
+        if _vol_k != "all":
+            params["_vol"] = _vol_k
+
+        # 8. 搜索关键词 _q
+        _cur_q = str(st.session_state.get("tp_search_query", "")).strip()
+        if _cur_q:
+            params["_q"] = _cur_q
+
+        # 9. 排序方式 _sort
+        _cur_sort = st.session_state.get("tp_sort_by", _SORT_OPTIONS[0])
+        _sort_k = _SORT_REVERSE_MAP.get(_cur_sort, "progress_asc")
+        if _sort_k != "progress_asc":
+            params["_sort"] = _sort_k
+
+        # 10. 每页条数 _ps
+        _cur_ps = st.session_state.get("tp_page_size", 20)
+        if _cur_ps != 20:
+            params["_ps"] = str(_cur_ps)
+
+        # 11. 页码 _p 永远排在最后
+        params["_p"] = str(target_page)
+
+        st.query_params.clear()
+        st.query_params.update(params)
+        return params
+
+    def _on_tp_filter_change():
+        """任何筛选控件变更时触发：更新 URL 查询参数并重置页码为 1"""
+        st.session_state.tp_current_page = 1
+        _sync_tp_url_params(target_page=1)
+
     # 筛选面板 第一行
     col_f1, col_f2, col_f3, col_f4 = st.columns([1.2, 1.5, 1.3, 1.8])
 
-    # 方向改变时写入 URL _dir 参数，保证翻页/刷新后可恢复
-    def _on_tp_dir_change():
-        _val = st.session_state.get("tp_filter_direction", "全部方向")
-        _k = _DIR_REVERSE_MAP.get(_val, "all")
-        try:
-            _qp = dict(st.query_params)
-            if "_p" in _qp:
-                del _qp["_p"]
-            if _k != "all":
-                _qp["_dir"] = _k
-            else:
-                _qp.pop("_dir", None)
-            _qp["_p"] = "1"
-            st.query_params.clear()
-            st.query_params.update(_qp)
-            st.session_state.tp_current_page = 1
-        except Exception:
-            pass
-
-    def _on_tp_sort_change():
-        _val = st.session_state.get("tp_sort_by", _SORT_OPTIONS[0])
-        _k = _SORT_REVERSE_MAP.get(_val, "progress_asc")
-        try:
-            _qp = dict(st.query_params)
-            if "_p" in _qp:
-                del _qp["_p"]
-            if _k != "progress_asc":
-                _qp["_sort"] = _k
-            else:
-                _qp.pop("_sort", None)
-            _qp["_p"] = "1"
-            st.query_params.clear()
-            st.query_params.update(_qp)
-            st.session_state.tp_current_page = 1
-        except Exception:
-            pass
-
-    def _on_tp_vol_change():
-        _val = st.session_state.get("tp_filter_volume", "全部成交量 (不限制)")
-        _k = _VOL_REVERSE_MAP.get(_val, "all")
-        try:
-            _qp = dict(st.query_params)
-            if "_p" in _qp:
-                del _qp["_p"]
-            if _k != "all":
-                _qp["_vol"] = _k
-            else:
-                _qp.pop("_vol", None)
-            _qp["_p"] = "1"
-            st.query_params.clear()
-            st.query_params.update(_qp)
-            st.session_state.tp_current_page = 1
-        except Exception:
-            pass
-
-    def _on_tp_time_change():
-        _val = st.session_state.get("tp_filter_time", _TIME_OPTIONS[0])
-        _k = _TIME_REVERSE_MAP.get(_val, "2m")
-        try:
-            _qp = dict(st.query_params)
-            if "_p" in _qp:
-                del _qp["_p"]
-            if _k != "2m":
-                _qp["_time"] = _k
-            else:
-                _qp.pop("_time", None)
-            _qp["_p"] = "1"
-            st.query_params.clear()
-            st.query_params.update(_qp)
-            st.session_state.tp_current_page = 1
-        except Exception:
-            pass
-
     with col_f1:
         _cur_dir_val = st.session_state.get("tp_filter_direction", "全部方向")
-        _cur_dir_idx = ["全部方向", "🐂 仅看涨 (三重底)", "🐻 仅看跌 (三重顶)"].index(_cur_dir_val) if _cur_dir_val in ["全部方向", "🐂 仅看涨 (三重底)", "🐻 仅看跌 (三重顶)"] else 0
+        _cur_dir_idx = _DIR_OPTIONS.index(_cur_dir_val) if _cur_dir_val in _DIR_OPTIONS else 0
         st_direction = st.selectbox(
             "🧭 形态方向",
-            ["全部方向", "🐂 仅看涨 (三重底)", "🐻 仅看跌 (三重顶)"],
+            _DIR_OPTIONS,
             index=_cur_dir_idx,
             key="tp_filter_direction",
-            on_change=_on_tp_dir_change,
+            on_change=_on_tp_filter_change,
         )
     with col_f2:
-        _PATT_OPTIONS = [
-            "全部形态",
-            "🌟 全部 1~2个月周线 W 底 (W-Bottom)",
-            "🔥 周线假跌破双底 (1-2月刺穿探底)",
-            "🚀 周线抬高双底 (1-2月强势多头)",
-            "⚓ 周线持平双底 (1-2月水平支撑)",
-            "完美形态 (Perfect)",
-            "头肩形态 (Head & Shoulders)",
-            "失败突破假破型 (Failed BO)",
-            "双顶底回调型 (Pullback)",
-            "楔形形态 (Wedge)",
-            "收敛三角形 (Triangle)"
-        ]
+        _cur_patt_val = st.session_state.get("tp_filter_pattern", _PATT_OPTIONS[0])
+        _cur_patt_idx = _PATT_OPTIONS.index(_cur_patt_val) if _cur_patt_val in _PATT_OPTIONS else 0
         st_patt = st.selectbox(
             "🏷️ 形态子类",
             _PATT_OPTIONS,
-            index=0,
-            key="tp_filter_pattern"
+            index=_cur_patt_idx,
+            key="tp_filter_pattern",
+            on_change=_on_tp_filter_change,
         )
     with col_f3:
         st_period = st.multiselect(
             "⏱️ 扫描周期",
-            options=list(TRIPLE_PATTERN_TIMEFRAMES.keys()),
-            default=list(TRIPLE_PATTERN_TIMEFRAMES.keys()),
+            options=_ALL_PERIODS,
+            default=st.session_state.get("tp_filter_period", _ALL_PERIODS),
             format_func=lambda x: TRIPLE_PATTERN_TIMEFRAMES[x][2],
-            key="tp_filter_period"
+            key="tp_filter_period",
+            on_change=_on_tp_filter_change,
         )
     with col_f4:
         st_status = st.multiselect(
             "📌 形态阶段状态",
-            options=[
-                "👀 观望蓄势中 (active 0%)",
-                "🚀 刚突破 (confirmed ≤20%)",
-                "⚡ 推进中 (confirmed 20~100%)",
-                "🏁 已超TP2目标 (confirmed >100%)",
-                "❌ 已失效 (invalidated)",
-                "⏰ 已过期 (expired)"
-            ],
-            default=[
-                "👀 观望蓄势中 (active 0%)",
-                "🚀 刚突破 (confirmed ≤20%)"
-            ],
-            key="tp_filter_status"
+            options=_STAT_OPTIONS,
+            default=st.session_state.get("tp_filter_status", _DEFAULT_STATS),
+            key="tp_filter_status",
+            on_change=_on_tp_filter_change,
         )
 
     # 筛选面板 第二行：跑势进度上限滑块 + 形态时效 + 成交量/活跃度过滤
     col_sl1, col_time, col_vol = st.columns([1.2, 1.3, 1.5])
     with col_sl1:
+        _cur_prog_val = int(st.session_state.get("tp_progress_slider", 20))
         progress_limit = st.slider(
             "🏃 跑势进度上限 (0% ~ 300%)",
             min_value=0,
             max_value=300,
-            value=20,
+            value=_cur_prog_val,
             step=5,
             help="【核心过滤】：默认 20%，只保留成型蓄势中 (0%) 以及突破颈线 20% 形态高度以内的标的。已突破跑很远 (>20%) 的标的将被自动过滤。向右拉大滑块可查看更多推进中的形态。",
-            key="tp_progress_slider"
+            key="tp_progress_slider",
+            on_change=_on_tp_filter_change,
         )
     with col_time:
         _cur_time_val = st.session_state.get("tp_filter_time", _TIME_OPTIONS[0])
@@ -734,7 +813,7 @@ def render_triple_pattern_page():
             _TIME_OPTIONS,
             index=_cur_time_idx,
             key="tp_filter_time",
-            on_change=_on_tp_time_change,
+            on_change=_on_tp_filter_change,
             help="【时效筛选】：默认近 2 个月内成型 (≤8周)。过滤数月甚至数年前的老旧历史形态，确保只聚焦最新刚在当前行情中筑底反弹的标的。"
         )
     with col_vol:
@@ -745,7 +824,7 @@ def render_triple_pattern_page():
             _VOL_OPTIONS,
             index=_cur_vol_idx,
             key="tp_filter_volume",
-            on_change=_on_tp_vol_change,
+            on_change=_on_tp_filter_change,
             help="过滤低流动性/仙股/僵尸股，确保标的具备充沛交易活跃度与流动性。"
         )
 
@@ -855,7 +934,14 @@ def render_triple_pattern_page():
     # 搜索与排序
     col_s1, col_s2, col_s3 = st.columns([2, 1.4, 1])
     with col_s1:
-        search_query = st.text_input("🔍 搜索代码 / 名称", "", placeholder="输入股票代码或名称关键词...", key="tp_search_query")
+        _cur_q_val = str(st.session_state.get("tp_search_query", ""))
+        search_query = st.text_input(
+            "🔍 搜索代码 / 名称",
+            value=_cur_q_val,
+            placeholder="输入股票代码或名称关键词...",
+            key="tp_search_query",
+            on_change=_on_tp_filter_change,
+        )
     with col_s2:
         _cur_sort_val = st.session_state.get("tp_sort_by", _SORT_OPTIONS[0])
         _cur_sort_idx = _SORT_OPTIONS.index(_cur_sort_val) if _cur_sort_val in _SORT_OPTIONS else 0
@@ -864,10 +950,18 @@ def render_triple_pattern_page():
             _SORT_OPTIONS,
             index=_cur_sort_idx,
             key="tp_sort_by",
-            on_change=_on_tp_sort_change,
+            on_change=_on_tp_filter_change,
         )
     with col_s3:
-        page_size = st.selectbox("📄 每页条数", [20, 50, 100], index=0, key="tp_page_size")
+        _cur_ps_val = int(st.session_state.get("tp_page_size", 20))
+        _ps_idx = [20, 50, 100].index(_cur_ps_val) if _cur_ps_val in [20, 50, 100] else 0
+        page_size = st.selectbox(
+            "📄 每页条数",
+            [20, 50, 100],
+            index=_ps_idx,
+            key="tp_page_size",
+            on_change=_on_tp_filter_change,
+        )
 
     if search_query.strip():
         q = search_query.strip().upper()
@@ -914,41 +1008,7 @@ def render_triple_pattern_page():
     st.session_state._tp_url_p_seen = str(current_page)
 
     try:
-        # 保证 st.query_params 中参数有序，且 _p 处于字典和 URL 最末尾
-        _qp = dict(st.query_params)
-        if "_p" in _qp:
-            del _qp["_p"]
-        _cur_dir = st.session_state.get("tp_filter_direction", "全部方向")
-        _DIR_MAP = {"🐂 仅看涨 (三重底)": "bullish", "🐻 仅看跌 (三重顶)": "bearish"}
-        if _cur_dir in _DIR_MAP:
-            _qp["_dir"] = _DIR_MAP[_cur_dir]
-        elif "_dir" in _qp and _qp["_dir"] not in ("bullish", "bearish"):
-            _qp["_dir"] = "all"
-
-        _cur_sort = st.session_state.get("tp_sort_by", _SORT_OPTIONS[0])
-        _sort_k = _SORT_REVERSE_MAP.get(_cur_sort, "progress_asc")
-        if _sort_k != "progress_asc":
-            _qp["_sort"] = _sort_k
-        else:
-            _qp.pop("_sort", None)
-
-        _cur_vol = st.session_state.get("tp_filter_volume", "全部成交量 (不限制)")
-        _vol_k = _VOL_REVERSE_MAP.get(_cur_vol, "all")
-        if _vol_k != "all":
-            _qp["_vol"] = _vol_k
-        else:
-            _qp.pop("_vol", None)
-
-        _cur_time = st.session_state.get("tp_filter_time", _TIME_OPTIONS[0])
-        _time_k = _TIME_REVERSE_MAP.get(_cur_time, "2m")
-        if _time_k != "2m":
-            _qp["_time"] = _time_k
-        else:
-            _qp.pop("_time", None)
-
-        _qp["_p"] = str(current_page)
-        st.query_params.clear()
-        st.query_params.update(_qp)
+        _sync_tp_url_params(target_page=current_page)
     except Exception:
         try:
             st.query_params["_p"] = str(current_page)
@@ -958,42 +1018,70 @@ def render_triple_pattern_page():
     def _make_tp_page_url(target_page: int) -> str:
         params = {}
         for k, v in st.query_params.items():
-            if k != "_p":
+            if not k.startswith("_"):
                 params[k] = v
         params["_page"] = "triple_pattern"
-        
+
+        # 1. 方向 _dir
         _cur_dir = st.session_state.get("tp_filter_direction", "全部方向")
-        _DIR_MAP = {"🐂 仅看涨 (三重底)": "bullish", "🐻 仅看跌 (三重顶)": "bearish"}
-        if _cur_dir in _DIR_MAP:
-            params["_dir"] = _DIR_MAP[_cur_dir]
-        elif "_dir" in params and params["_dir"] not in ("bullish", "bearish"):
-            params["_dir"] = "all"
+        _dir_k = _DIR_REVERSE_MAP.get(_cur_dir, "all")
+        if _dir_k != "all":
+            params["_dir"] = _dir_k
 
-        _cur_sort = st.session_state.get("tp_sort_by", _SORT_OPTIONS[0])
-        _sort_k = _SORT_REVERSE_MAP.get(_cur_sort, "progress_asc")
-        if _sort_k != "progress_asc":
-            params["_sort"] = _sort_k
-        else:
-            params.pop("_sort", None)
+        # 2. 形态子类 _patt
+        _cur_patt = st.session_state.get("tp_filter_pattern", "全部形态")
+        _patt_k = _PATT_REVERSE_MAP.get(_cur_patt, "all")
+        if _patt_k != "all":
+            params["_patt"] = _patt_k
 
-        _cur_vol = st.session_state.get("tp_filter_volume", "全部成交量 (不限制)")
-        _vol_k = _VOL_REVERSE_MAP.get(_cur_vol, "all")
-        if _vol_k != "all":
-            params["_vol"] = _vol_k
-        else:
-            params.pop("_vol", None)
+        # 3. 扫描周期 _tf
+        _cur_tfs = st.session_state.get("tp_filter_period", _ALL_PERIODS)
+        if set(_cur_tfs) != set(_ALL_PERIODS):
+            params["_tf"] = ",".join(_cur_tfs)
 
+        # 4. 阶段状态 _stat
+        _cur_stats = st.session_state.get("tp_filter_status", _DEFAULT_STATS)
+        if set(_cur_stats) != set(_DEFAULT_STATS):
+            _stat_ks = [_STAT_REVERSE_MAP[s] for s in _cur_stats if s in _STAT_REVERSE_MAP]
+            params["_stat"] = ",".join(_stat_ks)
+
+        # 5. 跑势上限 _prog
+        _cur_prog = st.session_state.get("tp_progress_slider", 20)
+        if _cur_prog != 20:
+            params["_prog"] = str(_cur_prog)
+
+        # 6. 形态时效 _time
         _cur_time = st.session_state.get("tp_filter_time", _TIME_OPTIONS[0])
         _time_k = _TIME_REVERSE_MAP.get(_cur_time, "2m")
         if _time_k != "2m":
             params["_time"] = _time_k
-        else:
-            params.pop("_time", None)
 
-        # 确保 _p 永远排在 URL 查询参数的最后一个
+        # 7. 成交量 _vol
+        _cur_vol = st.session_state.get("tp_filter_volume", _VOL_OPTIONS[0])
+        _vol_k = _VOL_REVERSE_MAP.get(_cur_vol, "all")
+        if _vol_k != "all":
+            params["_vol"] = _vol_k
+
+        # 8. 搜索关键词 _q
+        _cur_q = str(st.session_state.get("tp_search_query", "")).strip()
+        if _cur_q:
+            params["_q"] = _cur_q
+
+        # 9. 排序方式 _sort
+        _cur_sort = st.session_state.get("tp_sort_by", _SORT_OPTIONS[0])
+        _sort_k = _SORT_REVERSE_MAP.get(_cur_sort, "progress_asc")
+        if _sort_k != "progress_asc":
+            params["_sort"] = _sort_k
+
+        # 10. 每页条数 _ps
+        _cur_ps = st.session_state.get("tp_page_size", 20)
+        if _cur_ps != 20:
+            params["_ps"] = str(_cur_ps)
+
+        # 11. 确保 _p 永远排在 URL 查询参数的最后一个
         params.pop("_p", None)
         params["_p"] = str(target_page)
-            
+
         qs = "&".join(f"{k}={v}" for k, v in params.items())
         return f"/?{qs}"
 
