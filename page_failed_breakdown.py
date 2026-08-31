@@ -766,12 +766,14 @@ def render_failed_breakdown_page():
     if not page_items:
         st.info("💡 当前筛选条件下无符合品种，请尝试放宽筛选条件或在上方生成 Colab 脚本进行新一轮全市场扫描。")
     else:
-        starred_tickers = set(_stg.load_starred_tickers()) if hasattr(_stg, "load_starred_tickers") else set()
+        wl_items = _stg.load_watchlist() if hasattr(_stg, "load_watchlist") else []
+        fav_tickers = set(str(w.get("ticker", "")).strip().upper() for w in wl_items if isinstance(w, dict) and w.get("ticker"))
         today_str_val = datetime.now().strftime("%Y-%m-%d")
         all_clicks_data = _stg.get_all_link_clicks() if hasattr(_stg, "get_all_link_clicks") else {}
 
-        for r in page_items:
-            ticker = str(r.get("symbol", "")).upper()
+        for idx, r in enumerate(page_items):
+            item_idx = start_idx + idx
+            ticker = str(r.get("symbol", "")).strip().upper()
             name = _fetch_name(ticker)
             is_hit = r.get("is_hit_4236", False)
             gain_pct = r.get("gain_pct", 0.0)
@@ -787,9 +789,9 @@ def render_failed_breakdown_page():
             breakout_time = r.get("breakout_time") or r.get("scan_time") or "—"
             tv_url = _tv_link(ticker, "15m")
             sina_url = _sina_link(ticker)
-            is_starred = ticker in starred_tickers
+            is_starred = ticker in fav_tickers
 
-            click_entry = all_clicks_data.get(f"{ticker.upper()}:tv", {}) if isinstance(all_clicks_data, dict) else {}
+            click_entry = all_clicks_data.get(f"{ticker}:tv", {}) if isinstance(all_clicks_data, dict) else {}
             total_c = click_entry.get("total", 0) if isinstance(click_entry, dict) else 0
             by_date_map = click_entry.get("by_date", {}) if isinstance(click_entry, dict) else {}
             today_c = by_date_map.get(today_str_val, 0) if isinstance(by_date_map, dict) else 0
@@ -871,11 +873,20 @@ def render_failed_breakdown_page():
                     unsafe_allow_html=True,
                 )
             with col_b3:
-                star_btn_lbl = "⭐ 已收藏" if is_starred else "☆ 收藏"
-                if st.button(star_btn_lbl, key=f"fb_star_{ticker}", use_container_width=True):
-                    if hasattr(_stg, "toggle_star_ticker"):
-                        _stg.toggle_star_ticker(ticker)
-                    st.rerun()
+                if not is_starred:
+                    if st.button("☆ 收藏", key=f"fb_star_{ticker}_{item_idx}", use_container_width=True):
+                        ok = _stg.add_to_watchlist(ticker=ticker, name=name, note=f"15m假跌破爆发 (+{gain_pct}%)") if hasattr(_stg, "add_to_watchlist") else False
+                        if ok:
+                            st.toast(f"已添加 {ticker} 至自选收藏夹", icon="⭐")
+                            time.sleep(0.3)
+                            st.rerun()
+                else:
+                    if st.button("⭐ 已收藏", key=f"fb_star_{ticker}_{item_idx}", use_container_width=True, help="点击从自选收藏夹中取消收藏"):
+                        ok = _stg.remove_from_watchlist(ticker) if hasattr(_stg, "remove_from_watchlist") else False
+                        if ok:
+                            st.toast(f"已从自选收藏夹移除 {ticker}", icon="🗑️")
+                            time.sleep(0.3)
+                            st.rerun()
             with col_b4:
                 st.caption(f"突破时间: {breakout_time} | 20根均量: {r.get('avg_volume_20', 0):,.0f}")
 

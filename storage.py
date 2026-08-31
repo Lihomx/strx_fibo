@@ -1020,6 +1020,22 @@ def restore_from_archive(ticker: str) -> bool:
     return ok
 
 
+def load_starred_tickers() -> List[str]:
+    """获取所有已收藏的 ticker 列表（大写）"""
+    items = load_watchlist()
+    return [str(i.get("ticker", "")).strip().upper() for i in items if i.get("ticker")]
+
+
+def toggle_star_ticker(ticker: str, name: str = "", note: str = "") -> bool:
+    """切换收藏状态：未收藏则添加，已收藏则移除"""
+    ticker = ticker.strip().upper()
+    starred = set(load_starred_tickers())
+    if ticker in starred:
+        return remove_from_watchlist(ticker)
+    else:
+        return add_to_watchlist(ticker=ticker, name=name, note=note)
+
+
 def add_watchlist_note(ticker: str, note_text: str,
                        img_url: str = "") -> bool:
     """向已收藏品种追加一条带时间戳的备注。"""
