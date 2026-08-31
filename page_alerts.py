@@ -520,6 +520,9 @@ def render_alert_log_table(full_page: bool = True):
     if not df.empty and "time" in df.columns:
         df = df.sort_values(by="time", ascending=False)
 
+    t_token = st.query_params.get("_t", "")
+    curr_page = st.query_params.get("_page", "alert_logs")
+
     # ── 重点关注 (Starred) 快捷控制与展示 ──────────────────────────────
     if full_page:
         # ── 预加载重点关注品种与名称 ─────────────────────────────────────
@@ -527,10 +530,8 @@ def render_alert_log_table(full_page: bool = True):
         starred_set = set(starred_tickers)
         
         # ── ⭐ 重点关注快捷汇总面板 (默认展开) ───────────────────────────
-        with st.expander("⭐ 重点关注品种告警汇总", expanded=bool(starred_set)):
-            if not starred_set:
-                st.caption("暂无重点关注品种。可在下方告警列表中点击 ⭐ 标记重点关注。")
-            else:
+        if starred_set:
+            with st.expander("⭐ 重点关注品种告警汇总", expanded=True):
                 st.markdown("<div style='font-size:12px;color:#9ca3af;margin-bottom:8px;'>以下为标记重点关注的品种列表及最新告警快照：</div>", unsafe_allow_html=True)
                 
                 # 预加载品种全称（使用缓存）
