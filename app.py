@@ -1407,6 +1407,19 @@ def main():
             pass
         st.rerun()
 
+    _clear_starred = st.query_params.get("_clear_starred", "")
+    if _clear_starred:
+        try:
+            storage.clear_all_starred_tickers()
+            st.toast("🗑️ 已批量取消全部重点关注品种！", icon="🗑️")
+        except Exception:
+            pass
+        try:
+            del st.query_params["_clear_starred"]
+        except Exception:
+            pass
+        st.rerun()
+
     _reorder_raw = st.query_params.get("_reorder", "")
     if _reorder_raw:
         try:

@@ -528,15 +528,31 @@ def render_alert_log_table(full_page: bool = True):
         
         # ── ⭐ 重点关注快捷汇总面板 (默认展开) ───────────────────────────
         if starred_set:
-            with st.expander("⭐ 重点关注品种告警汇总", expanded=True):
-                st.markdown("<div style='font-size:12px;color:#9ca3af;margin-bottom:8px;'>以下为标记重点关注的品种列表及最新告警快照：</div>", unsafe_allow_html=True)
+            with st.expander(f"⭐ 重点关注品种告警汇总 ({len(starred_set)} 支)", expanded=True):
+                col_hd1, col_hd2 = st.columns([3.3, 1.2])
+                with col_hd1:
+                    st.markdown(
+                        f"<div style='font-size:12px;color:#9ca3af;margin-top:6px;'>"
+                        f"以下为标记重点关注的品种列表及最新告警快照（共 <b>{len(starred_set)}</b> 支）："
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
+                with col_hd2:
+                    with st.popover("🗑️ 批量取消全部", use_container_width=True):
+                        st.markdown(f"⚠️ **确定取消全部 {len(starred_set)} 支重点关注品种？**")
+                        st.caption("此操作将清空所有品种的⭐重点关注标记，不会删除历史告警记录。")
+                        if st.button("🔥 确认全部取消", key="btn_clear_all_starred_top", type="primary", use_container_width=True):
+                            storage.clear_all_starred_tickers()
+                            st.toast("✅ 已成功批量取消全部重点关注品种！", icon="🗑️")
+                            time.sleep(0.3)
+                            st.rerun()
                 
                 # 预加载品种全称（使用缓存）
                 symbol_name_map = _get_symbol_name_map()
 
-                # ── 重点关注顺序调整 ──
+                # ── 重点关注顺序调整与单独取消 ──
                 with st.expander("↕️ 调整重点关注品种显示顺序", expanded=False):
-                    st.caption("💡 点击下方的 **[ ⬆️ 上移 ]** 或 **[ 🔻 下移 ]** 按钮调整顺序：")
+                    st.caption("💡 点击下方的 **[ ⬆️ 上移 ]**、**[ 🔻 下移 ]** 调整顺序，或点击 **[ ❌ 取消 ]** 移除单个重点关注：")
                     
                     # 按钮快速微调顺序逻辑
                     if "temp_starred_order" not in st.session_state or set(st.session_state["temp_starred_order"]) != set(starred_tickers):
@@ -544,9 +560,9 @@ def render_alert_log_table(full_page: bool = True):
                     
                     curr_order = st.session_state["temp_starred_order"]
                     
-                    # 展示行与移动按钮
+                    # 展示行与移动/取消按钮
                     for idx, tk in enumerate(curr_order):
-                        c1, c2, c3, c4 = st.columns([1, 4, 1.5, 1.5])
+                        c1, c2, c3, c4, c5 = st.columns([0.8, 3.2, 1.2, 1.2, 1.2])
                         with c1:
                             st.write(f"**#{idx + 1}**")
                         with c2:
@@ -563,6 +579,21 @@ def render_alert_log_table(full_page: bool = True):
                                 st.session_state["temp_starred_order"] = curr_order
                                 storage.save_starred_tickers(curr_order)
                                 st.rerun()
+                        with c5:
+                            if st.button("❌ 取消", key=f"unstar_single_{tk}_{idx}", use_container_width=True, help=f"取消 {tk} 的重点关注"):
+                                storage.unstar_ticker(tk)
+                                st.toast(f"已取消 {tk} 的重点关注", icon="⭐")
+                                time.sleep(0.2)
+                                st.rerun()
+
+                    st.divider()
+                    with st.popover("🗑️ 批量清空全部重点关注品种", use_container_width=True):
+                        st.markdown(f"⚠️ **确定清空全部 {len(curr_order)} 支重点关注品种？**")
+                        if st.button("🔥 确认立即清空", key="btn_clear_all_starred_in_reorder", type="primary", use_container_width=True):
+                            storage.clear_all_starred_tickers()
+                            st.toast("✅ 已批量取消全部重点关注品种！", icon="🗑️")
+                            time.sleep(0.3)
+                            st.rerun()
 
                 # 聚合每个重点品种的最新一条告警记录
                 starred_cards_html = []
@@ -577,6 +608,8 @@ def render_alert_log_table(full_page: bool = True):
                 starred_cards_html.append(".starred-alert { font-size: 11px; margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(245, 158, 11, 0.2); }")
                 starred_cards_html.append(".filter-btn-mini { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 4px; padding: 1px 5px; font-size: 10px; text-decoration: none !important; font-weight: normal; cursor: pointer; transition: all 0.2s; }")
                 starred_cards_html.append(".filter-btn-mini:hover { background: rgba(56, 189, 248, 0.3); color: #7dd3fc; }")
+                starred_cards_html.append(".filter-btn-unstar { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 4px; padding: 1px 5px; font-size: 10px; text-decoration: none !important; font-weight: normal; cursor: pointer; transition: all 0.2s; }")
+                starred_cards_html.append(".filter-btn-unstar:hover { background: rgba(239, 68, 68, 0.35); color: #fca5a5; }")
                 starred_cards_html.append("</style>")
                 starred_cards_html.append("<div class='starred-grid' id='starred_cards_grid'>")
 
@@ -611,6 +644,7 @@ def render_alert_log_table(full_page: bool = True):
 
                     filter_href = f"/?_page={curr_page}&_t={t_token}&_search={stk_u}"
                     tv_href = tv_url(stk_u, l_tf if l_tf else "15m")
+                    unstar_href = f"/?_page={curr_page}&_t={t_token}&_toggle_star={stk_u}&_star_op=unstar"
 
                     card = (
                         f"<div class='starred-card' draggable='true' data-ticker='{stk_u}' "
@@ -619,6 +653,7 @@ def render_alert_log_table(full_page: bool = True):
                         f"<span>⭐ <a href='/?_page=ticker&_ticker={stk_u}&_t={t_token}' target='_parent' style='color:#fbbf24;text-decoration:none;' title='进入品种详情页'>{stk_u}</a></span>"
                         f"<div style='display:flex;gap:4px;align-items:center;'>"
                         f"<a href='{tv_href}' target='_blank' class='filter-btn-mini' style='background:rgba(30,144,255,0.15);color:#38bdf8;border-color:rgba(30,144,255,0.3);' title='打开 TradingView 图表'>📈 图表</a>"
+                        f"<a href='{unstar_href}' target='_parent' class='filter-btn-unstar' title='取消重点关注'>✕</a>"
                         f"</div>"
                         f"</div>"
                         f"<div class='starred-sub'>{stk_name}</div>"

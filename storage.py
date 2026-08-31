@@ -812,6 +812,14 @@ def unstar_ticker(ticker: str) -> bool:
         return save_starred_tickers(starred)
     return True
 
+def clear_all_starred_tickers() -> bool:
+    """显式批量清空全部重点关注状态"""
+    return save_starred_tickers([])
+
+def unstar_all_tickers() -> bool:
+    """批量取消全部重点关注（别名）"""
+    return clear_all_starred_tickers()
+
 def toggle_starred_ticker(ticker: str) -> bool:
     ticker = ticker.strip().upper()
     if not ticker:
@@ -1020,17 +1028,17 @@ def restore_from_archive(ticker: str) -> bool:
     return ok
 
 
-def load_starred_tickers() -> List[str]:
-    """获取所有已收藏的 ticker 列表（大写）"""
+def load_watchlist_tickers() -> List[str]:
+    """获取所有自选收藏夹的 ticker 列表（大写）"""
     items = load_watchlist()
     return [str(i.get("ticker", "")).strip().upper() for i in items if i.get("ticker")]
 
 
 def toggle_star_ticker(ticker: str, name: str = "", note: str = "") -> bool:
-    """切换收藏状态：未收藏则添加，已收藏则移除"""
+    """切换自选收藏状态：未收藏则添加，已收藏则移除"""
     ticker = ticker.strip().upper()
-    starred = set(load_starred_tickers())
-    if ticker in starred:
+    wl_set = set(load_watchlist_tickers())
+    if ticker in wl_set:
         return remove_from_watchlist(ticker)
     else:
         return add_to_watchlist(ticker=ticker, name=name, note=note)
