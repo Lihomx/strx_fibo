@@ -18,10 +18,16 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
 import streamlit as st
+import importlib
 
 import storage
+if not hasattr(storage, "load_failed_breakdown"):
+    try:
+        storage = importlib.reload(storage)
+    except Exception:
+        pass
+
 import colab_failed_breakdown_script
 
 logger = logging.getLogger(__name__)
@@ -87,7 +93,19 @@ _SORT_MAP = {
 _SORT_REVERSE_MAP = {v: k for k, v in _SORT_MAP.items()}
 
 
+def _get_storage():
+    global storage
+    if not hasattr(storage, "load_failed_breakdown"):
+        try:
+            import importlib
+            storage = importlib.reload(storage)
+        except Exception:
+            pass
+    return storage
+
+
 def render_failed_breakdown_page():
+    _stg = _get_storage()
     st.markdown(
         """
         <style>
@@ -246,7 +264,7 @@ def render_failed_breakdown_page():
     )
 
     # 2. 读取数据
-    all_records = storage.load_failed_breakdown()
+    all_records = _stg.load_failed_breakdown() if hasattr(_stg, "load_failed_breakdown") else []
 
     # 3. URL 状态双向同步与免密 Token 保留
     _url_stat = st.query_params.get("_stat", "all")
@@ -357,16 +375,16 @@ def render_failed_breakdown_page():
 
             tickers_to_scan = []
             if pool_choice == "我的收藏夹自选股":
-                wl = storage.load_watchlist()
+                wl = _stg.load_watchlist() if hasattr(_stg, "load_watchlist") else []
                 tickers_to_scan = [w.get("ticker", "") for w in wl if w.get("ticker")]
             elif pool_choice == "A 股股票池 (沪深京)":
-                syms = storage.load_symbols()
+                syms = _stg.load_symbols() if hasattr(_stg, "load_symbols") else []
                 tickers_to_scan = [s.get("ticker", "") for s in syms if any(str(s.get("ticker", "")).endswith(x) for x in (".SS", ".SZ", ".BJ"))]
             elif pool_choice == "美股主要品种池 (标普/纳指)":
-                syms = storage.load_symbols()
+                syms = _stg.load_symbols() if hasattr(_stg, "load_symbols") else []
                 tickers_to_scan = [s.get("ticker", "") for s in syms if not any(str(s.get("ticker", "")).endswith(x) for x in (".SS", ".SZ", ".BJ"))]
             else:
-                syms = storage.load_symbols()
+                syms = _stg.load_symbols() if hasattr(_stg, "load_symbols") else []
                 tickers_to_scan = [s.get("ticker", "") for s in syms if s.get("ticker")]
 
             if not tickers_to_scan:
@@ -398,7 +416,7 @@ def render_failed_breakdown_page():
                     df_up = pd.read_csv(uploaded_file)
                     new_records = df_up.to_dict(orient="records")
                     if st.button("🚀 一键合并导入到系统", type="primary", key="fb_btn_import"):
-                        ok = storage.append_failed_breakdown_results(new_records)
+                        ok = _stg.append_failed_breakdown_results(new_records) if hasattr(_stg, "append_failed_breakdown_results") else False
                         if ok:
                             st.success(f"🎉 成功导入 {len(new_records)} 条记录！")
                             time.sleep(1)
@@ -426,19 +444,20 @@ def render_failed_breakdown_page():
             col_s1, col_s2 = st.columns(2)
             with col_s1:
                 if st.button("💾 创建当前数据快照", use_container_width=True, key="fb_btn_snap"):
-                    sid = storage.backup_failed_breakdown(all_records)
+                    sid = _stg.backup_failed_breakdown(all_records) if hasattr(_stg, "backup_failed_breakdown") else ""
                     if sid:
                         st.success(f"✅ 快照已生成: {sid}")
                     else:
                         st.info("数据为空，无需备份")
             with col_s2:
                 if st.button("🗑️ 清空所有扫描结果", type="secondary", use_container_width=True, key="fb_btn_clear"):
-                    storage.clear_failed_breakdown_results()
+                    if hasattr(_stg, "clear_failed_breakdown_results"):
+                        _stg.clear_failed_breakdown_results()
                     st.warning("已清空当前扫描数据（自动创建了快照）。")
                     time.sleep(1)
                     st.rerun()
 
-            snaps = storage.load_fb_snapshots()
+            snaps = _stg.load_fb_snapshots() if hasattr(_stg, "load_fb_snapshots") else []
             if snaps:
                 st.write(f"历史快照数量: {len(snaps)}")
                 for sp in snaps[:5]:
@@ -447,7 +466,7 @@ def render_failed_breakdown_page():
                         st.write(f"🗂️ `{sp['session_id']}` ({sp['scan_time']}) · {sp['count']} 条")
                     with col_sp2:
                         if st.button("恢复", key=f"fb_restore_{sp['session_id']}"):
-                            ok, msg, cnt = storage.restore_fb_snapshot(sp['session_id'])
+                            ok, msg, cnt = _stg.restore_fb_snapshot(sp['session_id']) if hasattr(_stg, "restore_fb_snapshot") else (False, "方法未定义", 0)
                             if ok:
                                 st.success(msg)
                                 time.sleep(1)
@@ -648,7 +667,7 @@ def render_failed_breakdown_page():
     if not page_items:
         st.info("💡 当前筛选条件下无符合品种，请尝试放宽筛选条件或在上方生成 Colab 脚本进行新一轮全市场扫描。")
     else:
-        starred_tickers = set(storage.load_starred_tickers())
+        starred_tickers = set(_stg.load_starred_tickers()) if hasattr(_stg, "load_starred_tickers") else set()
 
         for r in page_items:
             ticker = str(r.get("symbol", "")).upper()
@@ -737,7 +756,8 @@ def render_failed_breakdown_page():
             with col_b3:
                 star_btn_lbl = "⭐ 已收藏" if is_starred else "☆ 收藏"
                 if st.button(star_btn_lbl, key=f"fb_star_{ticker}", use_container_width=True):
-                    storage.toggle_star_ticker(ticker)
+                    if hasattr(_stg, "toggle_star_ticker"):
+                        _stg.toggle_star_ticker(ticker)
                     st.rerun()
             with col_b4:
                 st.caption(f"突破时间: {breakout_time} | 20根均量: {r.get('avg_volume_20', 0):,.0f}")

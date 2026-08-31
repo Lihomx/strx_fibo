@@ -403,7 +403,21 @@ _st_components.html(r"""<script>
 </script>""", height=0)
 
 # ── 导入页面模块（直接 import，无子文件夹）──────────────────────────
+import importlib
 import storage
+if not hasattr(storage, "load_failed_breakdown"):
+    try:
+        storage = importlib.reload(storage)
+    except Exception:
+        pass
+
+import cloud_sync
+if not hasattr(cloud_sync, "push_failed_breakdown"):
+    try:
+        cloud_sync = importlib.reload(cloud_sync)
+    except Exception:
+        pass
+
 import page_scanner
 import page_confluence
 import page_history
@@ -421,7 +435,6 @@ import page_triple_pattern
 import page_failed_breakdown
 import page_symbols
 import page_ticker
-import cloud_sync
 
 
 
