@@ -355,79 +355,158 @@ def render_failed_breakdown_page():
         unsafe_allow_html=True,
     )
 
-    # 5. 操作栏：Colab 脚本生成器、CSV 导入/导出、快照管理
-    with st.expander("🛠️ 扫描与数据管理 (Google Colab 脚本生成 / CSV 导入导出 / 快照备份)", expanded=False):
-        tab_colab, tab_csv, tab_snap = st.tabs(["🚀 Google Colab 极速扫描", "📥 导入与导出 CSV", "📦 快照备份与恢复"])
+    # ── 2. Google Colab 独立云端扫描与 1 键导入 ──
+    with st.expander("🚀 1. Google Colab 独立云端极速扫描与 1 键导入 (推荐 · 50+只/秒并发)", expanded=False):
+        colab_c1, colab_c2 = st.columns([1.2, 1])
+        with colab_c1:
+            st.markdown("##### 1. 生成并复制 Google Colab 扫描脚本")
+            st.caption("脚本内置 Yahoo v8 直连引擎与连接池技术，支持全部分组 12,400+ 支标的 15分钟周期秒级并发扫描。")
 
-        with tab_colab:
-            st.markdown("#### 🚀 一键生成 15m 假跌破+4.236 爆发 Colab 极速扫描脚本")
-            st.caption("脚本内置 Yahoo Finance 高并发异步引擎，每秒可扫描 50+ 只品种。运行后会自动下载 `colab_failed_breakdown_results.csv`。")
+            all_symbols = _stg.load_symbols() if hasattr(_stg, "load_symbols") else []
+            groups = _stg.load_symbol_groups() if hasattr(_stg, "load_symbol_groups") else []
 
-            c_p1, c_p2 = st.columns([2, 1])
+            pool_options = ["🇺🇸 全量美股 (系统内置)", "🇨🇳 全量A股 (系统内置)", "🌐 全部组去重合并 (全量市场)"]
+            for g in groups:
+                if isinstance(g, dict) and g.get("name"):
+                    pool_options.append(f"📁 分组: {g.get('name')}")
+
+            c_p1, c_p2, c_p3 = st.columns([1.5, 1.1, 1.4])
             with c_p1:
-                pool_choice = st.selectbox(
-                    "选择扫描股票池",
-                    ["系统全品种库", "A 股股票池 (沪深京)", "美股主要品种池 (标普/纳指)", "我的收藏夹自选股"],
-                    key="fb_colab_pool_sel",
+                selected_pool = st.selectbox(
+                    "🎯 选择扫描股票池",
+                    pool_options,
+                    index=0,
+                    key="fb_colab_pool_select"
                 )
             with c_p2:
-                min_vol_val = st.number_input("最小均量过滤 (股)", min_value=0, value=50000, step=10000, key="fb_colab_vol_min")
+                st.selectbox(
+                    "⏱ 扫描周期",
+                    ["15m (15分钟)"],
+                    index=0,
+                    key="fb_colab_tf_select",
+                    help="假跌破爆发策略严格锁定 15m 周期"
+                )
+            with c_p3:
+                vol_option = st.selectbox(
+                    "📊 最低成交量过滤",
+                    [
+                        "🔥 20日均量 ≥ 10 万股 (推荐)",
+                        "🔥 20日均量 ≥ 30 万股",
+                        "🔥 20日均量 ≥ 50 万股",
+                        "🔥 20日均量 ≥ 100 万股",
+                        "全部扫描 (不限制成交量)"
+                    ],
+                    index=0,
+                    key="fb_colab_min_vol_select",
+                    help="在 Colab 云端扫描时自动剔除低流动性僵尸股/仙股，不仅形态质量更高，还能大幅提升云端扫描速度 3~5 倍！"
+                )
+                _VOL_MAP = {
+                    "🔥 20日均量 ≥ 10 万股 (推荐)": 100000,
+                    "🔥 20日均量 ≥ 30 万股": 300000,
+                    "🔥 20日均量 ≥ 50 万股": 500000,
+                    "🔥 20日均量 ≥ 100 万股": 1000000,
+                    "全部扫描 (不限制成交量)": 0,
+                }
+                min_vol_val = _VOL_MAP.get(vol_option, 100000)
 
-            tickers_to_scan = []
-            if pool_choice == "我的收藏夹自选股":
-                wl = _stg.load_watchlist() if hasattr(_stg, "load_watchlist") else []
-                tickers_to_scan = [w.get("ticker", "") for w in wl if w.get("ticker")]
-            elif pool_choice == "A 股股票池 (沪深京)":
-                syms = _stg.load_symbols() if hasattr(_stg, "load_symbols") else []
-                tickers_to_scan = [s.get("ticker", "") for s in syms if any(str(s.get("ticker", "")).endswith(x) for x in (".SS", ".SZ", ".BJ"))]
-            elif pool_choice == "美股主要品种池 (标普/纳指)":
-                syms = _stg.load_symbols() if hasattr(_stg, "load_symbols") else []
-                tickers_to_scan = [s.get("ticker", "") for s in syms if not any(str(s.get("ticker", "")).endswith(x) for x in (".SS", ".SZ", ".BJ"))]
-            else:
-                syms = _stg.load_symbols() if hasattr(_stg, "load_symbols") else []
-                tickers_to_scan = [s.get("ticker", "") for s in syms if s.get("ticker")]
+            export_tickers = []
+            if selected_pool == "🌐 全部组去重合并 (全量市场)":
+                for g in groups:
+                    export_tickers.extend(g.get("tickers", []))
+                if not export_tickers:
+                    export_tickers = [s["ticker"] for s in all_symbols]
+            elif "全量美股" in selected_pool:
+                export_tickers = [s["ticker"] for s in all_symbols if not (s["ticker"].endswith(".SS") or s["ticker"].endswith(".SZ") or s["ticker"].endswith(".BJ") or s["ticker"].isdigit())]
+            elif "全量A股" in selected_pool:
+                export_tickers = [s["ticker"] for s in all_symbols if s["ticker"].endswith(".SS") or s["ticker"].endswith(".SZ") or s["ticker"].endswith(".BJ") or s["ticker"].isdigit()]
+            elif selected_pool.startswith("📁 分组:"):
+                g_name = selected_pool.replace("📁 分组: ", "").strip()
+                target_g = next((g for g in groups if g.get("name") == g_name), None)
+                if target_g:
+                    export_tickers = target_g.get("tickers", [])
 
-            if not tickers_to_scan:
-                tickers_to_scan = ["MRVL", "NVDA", "AAPL", "AMD", "TSLA", "MSFT", "GOOGL", "AMZN", "META", "601919.SS", "002230.SZ", "300059.SZ"]
+            if not export_tickers:
+                export_tickers = ["MRVL", "NVDA", "TSLA", "MSFT", "AMZN", "GOOGL", "META", "AAPL", "AMD", "601919.SS", "002230.SZ", "300059.SZ"]
 
-            st.write(f"当前选定股票池: **{len(tickers_to_scan)}** 支品种")
-            script_code = colab_failed_breakdown_script.generate_colab_script_for_tickers(
-                tickers_to_scan, pool_name=pool_choice, min_volume=int(min_vol_val)
+            export_tickers = list(dict.fromkeys([t.strip().upper() for t in export_tickers if t and isinstance(t, str)]))
+            vol_hint = f" | 均量: **{vol_option.split(' ')[1]}**" if min_vol_val > 0 else ""
+            st.info(f"📋 选定股票池: **{len(export_tickers)}** 支品种 | 周期: **15m**{vol_hint} (代码已内置，右上角可一键复制)：")
+
+            colab_code = colab_failed_breakdown_script.generate_colab_script_for_tickers(
+                export_tickers, pool_name=selected_pool, min_volume=min_vol_val
             )
+            st.code(colab_code, language="python", line_numbers=True)
 
-            st.code(script_code[:1200] + "\n\n# ... (完整代码已生成，点击下方按钮下载) ...", language="python")
-            st.download_button(
-                "📥 下载完整 Colab 扫描脚本 (.py)",
-                data=script_code,
-                file_name="run_failed_breakdown_15m_scan.py",
-                mime="text/x-python",
-                use_container_width=True,
-            )
-
-        with tab_csv:
-            st.markdown("#### 📥 导入 Colab 扫描结果 CSV")
+        with colab_c2:
+            st.markdown("##### 2. 导入 Colab 扫描结果 CSV")
+            st.caption("上传从 Google Colab 导出的 `colab_failed_breakdown_results.csv`，系统将自动增量合并。")
             uploaded_file = st.file_uploader(
-                "拖入 colab_failed_breakdown_results.csv",
+                "选择或拖拽 Colab 导出的 CSV 文件",
                 type=["csv"],
-                key="fb_csv_uploader",
+                key="fb_colab_csv_uploader",
+                help="支持导入 colab_failed_breakdown_results.csv"
             )
+
             if uploaded_file is not None:
                 try:
                     df_up = pd.read_csv(uploaded_file)
-                    new_records = df_up.to_dict(orient="records")
-                    if st.button("🚀 一键合并导入到系统", type="primary", key="fb_btn_import"):
-                        ok = _stg.append_failed_breakdown_results(new_records) if hasattr(_stg, "append_failed_breakdown_results") else False
-                        if ok:
-                            st.success(f"🎉 成功导入 {len(new_records)} 条记录！")
-                            time.sleep(1)
-                            st.rerun()
-                        else:
-                            st.error("导入保存失败")
+                    req_fields = ["symbol", "pt_low_0", "pt_high_1", "fib_4236"]
+                    missing = [f for f in req_fields if f not in df_up.columns]
+                    if missing:
+                        st.error(f"❌ CSV 格式校验未通过，缺少关键字段: {missing}")
+                    else:
+                        hit_cnt_up = sum(df_up.get("is_hit_4236", False)) if "is_hit_4236" in df_up.columns else sum(df_up.get("max_high_post", 0) >= df_up.get("fib_4236", 0) * 0.998)
+                        st.success(f"📊 检测到有效爆发记录: **{len(df_up)}** 条 (💥 已达成 4.236: **{hit_cnt_up}** 支)")
+                        if st.button("📥 确认增量导入并合并到数据库", key="fb_confirm_import_csv", use_container_width=True):
+                            new_records = df_up.to_dict(orient="records")
+                            ok = _stg.append_failed_breakdown_results(new_records) if hasattr(_stg, "append_failed_breakdown_results") else False
+                            if ok:
+                                st.toast(f"✅ 成功增量导入 {len(new_records)} 条形态记录！", icon="🎉")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error("❌ 数据库写入失败，请重试")
                 except Exception as e:
-                    st.error(f"解析 CSV 失败: {e}")
+                    st.error(f"❌ 解析 CSV 出错: {e}")
 
-            st.divider()
-            st.markdown("#### 📤 导出当前数据")
+    # ── 3. 快照与数据管理 ──
+    with st.expander("📦 2. 快照备份与数据管理", expanded=False):
+        c_bk1, c_bk2 = st.columns([1.5, 1])
+        with c_bk1:
+            st.markdown("##### 🗂️ 历史快照恢复")
+            snaps = _stg.load_fb_snapshots() if hasattr(_stg, "load_fb_snapshots") else []
+            if snaps:
+                st.markdown(f"当前历史快照共 **{len(snaps)}** 个：")
+                options = {s["session_id"]: f"{s['scan_time']} | 数量: {s['count']} 条 | ID: {s['session_id'][:16]}..." for s in snaps}
+                sel_sid = st.selectbox("选择要恢复的历史快照", list(options.keys()), format_func=lambda x: options[x], key="fb_sel_snap")
+                if st.button("♻️ 从选定快照恢复", key="fb_btn_restore_snap"):
+                    ok, msg, cnt = _stg.restore_fb_snapshot(sel_sid) if hasattr(_stg, "restore_fb_snapshot") else (False, "方法未定义", 0)
+                    if ok:
+                        st.toast(f"✅ 成功恢复 {cnt} 条形态记录！", icon="♻️")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+            else:
+                st.caption("暂无历史快照备份。")
+        with c_bk2:
+            st.markdown("##### 💾 数据操作与导出")
+            col_op1, col_op2 = st.columns(2)
+            with col_op1:
+                if st.button("💾 创建快照", use_container_width=True, key="fb_btn_snap_card"):
+                    sid = _stg.backup_failed_breakdown(all_records) if hasattr(_stg, "backup_failed_breakdown") else ""
+                    if sid:
+                        st.toast(f"✅ 快照已生成: {sid}", icon="💾")
+                    else:
+                        st.info("数据为空，无需备份")
+            with col_op2:
+                if st.button("🗑️ 清空数据", type="secondary", use_container_width=True, key="fb_btn_clear_card"):
+                    if hasattr(_stg, "clear_failed_breakdown_results"):
+                        _stg.clear_failed_breakdown_results()
+                    st.warning("已清空当前扫描数据（自动创建了快照备份）。")
+                    time.sleep(1)
+                    st.rerun()
+
             if all_records:
                 df_export = pd.DataFrame(all_records)
                 csv_bytes = df_export.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
@@ -438,41 +517,6 @@ def render_failed_breakdown_page():
                     mime="text/csv",
                     use_container_width=True,
                 )
-
-        with tab_snap:
-            st.markdown("#### 📦 快照备份与恢复")
-            col_s1, col_s2 = st.columns(2)
-            with col_s1:
-                if st.button("💾 创建当前数据快照", use_container_width=True, key="fb_btn_snap"):
-                    sid = _stg.backup_failed_breakdown(all_records) if hasattr(_stg, "backup_failed_breakdown") else ""
-                    if sid:
-                        st.success(f"✅ 快照已生成: {sid}")
-                    else:
-                        st.info("数据为空，无需备份")
-            with col_s2:
-                if st.button("🗑️ 清空所有扫描结果", type="secondary", use_container_width=True, key="fb_btn_clear"):
-                    if hasattr(_stg, "clear_failed_breakdown_results"):
-                        _stg.clear_failed_breakdown_results()
-                    st.warning("已清空当前扫描数据（自动创建了快照）。")
-                    time.sleep(1)
-                    st.rerun()
-
-            snaps = _stg.load_fb_snapshots() if hasattr(_stg, "load_fb_snapshots") else []
-            if snaps:
-                st.write(f"历史快照数量: {len(snaps)}")
-                for sp in snaps[:5]:
-                    col_sp1, col_sp2 = st.columns([3, 1])
-                    with col_sp1:
-                        st.write(f"🗂️ `{sp['session_id']}` ({sp['scan_time']}) · {sp['count']} 条")
-                    with col_sp2:
-                        if st.button("恢复", key=f"fb_restore_{sp['session_id']}"):
-                            ok, msg, cnt = _stg.restore_fb_snapshot(sp['session_id']) if hasattr(_stg, "restore_fb_snapshot") else (False, "方法未定义", 0)
-                            if ok:
-                                st.success(msg)
-                                time.sleep(1)
-                                st.rerun()
-                            else:
-                                st.error(msg)
 
     # 6. 筛选控制栏
     f_c1, f_c2, f_c3, f_c4, f_c5 = st.columns([1.5, 1.2, 1.5, 1.5, 1.2])
