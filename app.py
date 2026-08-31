@@ -418,6 +418,7 @@ import page_neckline
 import page_schedule
 import page_triple_bottom
 import page_triple_pattern
+import page_failed_breakdown
 import page_symbols
 import page_ticker
 import cloud_sync
@@ -998,6 +999,7 @@ def sidebar():
             ("⚡", "共振检测",           "confluence"),
             ("📐", "三重底扫描",         "triple_bottom"),
             ("🌟", "三重顶底",           "triple_pattern"),
+            ("💥", "假跌破爆发",         "failed_breakdown"),
             ("📈", "4H Breakout",        "chartink"),
             ("⚡", "4H 结构颈线",        "neckline"),
             ("⏰", "定时扫描",           "schedule"),
@@ -1510,7 +1512,7 @@ def main():
 
     # ── URL 参数跳转与同步 ────────────────────────────────────────────
     _VALID_PAGES = ("watchlist","hotlist","scanner","confluence","alerts","settings",
-                    "history","cloud","universe","chartink","neckline","schedule","triple_bottom","triple_pattern","symbols","alert_logs","ticker")
+                    "history","cloud","universe","chartink","neckline","schedule","triple_bottom","triple_pattern","failed_breakdown","symbols","alert_logs","ticker")
     _url_page = st.query_params.get("_page", "")
     if _url_page and _url_page in _VALID_PAGES:
         st.session_state["page"] = _url_page
@@ -1542,23 +1544,24 @@ def main():
 
     p = st.session_state.get("page", "scanner")
     dispatch = {
-        "scanner":        page_scanner.render,
-        "confluence":     page_confluence.render,
-        "triple_bottom":  page_triple_bottom.render_triple_bottom_page,
-        "triple_pattern": page_triple_pattern.render_triple_pattern_page,
-        "chartink":       getattr(page_chartink, "render_page_chartink", getattr(page_chartink, "render", None)),
-        "neckline":       getattr(page_neckline, "render_page_neckline", getattr(page_neckline, "render", None)),
-        "universe":       page_universe.render,
-        "watchlist":      page_watchlist.render,
-        "hotlist":        page_hotlist.render,
-        "history":        page_history.render,
-        "alerts":         page_alerts.render,
-        "alert_logs":     page_alerts.render_log_page,
-        "cloud":          page_cloud.render,
-        "settings":       page_settings.render,
-        "schedule":       page_schedule.render,
-        "symbols":        page_symbols.render,
-        "ticker":         page_ticker.render,
+        "scanner":          page_scanner.render,
+        "confluence":       page_confluence.render,
+        "triple_bottom":    page_triple_bottom.render_triple_bottom_page,
+        "triple_pattern":   page_triple_pattern.render_triple_pattern_page,
+        "failed_breakdown": page_failed_breakdown.render_failed_breakdown_page,
+        "chartink":         getattr(page_chartink, "render_page_chartink", getattr(page_chartink, "render", None)),
+        "neckline":         getattr(page_neckline, "render_page_neckline", getattr(page_neckline, "render", None)),
+        "universe":         page_universe.render,
+        "watchlist":        page_watchlist.render,
+        "hotlist":          page_hotlist.render,
+        "history":          page_history.render,
+        "alerts":           page_alerts.render,
+        "alert_logs":       page_alerts.render_log_page,
+        "cloud":            page_cloud.render,
+        "settings":         page_settings.render,
+        "schedule":         page_schedule.render,
+        "symbols":          page_symbols.render,
+        "ticker":           page_ticker.render,
     }
     
     render_fn = dispatch.get(p, page_scanner.render)
@@ -1590,6 +1593,7 @@ def main():
                 "confluence": "共振检测",
                 "triple_bottom": "三重底扫描",
                 "triple_pattern": "三重顶底",
+                "failed_breakdown": "假跌破爆发",
                 "chartink": "4H Breakout",
                 "neckline": "4H 结构颈线",
                 "schedule": "定时扫描",

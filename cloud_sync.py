@@ -48,6 +48,7 @@ _LATEST_FILES = {
     "tb_batch_state":      "data_tb_batch_state.json",
     "triple_pattern":      "data_triple_pattern.json",
     "tp_batch_state":      "data_tp_batch_state.json",
+    "failed_breakdown":    "data_failed_breakdown.json",
     "chartink":            "data_chartink.json",
     "neckline":            "data_neckline.json",
     "scan_checkpoint":     "scan_checkpoint.json",
@@ -547,6 +548,34 @@ def pull_triple_pattern() -> Tuple[bool, str]:
         return False, f"pull_triple_pattern 异常：{e}"
 
 
+def push_failed_breakdown() -> Tuple[bool, str]:
+    try:
+        import storage as loc
+        items = loc.load_failed_breakdown()
+        ok, msg = _upload_latest("failed_breakdown", items)
+        if ok:
+            return True, f"假跌破爆发已同步 {len(items)} 个结果"
+        return False, f"failed_breakdown: {msg}"
+    except Exception as e:
+        return False, f"push_failed_breakdown 异常：{e}"
+
+
+def pull_failed_breakdown() -> Tuple[bool, str]:
+    try:
+        from storage import F_FAILED_BREAKDOWN, _save, _load
+        local_items = _load(F_FAILED_BREAKDOWN, [])
+        if isinstance(local_items, list) and len(local_items) > 0:
+            return True, f"本地已有假跌破数据 ({len(local_items)} 条)，跳过云端下载"
+            
+        cloud_items = _download_latest("failed_breakdown")
+        if not isinstance(cloud_items, list):
+            return False, "云端无假跌破数据"
+        _save(F_FAILED_BREAKDOWN, cloud_items)
+        return True, f"假跌破已恢复 {len(cloud_items)} 个结果"
+    except Exception as e:
+        return False, f"pull_failed_breakdown 异常：{e}"
+
+
 def push_tb_batch_state() -> Tuple[bool, str]:
     try:
         import storage as loc
@@ -945,6 +974,7 @@ def push_all(force: bool = False) -> Tuple[bool, str]:
         ("tb_batch_state", lambda: loc.load_tb_batch_state()),
         ("triple_pattern", lambda: loc.load_triple_pattern()),
         ("tp_batch_state", lambda: loc.load_tp_batch_state()),
+        ("failed_breakdown", lambda: loc.load_failed_breakdown()),
     ]:
 
         try:
@@ -1080,6 +1110,9 @@ def pull_all() -> Dict[str, Any]:
 
     ok_tp, msg_tp = pull_triple_pattern()
     results["triple_pattern"] = (ok_tp, msg_tp)
+
+    ok_fb, msg_fb = pull_failed_breakdown()
+    results["failed_breakdown"] = (ok_fb, msg_fb)
 
     ok_tb_state, msg_tb_state = pull_tb_batch_state()
     results["tb_batch_state"] = (ok_tb_state, msg_tb_state)

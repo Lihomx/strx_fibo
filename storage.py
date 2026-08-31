@@ -860,6 +860,8 @@ F_TRIPLE_BOTTOM = os.path.join(_BASE, "data_triple_bottom.json")
 F_TB_SNAPSHOT_DIR = os.path.join(_BASE, "triple_bottom_snapshots")
 F_TRIPLE_PATTERN = os.path.join(_BASE, "data_triple_pattern.json")
 F_TP_SNAPSHOT_DIR = os.path.join(_BASE, "triple_pattern_snapshots")
+F_FAILED_BREAKDOWN = os.path.join(_BASE, "data_failed_breakdown.json")
+F_FB_SNAPSHOT_DIR = os.path.join(_BASE, "failed_breakdown_snapshots")
 
 
 
@@ -2155,6 +2157,184 @@ def restore_tp_snapshot(session_id: str) -> tuple:
         return False, f"恢复异常: {e}", 0
 
 
+# ── 💥 假跌破 + 4.236 爆发扫描数据管理 ────────────────────────────────────
+
+def _ensure_fb_progress(r: Dict) -> Dict:
+    if not isinstance(r, dict):
+        return r
+    try:
+        p0 = float(r.get("pt_low_0", 0.0))
+        p1 = float(r.get("pt_high_1", r.get("neckline", 0.0)))
+        h = max(p1 - p0, p1 * 0.001)
+        fib_4236 = float(r.get("fib_4236", p0 + h * 4.236))
+        max_h = float(r.get("max_high_post", r.get("latest_close", 0.0)))
+        close = float(r.get("latest_close", max_h))
+        
+        # 4.236 触达判断
+        if max_h >= fib_4236 * 0.998:
+            r["status"] = "completed"
+            r["is_hit_4236"] = True
+            r["status_reason"] = f"已达成 4.236 延伸位 ({fib_4236:.2f})，最高 {max_h:.2f}"
+        else:
+            r["status"] = "active"
+            r["is_hit_4236"] = False
+            r["status_reason"] = f"突破 1点 ({p1:.2f})，正朝 4.236 ({fib_4236:.2f}) 推进"
+            
+        if p1 > 0:
+            r["gain_pct"] = round((max_h - p1) / p1 * 100.0, 2)
+            
+        ext_mult = (max_h - p0) / h if h > 0 else 0.0
+        r["fibo_multiple"] = round(ext_mult, 3)
+    except Exception:
+        pass
+    return r
+
+
+def load_failed_breakdown() -> List[Dict]:
+    """返回假跌破 4.236 爆发扫描结果，按 (symbol, period) 自动去重并按涨幅/置信度排序"""
+    res = _load(F_FAILED_BREAKDOWN, [])
+    if not isinstance(res, list):
+        return []
+    seen = {}
+    for r in res:
+        if not isinstance(r, dict) or not r.get("symbol"):
+            continue
+        r = _ensure_fb_progress(r)
+        k = (
+            str(r.get("symbol")).upper(),
+            str(r.get("period", "15m")).lower(),
+            str(r.get("breakout_time", r.get("scan_time", "")))
+        )
+        if k not in seen or float(r.get("gain_pct", 0)) > float(seen[k].get("gain_pct", 0)):
+            seen[k] = r
+    deduped = list(seen.values())
+    deduped.sort(key=lambda x: (x.get("is_hit_4236", False), float(x.get("gain_pct", 0.0))), reverse=True)
+    return deduped
+
+
+def save_failed_breakdown(items: List[Dict], with_backup: bool = True) -> bool:
+    """保存假跌破 4.236 爆发扫描结果"""
+    items = [_ensure_fb_progress(r) for r in items if isinstance(r, dict)]
+    if with_backup:
+        ok = _save_with_backup(F_FAILED_BREAKDOWN, items)
+    else:
+        ok = _save(F_FAILED_BREAKDOWN, items)
+    if ok:
+        try:
+            import cloud_sync
+            if cloud_sync.is_configured():
+                _async_push(cloud_sync.push_failed_breakdown)
+        except Exception:
+            pass
+    return ok
+
+
+def append_failed_breakdown_results(new_items: List[Dict], with_backup: bool = True) -> bool:
+    """增量合并假跌破扫描结果：去重合并，保留最优记录"""
+    if not new_items:
+        return True
+    current = load_failed_breakdown()
+    item_map = {}
+    for it in current:
+        k = (
+            str(it.get("symbol", "")).upper(),
+            str(it.get("period", "15m")).lower(),
+            str(it.get("breakout_time", it.get("scan_time", "")))
+        )
+        item_map[k] = it
+    for it in new_items:
+        if not isinstance(it, dict) or not it.get("symbol"):
+            continue
+        it = _ensure_fb_progress(it)
+        k = (
+            str(it.get("symbol", "")).upper(),
+            str(it.get("period", "15m")).lower(),
+            str(it.get("breakout_time", it.get("scan_time", "")))
+        )
+        if k not in item_map or float(it.get("gain_pct", 0.0)) >= float(item_map[k].get("gain_pct", 0.0)):
+            item_map[k] = it
+            
+    merged = list(item_map.values())
+    merged.sort(key=lambda x: (x.get("is_hit_4236", False), float(x.get("gain_pct", 0.0))), reverse=True)
+    return save_failed_breakdown(merged, with_backup=with_backup)
+
+
+def clear_failed_breakdown_results() -> bool:
+    """清空当前假跌破扫描结果（清空前会自动进行备份快照）"""
+    current_items = load_failed_breakdown()
+    if current_items:
+        backup_failed_breakdown(current_items)
+    return save_failed_breakdown([])
+
+
+def _ensure_fb_snapshot_dir():
+    os.makedirs(F_FB_SNAPSHOT_DIR, exist_ok=True)
+
+
+def backup_failed_breakdown(items: List[Dict]) -> str:
+    """备份当前假跌破扫描批次到快照文件夹，返回 session_id"""
+    if not items:
+        return ""
+    try:
+        _ensure_fb_snapshot_dir()
+        sid = f"fb_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        fpath = os.path.join(F_FB_SNAPSHOT_DIR, f"{sid}.json")
+        payload = {
+            "session_id": sid,
+            "scan_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "rows": items,
+            "saved_at": _now_str()
+        }
+        _save(fpath, payload)
+        return sid
+    except Exception as e:
+        logger.error(f"backup_failed_breakdown error: {e}")
+        return ""
+
+
+def load_fb_snapshots() -> List[Dict]:
+    """获取所有假跌破快照批次列表"""
+    try:
+        _ensure_fb_snapshot_dir()
+        candidates = []
+        for fname in os.listdir(F_FB_SNAPSHOT_DIR):
+            if fname.endswith(".json"):
+                fpath = os.path.join(F_FB_SNAPSHOT_DIR, fname)
+                data = _load(fpath, {})
+                if isinstance(data, dict):
+                    sid = data.get("session_id", os.path.splitext(fname)[0])
+                    scan_time = data.get("scan_time") or data.get("saved_at") or "—"
+                    rows = data.get("rows", [])
+                    candidates.append({
+                        "session_id": sid,
+                        "scan_time": scan_time,
+                        "count": len(rows),
+                        "mtime": os.path.getmtime(fpath)
+                    })
+        candidates.sort(key=lambda x: x["mtime"], reverse=True)
+        return candidates
+    except Exception as e:
+        logger.error(f"load_fb_snapshots error: {e}")
+        return []
+
+
+def restore_fb_snapshot(session_id: str) -> tuple:
+    """从备份快照恢复假跌破扫描结果"""
+    try:
+        _ensure_fb_snapshot_dir()
+        sid = "".join(ch for ch in str(session_id) if ch.isalnum() or ch in ("_", "-"))
+        fpath = os.path.join(F_FB_SNAPSHOT_DIR, f"{sid}.json")
+        if not os.path.exists(fpath):
+            return False, f"快照文件不存在: {sid}", 0
+        data = _load(fpath, {})
+        rows = data.get("rows", [])
+        if not rows:
+            return False, "快照数据为空", 0
+        if save_failed_breakdown(rows):
+            return True, f"成功恢复批次 {sid} (共 {len(rows)} 条)", len(rows)
+        return False, "保存失败", 0
+    except Exception as e:
+        return False, f"恢复异常: {e}", 0
 
 
 # ── Chartink 4H 突破扫描数据与快照 ─────────────────────────────────────
