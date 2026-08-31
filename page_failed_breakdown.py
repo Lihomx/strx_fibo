@@ -242,6 +242,61 @@ def render_failed_breakdown_page():
             cursor: not-allowed;
             pointer-events: none;
         }
+        /* ── TV 按钮及统计 Badge 专属样式 ── */
+        .tv-btn {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            width: 100% !important;
+            padding: 6px 12px !important;
+            background: rgba(30, 144, 255, 0.15) !important;
+            border: 1px solid rgba(30, 144, 255, 0.3) !important;
+            color: #38bdf8 !important;
+            border-radius: 6px !important;
+            text-decoration: none !important;
+            font-weight: 600 !important;
+            font-size: 12px !important;
+            transition: all 0.2s ease !important;
+        }
+        .tv-btn:hover {
+            background: rgba(30, 144, 255, 0.28) !important;
+            border-color: rgba(30, 144, 255, 0.6) !important;
+            color: #7dd3fc !important;
+            text-decoration: none !important;
+        }
+        .click-count-badge.today-active {
+            color: #fde047 !important;
+            background: rgba(245, 158, 11, 0.25) !important;
+            border: 1px solid rgba(245, 158, 11, 0.5) !important;
+            padding: 1px 6px !important;
+            border-radius: 10px !important;
+            font-size: 11px !important;
+            font-weight: 800 !important;
+            display: inline-block !important;
+            margin-left: 4px !important;
+        }
+        .click-count-badge.history-active {
+            color: #4ade80 !important;
+            background: rgba(34, 197, 94, 0.15) !important;
+            border: 1px solid rgba(34, 197, 94, 0.35) !important;
+            padding: 1px 6px !important;
+            border-radius: 10px !important;
+            font-size: 11px !important;
+            font-weight: 700 !important;
+            display: inline-block !important;
+            margin-left: 4px !important;
+        }
+        .click-count-badge.no-clicks {
+            color: #64748b !important;
+            background: rgba(100, 116, 139, 0.1) !important;
+            border: 1px solid rgba(100, 116, 139, 0.2) !important;
+            padding: 1px 5px !important;
+            border-radius: 10px !important;
+            font-size: 10.5px !important;
+            font-weight: 500 !important;
+            display: inline-block !important;
+            margin-left: 4px !important;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -712,6 +767,8 @@ def render_failed_breakdown_page():
         st.info("💡 当前筛选条件下无符合品种，请尝试放宽筛选条件或在上方生成 Colab 脚本进行新一轮全市场扫描。")
     else:
         starred_tickers = set(_stg.load_starred_tickers()) if hasattr(_stg, "load_starred_tickers") else set()
+        today_str_val = datetime.now().strftime("%Y-%m-%d")
+        all_clicks_data = _stg.get_all_link_clicks() if hasattr(_stg, "get_all_link_clicks") else {}
 
         for r in page_items:
             ticker = str(r.get("symbol", "")).upper()
@@ -731,6 +788,21 @@ def render_failed_breakdown_page():
             tv_url = _tv_link(ticker, "15m")
             sina_url = _sina_link(ticker)
             is_starred = ticker in starred_tickers
+
+            click_entry = all_clicks_data.get(f"{ticker.upper()}:tv", {}) if isinstance(all_clicks_data, dict) else {}
+            total_c = click_entry.get("total", 0) if isinstance(click_entry, dict) else 0
+            by_date_map = click_entry.get("by_date", {}) if isinstance(click_entry, dict) else {}
+            today_c = by_date_map.get(today_str_val, 0) if isinstance(by_date_map, dict) else 0
+
+            if today_c > 0:
+                # 🌟 今日有点击：亮金黄胶囊 Badge
+                click_badge_html = f'<span class="click-count-badge today-active">({today_c}/{total_c})</span>'
+            elif total_c > 0:
+                # 🌿 历史有点击：鲜亮翡翠绿胶囊 Badge
+                click_badge_html = f'<span class="click-count-badge history-active">({today_c}/{total_c})</span>'
+            else:
+                # ⚪ 从无点击：低调暗灰
+                click_badge_html = f'<span class="click-count-badge no-clicks">(0/0)</span>' 
 
             prog_pct = min(100.0, max(0.0, (fibo_mult / 4.236) * 100.0)) if fibo_mult > 0 else 0.0
 
@@ -789,7 +861,8 @@ def render_failed_breakdown_page():
             col_b1, col_b2, col_b3, col_b4 = st.columns([2, 2, 2, 4])
             with col_b1:
                 st.markdown(
-                    f'<a href="{tv_url}" target="_blank" data-ticker="{ticker}" class="tv-link" style="display:inline-flex;align-items:center;justify-content:center;width:100%;padding:6px 12px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-size:12px;font-weight:600;text-align:center;">📈 TradingView 15m</a>',
+                    f'<a href="{tv_url}" target="_blank" class="tv-btn" data-ticker="{ticker}">'
+                    f'📈 TradingView 15m {click_badge_html}</a>',
                     unsafe_allow_html=True,
                 )
             with col_b2:
@@ -808,7 +881,8 @@ def render_failed_breakdown_page():
 
     _render_pagination_bar()
 
-    _js_code = """
+    # 💡 隐形事件监听组件：捕捉原链接点击，能在后台落盘计数，同时在前台秒级实时更新 (今日/总) 数字
+    _js_code = r"""
     <script>
     (function() {
         try {
@@ -817,19 +891,50 @@ def render_failed_breakdown_page():
                 pDoc.removeEventListener('click', pDoc._tv_click_handler, true);
             }
             pDoc._tv_click_handler = function(e) {
-                var target = e.target.closest('a');
-                if (target && target.href && target.href.indexOf('tradingview.com') !== -1) {
-                    var tk = target.getAttribute('data-ticker') || '';
-                    if (!tk) {
-                        var match = target.href.match(/symbol=([^&]+)/);
-                        if (match && match[1]) {
-                            tk = decodeURIComponent(match[1]).replace(/^(SSE:|SZSE:|BSE:)/, '');
-                        }
-                    }
+                var btn = e.target.closest('.tv-btn, .sina-btn');
+                if (btn) {
+                    var tk = btn.getAttribute('data-ticker');
                     if (tk) {
+                        tk = tk.trim().toUpperCase();
+                        var cbUrl = '/?_tv_click=' + encodeURIComponent(tk) + '&_cb=' + Date.now() + '_' + Math.floor(Math.random()*10000);
+
+                        // 1. fetch 强制 no-store 穿透所有浏览器/CDN 缓存
+                        try { fetch(cbUrl, { cache: 'no-store', mode: 'no-cors' }); } catch(err) {}
+
+                        // 2. sendBeacon 后台保障发送
+                        try { if (navigator.sendBeacon) { navigator.sendBeacon(cbUrl); } } catch(err) {}
+
+                        // 3. IFrame 静音发送
                         try {
-                            if (window.parent && window.parent.__sendTvClickToStreamlit) {
-                                window.parent.__sendTvClickToStreamlit(tk);
+                            var f = pDoc.createElement('iframe');
+                            f.style.display = 'none';
+                            f.src = cbUrl;
+                            pDoc.body.appendChild(f);
+                            setTimeout(function() {
+                                try { f.remove(); } catch(err) {}
+                            }, 6000);
+                        } catch(err) {}
+
+                        // 4. 前台 DOM 瞬间更新该 ticker 所有对应按钮数值 (秒级反馈)
+                        try {
+                            var allBtns = pDoc.querySelectorAll('.tv-btn, .sina-btn');
+                            for (var i = 0; i < allBtns.length; i++) {
+                                var b = allBtns[i];
+                                var bTk = b.getAttribute('data-ticker');
+                                if (bTk && bTk.trim().toUpperCase() === tk) {
+                                    var spans = b.getElementsByTagName('span');
+                                    if (spans && spans.length > 0) {
+                                        var span = spans[spans.length - 1];
+                                        var txt = span.innerText || span.textContent || "";
+                                        var m = txt.match(/\((\d+)\/(\d+)\)/);
+                                        if (m) {
+                                            var today = parseInt(m[1], 10) + 1;
+                                            var total = parseInt(m[2], 10) + 1;
+                                            span.innerText = '(' + today + '/' + total + ')';
+                                            span.className = 'click-count-badge today-active';
+                                        }
+                                    }
+                                }
                             }
                         } catch(err) {}
                     }
