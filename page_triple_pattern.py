@@ -25,6 +25,7 @@ import streamlit as st
 import storage
 import triple_pattern_scanner
 import colab_triple_pattern_script
+import colab_failed_breakdown_script
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,61 @@ def _sina_link(ticker: str) -> str:
     else:
         code = "gb_" + clean_tk.lower()
     return f"https://finance.sina.com.cn/realstock/company/{code}/nc.shtml"
+
+
+if hasattr(st, "dialog"):
+    @st.dialog("💥 15分钟假跌破 + 4.236 爆发 Colab 扫描脚本", width="large")
+    def _render_tp_fb_colab_dialog(tickers: List[str]):
+        st.caption(f"🎯 已根据当前「三重顶底」筛选条件自动去重提取出 **{len(tickers)}** 支独立标的。脚本内置 15m 假跌破（0点>前低 且未破前低）+ 突破颈线 + 4.236 斐波那契爆发算法。")
+        
+        c_d1, c_d2 = st.columns([1.5, 1])
+        with c_d1:
+            vol_opt = st.selectbox(
+                "📊 最低成交量过滤",
+                [
+                    "🔥 20日均量 ≥ 10 万股 (推荐)",
+                    "🔥 20日均量 ≥ 30 万股",
+                    "🔥 20日均量 ≥ 50 万股",
+                    "🔥 20日均量 ≥ 100 万股",
+                    "全部扫描 (不限制成交量)"
+                ],
+                index=0,
+                key="tp_dialog_vol_sel",
+                help="在 Colab 云端扫描时自动剔除低流动性仙股"
+            )
+            _VOL_MAP = {
+                "🔥 20日均量 ≥ 10 万股 (推荐)": 100000,
+                "🔥 20日均量 ≥ 30 万股": 300000,
+                "🔥 20日均量 ≥ 50 万股": 500000,
+                "🔥 20日均量 ≥ 100 万股": 1000000,
+                "全部扫描 (不限制成交量)": 0,
+            }
+            min_vol = _VOL_MAP.get(vol_opt, 100000)
+        with c_d2:
+            st.info(f"📋 选定股票池: **{len(tickers)}** 支 | 周期: **15m**")
+
+        fb_code = colab_failed_breakdown_script.generate_colab_script_for_tickers(
+            tickers,
+            pool_name=f"三重顶底当前筛选池 (共 {len(tickers)} 支)",
+            min_volume=min_vol
+        )
+
+        st.markdown("##### 🚀 完整 15m 假跌破爆发 Colab 扫描脚本 (右上角点击 📋 一键复制)：")
+        st.code(fb_code, language="python", line_numbers=True)
+
+        col_act1, col_act2 = st.columns(2)
+        with col_act1:
+            st.download_button(
+                "📥 下载完整扫描脚本 (.py)",
+                data=fb_code,
+                file_name=f"failed_breakdown_15m_scan_{len(tickers)}tickers.py",
+                mime="text/x-python",
+                use_container_width=True,
+            )
+        with col_act2:
+            st.link_button("🌐 打开 Google Colab", "https://colab.research.google.com/", use_container_width=True)
+
+        st.caption("💡 操作流程：1. 复制/下载脚本 ➔ 2. 在 Google Colab 运行 (自动下载 CSV) ➔ 3. 切换至「💥 假跌破爆发」页面导入 CSV 即可查看 4.236 爆发卡片。")
 
 
 def render_triple_pattern_page():
@@ -1132,6 +1188,52 @@ def render_triple_pattern_page():
             """,
             unsafe_allow_html=True
         )
+
+    # ── 提取当前筛选后的去重股票列表并提供 15m 假跌破爆发 Colab 脚本一键生成 ──
+    unique_filtered_tickers = list(dict.fromkeys([
+        str(r.get("symbol", "")).strip().upper()
+        for r in filtered
+        if r.get("symbol")
+    ]))
+
+    if unique_filtered_tickers:
+        c_fb_b1, c_fb_b2 = st.columns([3.2, 1.3])
+        with c_fb_b1:
+            st.markdown(
+                f"""
+                <div style="background:linear-gradient(135deg, rgba(234,88,12,0.15), rgba(249,115,22,0.06));border:1px solid rgba(249,115,22,0.35);border-radius:8px;padding:9px 14px;color:#fed7aa;font-size:13px;display:flex;align-items:center;">
+                    <span>💥 <b>微观爆发共振</b>：当前已筛选出 <b>{total_items}</b> 条大周期形态（去重后共 <b>{len(unique_filtered_tickers)}</b> 支独立标的）。可一键生成 <b>15分钟假跌破 + 4.236 爆发</b> 极速扫描脚本！</span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+        with c_fb_b2:
+            if st.button(
+                f"💥 生成 15m 假跌破脚本 ({len(unique_filtered_tickers)}支)",
+                key="tp_btn_gen_fb_colab",
+                use_container_width=True,
+                type="primary"
+            ):
+                if hasattr(st, "dialog"):
+                    _render_tp_fb_colab_dialog(unique_filtered_tickers)
+                else:
+                    st.session_state["tp_show_fb_colab_panel"] = not st.session_state.get("tp_show_fb_colab_panel", False)
+
+        if not hasattr(st, "dialog") and st.session_state.get("tp_show_fb_colab_panel"):
+            with st.expander(f"💥 15分钟假跌破 + 4.236 爆发 Colab 扫描脚本 ({len(unique_filtered_tickers)} 支标的)", expanded=True):
+                fb_code = colab_failed_breakdown_script.generate_colab_script_for_tickers(
+                    unique_filtered_tickers,
+                    pool_name=f"三重顶底当前筛选池 (共 {len(unique_filtered_tickers)} 支)",
+                    min_volume=100000
+                )
+                st.code(fb_code, language="python", line_numbers=True)
+                st.download_button(
+                    "📥 下载完整扫描脚本 (.py)",
+                    data=fb_code,
+                    file_name=f"failed_breakdown_15m_scan_{len(unique_filtered_tickers)}tickers.py",
+                    mime="text/x-python",
+                    use_container_width=True,
+                )
 
     # 分页导航条（顶部）
     _render_tp_pagination_bar(current_page, total_pages, total_items, page_size, is_bottom=False)
