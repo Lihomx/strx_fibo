@@ -339,7 +339,11 @@ def render():
     with st.form("alert_settings_form"):
         col_rule1, col_rule2 = st.columns(2)
         with col_rule1:
-            fibo_in_zone = st.checkbox("📐 Fibonacci 告警: 仅在黄金区内时发送",
+            st.caption("📐 **Fibonacci 扫描与告警设置**")
+            fibo_enabled = st.checkbox("📐 启用 Fibonacci 告警推送 (总开关)",
+                                       value=bool(cfg.get("alert_fibo_enabled", True)),
+                                       help="开启后，系统才会执行 Fibonacci 告警与通知推送；关闭则彻底停止发送 Fibonacci 告警。")
+            fibo_in_zone = st.checkbox("仅在黄金区内时发送",
                                         value=bool(cfg.get("alert_fibo_in_zone_only", True)),
                                         help="开启后，只有当价格处于黄金区内时才会发送告警；关闭则即使在黄金区外也发送。")
         with col_rule2:
@@ -389,6 +393,7 @@ def render():
                                
         if st.form_submit_button("💾 保存设置", width="stretch"):
             storage.save_config({
+                "alert_fibo_enabled": fibo_enabled,
                 "alert_fibo_in_zone_only": fibo_in_zone,
                 "filter_4h_ema20": filter_4h,
                 "filter_1h_ema20": filter_1h,

@@ -373,6 +373,9 @@ def send_browser_notification(title: str, body: str, target_url: str = "", timeo
 
 def dispatch_alerts(ticker: str, name: str, timeframe: str,
                     fibo: Dict, conf: Dict, cfg: Dict) -> None:
+    if not cfg.get("alert_fibo_enabled", True):
+        return
+
     cooldown = int(cfg.get("alert_cooldown_fibo", cfg.get("alert_cooldown", 240)))
     cur_price = fibo.get("current", 0.0) if fibo.get("current") is not None else 0.0
     cur_label = conf.get("label", "")
