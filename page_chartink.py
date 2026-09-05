@@ -335,6 +335,105 @@ def chartink_worker(params, update_progress, cancel_check):
 
 
 # ════════════════════════════════════════════════════════════════════
+# 🎨 页面常量与多维筛选定义
+# ════════════════════════════════════════════════════════════════════
+# ── 1. 形态时效映射 ──
+CI_TIME_OPTIONS = [
+    "🌟 最近 3 天 (推荐)",
+    "🔥 最近 1 天 (24小时内)",
+    "⏱️ 最近 7 天 (1周内)",
+    "🗓️ 最近 15 天",
+    "📅 最近 30 天 (1个月内)",
+    "全部时间 (不限制)"
+]
+CI_TIME_URL_MAP = {
+    "3d":  "🌟 最近 3 天 (推荐)",
+    "1d":  "🔥 最近 1 天 (24小时内)",
+    "7d":  "⏱️ 最近 7 天 (1周内)",
+    "15d": "🗓️ 最近 15 天",
+    "30d": "📅 最近 30 天 (1个月内)",
+    "all": "全部时间 (不限制)"
+}
+CI_TIME_REVERSE_MAP = {v: k for k, v in CI_TIME_URL_MAP.items()}
+
+# ── 2. 形态阶段状态 / 突破强度映射 ──
+CI_STAT_OPTIONS = [
+    "全部状态 (7条规则全中)",
+    "🔥 极度放量突破 (≥3.0x)",
+    "🚀 强劲放量突破 (≥2.0x)",
+    "📈 RSI 强势区 (>60)",
+    "⚡ RSI 超买强爆发 (>70)",
+    "☁️ 远超一目云顶 (>3%)",
+    "💎 高流动性优选 (≥50万股)"
+]
+CI_STAT_URL_MAP = {
+    "all":            "全部状态 (7条规则全中)",
+    "extreme_vol":    "🔥 极度放量突破 (≥3.0x)",
+    "strong_vol":     "🚀 强劲放量突破 (≥2.0x)",
+    "strong_rsi":     "📈 RSI 强势区 (>60)",
+    "overbought_rsi": "⚡ RSI 超买强爆发 (>70)",
+    "cloud_surge":    "☁️ 远超一目云顶 (>3%)",
+    "high_liquidity": "💎 高流动性优选 (≥50万股)"
+}
+CI_STAT_REVERSE_MAP = {v: k for k, v in CI_STAT_URL_MAP.items()}
+
+# ── 3. 最低均量 / 成交额过滤映射 ──
+CI_VOL_OPTIONS = [
+    "全部均量 (不限制)",
+    "🔥 20日均量 ≥ 10 万股",
+    "🔥 20日均量 ≥ 30 万股",
+    "🔥 20日均量 ≥ 50 万股",
+    "🔥 20日均量 ≥ 100 万股",
+    "💎 日均成交额 ≥ 50 万 (USD/RMB)",
+    "💎 日均成交额 ≥ 100 万 (USD/RMB)",
+    "💎 日均成交额 ≥ 500 万 (USD/RMB)"
+]
+CI_VOL_URL_MAP = {
+    "all":     "全部均量 (不限制)",
+    "100k":    "🔥 20日均量 ≥ 10 万股",
+    "300k":    "🔥 20日均量 ≥ 30 万股",
+    "500k":    "🔥 20日均量 ≥ 50 万股",
+    "1m":      "🔥 20日均量 ≥ 100 万股",
+    "500k_to": "💎 日均成交额 ≥ 50 万 (USD/RMB)",
+    "1m_to":   "💎 日均成交额 ≥ 100 万 (USD/RMB)",
+    "5m_to":   "💎 日均成交额 ≥ 500 万 (USD/RMB)"
+}
+CI_VOL_REVERSE_MAP = {v: k for k, v in CI_VOL_URL_MAP.items()}
+
+# ── 4. 排序方式映射 ──
+CI_SORT_OPTIONS = [
+    "🕐 最新扫描时间 (新 → 旧)",
+    "🔥 4H 放量倍数 (高 → 低)",
+    "📈 RSI(14) 强度 (高 → 低)",
+    "📊 20日均量 (高 → 低 · 流动性优先)",
+    "💰 日均成交额 (高 → 低)",
+    "💲 收盘价 (高 → 低)",
+    "🔤 股票代码 (A → Z)"
+]
+CI_SORT_URL_MAP = {
+    "time_desc":      "🕐 最新扫描时间 (新 → 旧)",
+    "vol_ratio_desc": "🔥 4H 放量倍数 (高 → 低)",
+    "rsi_desc":       "📈 RSI(14) 强度 (高 → 低)",
+    "volume_desc":    "📊 20日均量 (高 → 低 · 流动性优先)",
+    "turnover_desc":  "💰 日均成交额 (高 → 低)",
+    "price_desc":     "💲 收盘价 (高 → 低)",
+    "ticker_asc":     "🔤 股票代码 (A → Z)"
+}
+CI_SORT_REVERSE_MAP = {v: k for k, v in CI_SORT_URL_MAP.items()}
+
+
+def _parse_item_dt(dt_str):
+    if not dt_str or dt_str == "—":
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d", "%Y/%m/%d %H:%M:%S", "%Y/%m/%d"):
+        try:
+            return datetime.datetime.strptime(str(dt_str).strip()[:19], fmt)
+        except Exception:
+            pass
+    return None
+
+
+# ════════════════════════════════════════════════════════════════════
 # 🎨 页面主渲染入口
 # ════════════════════════════════════════════════════════════════════
 def render():
@@ -432,6 +531,103 @@ def render_page_chartink():
         """,
         unsafe_allow_html=True
     )
+
+    # ── 从 URL 参数初始化 / 恢复所有筛选状态 ──
+    _url_time_raw = str(st.query_params.get("_time", "")).strip().lower()
+    if _url_time_raw in CI_TIME_URL_MAP:
+        st.session_state["ci_filter_time"] = CI_TIME_URL_MAP[_url_time_raw]
+    elif "ci_filter_time" not in st.session_state:
+        st.session_state["ci_filter_time"] = CI_TIME_OPTIONS[0]
+
+    _url_stat_raw = str(st.query_params.get("_stat", "")).strip().lower()
+    if _url_stat_raw in CI_STAT_URL_MAP:
+        st.session_state["ci_filter_stat"] = CI_STAT_URL_MAP[_url_stat_raw]
+    elif "ci_filter_stat" not in st.session_state:
+        st.session_state["ci_filter_stat"] = CI_STAT_OPTIONS[0]
+
+    _url_vol_raw = str(st.query_params.get("_vol", "")).strip().lower()
+    if _url_vol_raw in CI_VOL_URL_MAP:
+        st.session_state["ci_filter_vol"] = CI_VOL_URL_MAP[_url_vol_raw]
+    elif "ci_filter_vol" not in st.session_state:
+        st.session_state["ci_filter_vol"] = CI_VOL_OPTIONS[0]
+
+    _url_q_raw = str(st.query_params.get("_q", "")).strip()
+    if _url_q_raw:
+        st.session_state["ci_search_kw"] = _url_q_raw
+    elif "ci_search_kw" not in st.session_state:
+        st.session_state["ci_search_kw"] = ""
+
+    _url_sort_raw = str(st.query_params.get("_sort", "")).strip().lower()
+    if _url_sort_raw in CI_SORT_URL_MAP:
+        st.session_state["ci_sort_by"] = CI_SORT_URL_MAP[_url_sort_raw]
+    elif "ci_sort_by" not in st.session_state:
+        st.session_state["ci_sort_by"] = CI_SORT_OPTIONS[0]
+
+    _url_ps_raw = str(st.query_params.get("_ps", "")).strip()
+    if _url_ps_raw in ("20", "50", "100", "all", "全部"):
+        st.session_state["ci_page_size"] = "全部" if _url_ps_raw in ("all", "全部") else int(_url_ps_raw)
+    elif "ci_page_size" not in st.session_state:
+        st.session_state["ci_page_size"] = 20
+
+    _url_p_raw = str(st.query_params.get("_p", "")).strip()
+    if _url_p_raw.isdigit():
+        st.session_state["ci_curr_page"] = max(1, int(_url_p_raw))
+    elif "ci_curr_page" not in st.session_state:
+        st.session_state["ci_curr_page"] = 1
+
+    # ── URL 双向同步辅助函数 ──
+    def _sync_ci_url_params(target_page=1):
+        params = {}
+        _t_val = st.query_params.get("_t", "")
+        if _t_val:
+            params["_t"] = str(_t_val)
+        params["_page"] = "chartink"
+
+        # 1. 形态时效 _time
+        _cur_time = st.session_state.get("ci_filter_time", CI_TIME_OPTIONS[0])
+        _time_k = CI_TIME_REVERSE_MAP.get(_cur_time, "3d")
+        if _time_k != "3d":
+            params["_time"] = _time_k
+
+        # 2. 阶段状态 _stat
+        _cur_stat = st.session_state.get("ci_filter_stat", CI_STAT_OPTIONS[0])
+        _stat_k = CI_STAT_REVERSE_MAP.get(_cur_stat, "all")
+        if _stat_k != "all":
+            params["_stat"] = _stat_k
+
+        # 3. 均量过滤 _vol
+        _cur_vol = st.session_state.get("ci_filter_vol", CI_VOL_OPTIONS[0])
+        _vol_k = CI_VOL_REVERSE_MAP.get(_cur_vol, "all")
+        if _vol_k != "all":
+            params["_vol"] = _vol_k
+
+        # 4. 搜索 _q
+        _cur_q = str(st.session_state.get("ci_search_kw", "")).strip()
+        if _cur_q:
+            params["_q"] = _cur_q
+
+        # 5. 排序 _sort
+        _cur_sort = st.session_state.get("ci_sort_by", CI_SORT_OPTIONS[0])
+        _sort_k = CI_SORT_REVERSE_MAP.get(_cur_sort, "time_desc")
+        if _sort_k != "time_desc":
+            params["_sort"] = _sort_k
+
+        # 6. 每页条数 _ps
+        _cur_ps = st.session_state.get("ci_page_size", 20)
+        if str(_cur_ps) != "20":
+            params["_ps"] = str(_cur_ps)
+
+        # 7. 页码 _p
+        params["_p"] = str(target_page)
+
+        st.query_params.clear()
+        st.query_params.update(params)
+        return params
+
+    def _on_ci_filter_change():
+        """筛选控件变更时重置页码为 1 并同步 URL"""
+        st.session_state["ci_curr_page"] = 1
+        _sync_ci_url_params(target_page=1)
 
     # ── 1. 顶部标题与形态总体统计 ──
     st.markdown(
@@ -712,73 +908,173 @@ def render_page_chartink():
                     key="btn_export_curr_ci"
                 )
 
-    # ── 4. 筛选、排序与分页工具栏 ──
+    # ── 4. 多维筛选、时效与排序工具栏 ──
     st.markdown("---")
-    col_f1, col_f2, col_f3, col_f4 = st.columns([1.8, 1.2, 1.2, 0.8])
+    col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns([1.5, 1.3, 1.3, 1.2, 1.3])
     with col_f1:
-        search_kw = st.text_input("🔍 搜索代码 / 品种名称", placeholder="输入代码如 AAPL, TSLA...", key="ci_search_kw")
+        _cur_kw = st.session_state.get("ci_search_kw", "")
+        search_kw = st.text_input(
+            "🔍 搜索代码 / 品种名称",
+            value=_cur_kw,
+            placeholder="输入代码如 AAPL, TSLA...",
+            key="ci_search_kw",
+            on_change=_on_ci_filter_change
+        )
     with col_f2:
-        vol_filter = st.selectbox(
-            "📊 最低 20 日均量",
-            ["全部均量", "≥ 10 万股", "≥ 30 万股", "≥ 50 万股", "≥ 100 万股"],
-            index=0,
-            key="ci_vol_filter"
+        _cur_time_val = st.session_state.get("ci_filter_time", CI_TIME_OPTIONS[0])
+        _cur_time_idx = CI_TIME_OPTIONS.index(_cur_time_val) if _cur_time_val in CI_TIME_OPTIONS else 0
+        time_filter = st.selectbox(
+            "⏳ 形态时效 (发生时间)",
+            CI_TIME_OPTIONS,
+            index=_cur_time_idx,
+            key="ci_filter_time",
+            on_change=_on_ci_filter_change,
+            help="【时效筛选】：过滤历史已久的扫描记录，聚焦最近 24小时、3天或1周内刚刚爆量突破的最新品种。"
         )
     with col_f3:
-        sort_mode = st.selectbox(
-            "↕️ 排序方式",
-            ["最新扫描时间 降序", "4H 放量倍数 降序", "RSI(14) 降序", "收盘价 降序", "代码 A-Z"],
-            index=0,
-            key="ci_sort_mode"
+        _cur_stat_val = st.session_state.get("ci_filter_stat", CI_STAT_OPTIONS[0])
+        _cur_stat_idx = CI_STAT_OPTIONS.index(_cur_stat_val) if _cur_stat_val in CI_STAT_OPTIONS else 0
+        stat_filter = st.selectbox(
+            "📌 形态阶段状态",
+            CI_STAT_OPTIONS,
+            index=_cur_stat_idx,
+            key="ci_filter_stat",
+            on_change=_on_ci_filter_change,
+            help="【突破强度与阶段】：筛选 7条全部满足、≥3x极度爆量、RSI强势区(>60)、RSI超买爆发(>70)、远超云顶(>3%)或高流动性优选品种。"
         )
     with col_f4:
-        page_size_sel = st.selectbox("📄 每页条数", [20, 50, 100, "全部"], index=0, key="ci_page_size")
+        _cur_vol_val = st.session_state.get("ci_filter_vol", CI_VOL_OPTIONS[0])
+        _cur_vol_idx = CI_VOL_OPTIONS.index(_cur_vol_val) if _cur_vol_val in CI_VOL_OPTIONS else 0
+        vol_filter = st.selectbox(
+            "📊 最低成交量 / 活跃度",
+            CI_VOL_OPTIONS,
+            index=_cur_vol_idx,
+            key="ci_filter_vol",
+            on_change=_on_ci_filter_change,
+            help="过滤低流动性/仙股/僵尸股，确保标的具备充沛交易活跃度与流动性。"
+        )
+    with col_f5:
+        _cur_sort_val = st.session_state.get("ci_sort_by", CI_SORT_OPTIONS[0])
+        _cur_sort_idx = CI_SORT_OPTIONS.index(_cur_sort_val) if _cur_sort_val in CI_SORT_OPTIONS else 0
+        sort_mode = st.selectbox(
+            "↕️ 排序方式",
+            CI_SORT_OPTIONS,
+            index=_cur_sort_idx,
+            key="ci_sort_by",
+            on_change=_on_ci_filter_change,
+            help="支持按最新扫描时间、4H放量倍数、RSI强度、20日均量、日均成交额等维度排序。"
+        )
 
-    # 过滤与排序
+    # 预加载品种名称字典
+    all_sym_list = storage.load_symbols() or []
+    sym_name_dict = {s["ticker"].upper(): s.get("name", s["ticker"]) for s in all_sym_list if isinstance(s, dict) and s.get("ticker")}
+
+    # 过滤链计算
     filtered_items = list(passed_records)
 
-    # 均量过滤
-    _V_MAP = {
-        "≥ 10 万股": 100000,
-        "≥ 30 万股": 300000,
-        "≥ 50 万股": 500000,
-        "≥ 100 万股": 1000000,
+    # 1. 形态时效过滤
+    now_dt = datetime.datetime.now()
+    _cutoff_days = {
+        "🔥 最近 1 天 (24小时内)": 1,
+        "🌟 最近 3 天 (推荐)": 3,
+        "⏱️ 最近 7 天 (1周内)": 7,
+        "🗓️ 最近 15 天": 15,
+        "📅 最近 30 天 (1个月内)": 30,
     }
-    if vol_filter in _V_MAP:
-        req_v = _V_MAP[vol_filter]
-        filtered_items = [r for r in filtered_items if _safe_float(r.get("avg_volume_20"), 0.0) >= req_v or req_v == 0]
+    if time_filter in _cutoff_days:
+        cutoff_days = _cutoff_days[time_filter]
+        cutoff_time = now_dt - datetime.timedelta(days=cutoff_days)
+        def _is_within_time(r):
+            st_str = r.get("scan_time") or r.get("time") or ""
+            item_dt = _parse_item_dt(st_str)
+            if item_dt is None:
+                return True
+            return item_dt >= cutoff_time
+        filtered_items = [r for r in filtered_items if _is_within_time(r)]
 
-    # 搜索过滤
+    # 2. 形态阶段状态过滤
+    if stat_filter == "🔥 极度放量突破 (≥3.0x)":
+        filtered_items = [r for r in filtered_items if _safe_float(r.get("vol_ratio_0"), 0.0) >= 3.0]
+    elif stat_filter == "🚀 强劲放量突破 (≥2.0x)":
+        filtered_items = [r for r in filtered_items if _safe_float(r.get("vol_ratio_0"), 0.0) >= 2.0]
+    elif stat_filter == "📈 RSI 强势区 (>60)":
+        filtered_items = [r for r in filtered_items if _safe_float(r.get("rsi"), 0.0) >= 60.0]
+    elif stat_filter == "⚡ RSI 超买强爆发 (>70)":
+        filtered_items = [r for r in filtered_items if _safe_float(r.get("rsi"), 0.0) >= 70.0]
+    elif stat_filter == "☁️ 远超一目云顶 (>3%)":
+        filtered_items = [
+            r for r in filtered_items 
+            if _safe_float(r.get("cloud_top"), 0.0) > 0 and _safe_float(r.get("close"), 0.0) >= _safe_float(r.get("cloud_top"), 0.0) * 1.03
+        ]
+    elif stat_filter == "💎 高流动性优选 (≥50万股)":
+        filtered_items = [r for r in filtered_items if _safe_float(r.get("avg_volume_20"), 0.0) >= 500000]
+
+    # 3. 均量与成交额过滤
+    if vol_filter == "🔥 20日均量 ≥ 10 万股":
+        filtered_items = [r for r in filtered_items if _safe_float(r.get("avg_volume_20"), 0.0) >= 100000]
+    elif vol_filter == "🔥 20日均量 ≥ 30 万股":
+        filtered_items = [r for r in filtered_items if _safe_float(r.get("avg_volume_20"), 0.0) >= 300000]
+    elif vol_filter == "🔥 20日均量 ≥ 50 万股":
+        filtered_items = [r for r in filtered_items if _safe_float(r.get("avg_volume_20"), 0.0) >= 500000]
+    elif vol_filter == "🔥 20日均量 ≥ 100 万股":
+        filtered_items = [r for r in filtered_items if _safe_float(r.get("avg_volume_20"), 0.0) >= 1000000]
+    elif vol_filter == "💎 日均成交额 ≥ 50 万 (USD/RMB)":
+        filtered_items = [r for r in filtered_items if _safe_float(r.get("turnover"), 0.0) >= 500000]
+    elif vol_filter == "💎 日均成交额 ≥ 100 万 (USD/RMB)":
+        filtered_items = [r for r in filtered_items if _safe_float(r.get("turnover"), 0.0) >= 1000000]
+    elif vol_filter == "💎 日均成交额 ≥ 500 万 (USD/RMB)":
+        filtered_items = [r for r in filtered_items if _safe_float(r.get("turnover"), 0.0) >= 5000000]
+
+    # 4. 搜索过滤
     if search_kw:
         skw = search_kw.strip().upper()
-        filtered_items = [r for r in filtered_items if skw in str(r.get("ticker", "")).upper()]
+        filtered_items = [
+            r for r in filtered_items 
+            if skw in str(r.get("ticker", "")).upper() or skw in str(sym_name_dict.get(str(r.get("ticker", "")).upper(), "")).upper()
+        ]
 
-    # 排序
-    if sort_mode == "4H 放量倍数 降序":
+    # 5. 排序
+    if sort_mode == "🔥 4H 放量倍数 (高 → 低)":
         filtered_items = sorted(filtered_items, key=lambda x: _safe_float(x.get("vol_ratio_0"), 0.0), reverse=True)
-    elif sort_mode == "RSI(14) 降序":
+    elif sort_mode == "📈 RSI(14) 强度 (高 → 低)":
         filtered_items = sorted(filtered_items, key=lambda x: _safe_float(x.get("rsi"), 0.0), reverse=True)
-    elif sort_mode == "收盘价 降序":
+    elif sort_mode == "📊 20日均量 (高 → 低 · 流动性优先)":
+        filtered_items = sorted(filtered_items, key=lambda x: _safe_float(x.get("avg_volume_20"), 0.0), reverse=True)
+    elif sort_mode == "💰 日均成交额 (高 → 低)":
+        filtered_items = sorted(filtered_items, key=lambda x: _safe_float(x.get("turnover"), 0.0), reverse=True)
+    elif sort_mode == "💲 收盘价 (高 → 低)":
         filtered_items = sorted(filtered_items, key=lambda x: _safe_float(x.get("close"), 0.0), reverse=True)
-    elif sort_mode == "代码 A-Z":
+    elif sort_mode == "🔤 股票代码 (A → Z)":
         filtered_items = sorted(filtered_items, key=lambda x: str(x.get("ticker", "")).upper())
     else:
-        # 默认按时间倒序
+        # 默认按扫描时间倒序
         filtered_items = sorted(filtered_items, key=lambda x: str(x.get("scan_time", "")), reverse=True)
 
     match_count = len(filtered_items)
 
     # ── 5. 结果卡片展示与分页 ──
-    col_hdr1, col_hdr2 = st.columns([3, 1.2])
+    col_hdr1, col_hdr2, col_hdr3 = st.columns([2.5, 1.2, 1.2])
     with col_hdr1:
         st.markdown(f"### 🎯 筛选结果 (共 **{match_count}** 条 4H 突破)")
     with col_hdr2:
+        _cur_ps_val = st.session_state.get("ci_page_size", 20)
+        _ps_opts = [20, 50, 100, "全部"]
+        _ps_idx = _ps_opts.index(_cur_ps_val) if _cur_ps_val in _ps_opts else 0
+        page_size_sel = st.selectbox(
+            "📄 每页条数",
+            _ps_opts,
+            index=_ps_idx,
+            key="ci_page_size",
+            on_change=_on_ci_filter_change
+        )
+    with col_hdr3:
         if filtered_items:
             if st.button("⭐ 批量收藏当前筛选品种", key="btn_fav_all_ci_filtered", use_container_width=True):
                 added_cnt = 0
                 for r in filtered_items:
                     tk = str(r.get("ticker", "")).strip().upper()
-                    if tk and storage.add_to_watchlist(ticker=tk, name=tk, note="Chartink 4H Breakout 突破匹配"):
+                    t_name = sym_name_dict.get(tk, tk)
+                    if tk and storage.add_to_watchlist(ticker=tk, name=t_name, note="Chartink 4H Breakout 突破匹配"):
                         added_cnt += 1
                 st.toast(f"✅ 成功将 {added_cnt} 个品种加入自选收藏夹！", icon="⭐")
                 time.sleep(0.5)
@@ -796,14 +1092,7 @@ def render_page_chartink():
     else:
         ps = int(page_size_sel)
         total_pages = max(1, (match_count + ps - 1) // ps)
-
-        _url_p = st.query_params.get("_p", "")
-        if _url_p.isdigit():
-            init_p = int(_url_p)
-        else:
-            init_p = st.session_state.get("ci_curr_page", 1)
-
-        curr_page = min(max(1, init_p), total_pages)
+        curr_page = min(max(1, st.session_state.get("ci_curr_page", 1)), total_pages)
         st.session_state["ci_curr_page"] = curr_page
 
         if total_pages > 1:
@@ -811,7 +1100,7 @@ def render_page_chartink():
             with col_p1:
                 if st.button("⬅️ 上一页", key="ci_top_prev_btn", disabled=(curr_page <= 1), use_container_width=True):
                     st.session_state["ci_curr_page"] = curr_page - 1
-                    st.query_params["_p"] = str(curr_page - 1)
+                    _sync_ci_url_params(target_page=curr_page - 1)
                     st.rerun()
             with col_p2:
                 st.markdown(
@@ -823,7 +1112,7 @@ def render_page_chartink():
             with col_p3:
                 if st.button("下一页 ➡️", key="ci_top_next_btn", disabled=(curr_page >= total_pages), use_container_width=True):
                     st.session_state["ci_curr_page"] = curr_page + 1
-                    st.query_params["_p"] = str(curr_page + 1)
+                    _sync_ci_url_params(target_page=curr_page + 1)
                     st.rerun()
 
         start_i = (curr_page - 1) * ps
@@ -836,10 +1125,6 @@ def render_page_chartink():
     today_str_val = storage.get_today_str()
     t_token = st.query_params.get("_t", "")
     t_param = f"&_t={t_token}" if t_token else ""
-
-    # 预加载品种名称字典
-    all_sym_list = storage.load_symbols() or []
-    sym_name_dict = {s["ticker"].upper(): s.get("name", s["ticker"]) for s in all_sym_list if isinstance(s, dict) and s.get("ticker")}
 
     # 渲染卡片
     for r in p_slice:
@@ -966,7 +1251,7 @@ def render_page_chartink():
         with col_b_p1:
             if st.button("⬅️ 上一页", key="ci_bot_prev_btn", disabled=(curr_page <= 1), use_container_width=True):
                 st.session_state["ci_curr_page"] = curr_page - 1
-                st.query_params["_p"] = str(curr_page - 1)
+                _sync_ci_url_params(target_page=curr_page - 1)
                 st.rerun()
         with col_b_p2:
             st.markdown(
@@ -978,7 +1263,7 @@ def render_page_chartink():
         with col_b_p3:
             if st.button("下一页 ➡️", key="ci_bot_next_btn", disabled=(curr_page >= total_pages), use_container_width=True):
                 st.session_state["ci_curr_page"] = curr_page + 1
-                st.query_params["_p"] = str(curr_page + 1)
+                _sync_ci_url_params(target_page=curr_page + 1)
                 st.rerun()
 
     # 隐形事件监听组件：捕捉原链接点击

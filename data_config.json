@@ -7,7 +7,7 @@
   "theme_style": "极简深邃 (Minimal Dark)",
   "data_source": "yfinance",
   "twelvedata_key": "",
-  "dingtalk_webhook": "https://oapi.dingtalk.com/robot/send?access_token=36500e045265b3c5ba4e6875644fddd42ed1bc8ec7922c4540fec19fd9f9a410",
+  "dingtalk_webhook": "https://oapi.dingtalk.com/robot/send?access_token=4b60568a98f27889551d09e786046d123bf4eabb781910edb93ff4ff377a5f8e",
   "dingtalk_secret": "",
   "telegram_token": "",
   "telegram_chat_id": "",
@@ -62,8 +62,8 @@
   "daily_scan_enabled": true,
   "periodic_scan_enabled": true,
   "filter_4h_ema20": false,
-  "filter_1h_ema20": false,
-  "filter_15m_ema20": false,
+  "filter_1h_ema20": true,
+  "filter_15m_ema20": true,
   "filter_4h_ema20_bear": false,
   "filter_1h_ema20_bear": false,
   "filter_15m_ema20_bear": false,
@@ -71,7 +71,6 @@
   "alert_template": "📐 STRX Fibo 信号 {label}\n━━━━━━━━━━━━━━━━━━━━\n🏷 {name} ({ticker})\n📅 框架: {tf}\n💰 价格: {price}\n📏 黄金区: {zone_bot} – {zone_top}\n📉 回撤: {retrace_pct}%\n🔗 {url}\n🕐 {time}",
   "alert_template_ema_pivot": "🚀 EMA20 + Daily Pivot 信号 {label}\n━━━━━━━━━━━━━━━━━━━━\n🏷 {name} ({ticker})\n📅 框架: {tf}\n💰 价格: {price}\n📈 EMA20: {ema}\n🎯 Pivot: {pivot}\n🔗 {url}\n🕐 {time}",
   "font_size": "默认 (14px)",
-  "theme_style": "原厂默认",
   "market_holidays": {
     "CN": [
       "2026-01-01",
@@ -110,5 +109,16 @@
       "2026-11-26",
       "2026-12-25"
     ]
-  }
+  },
+  "dingtalk_webhooks_pool": [],
+  "chartink_scan_enabled": true,
+  "chartink_scan_interval_minutes": 60,
+  "alert_cooldown_chartink": 240,
+  "alert_template_chartink": "📈 Chartink 4H Breakout 突破信号 {label}\n━━━━━━━━━━━━━━━━━━━━\n🏷 {name} ({ticker})\n📅 框架: {tf}\n💰 价格: {price}\n📊 4H成交量: {volume_4h}\n📈 RSI: {rsi}\n🔗 {url}\n🕐 {time}",
+  "colab_selected_pool_chartink": "🇨🇳 全量A股 (系统内置)",
+  "colab_selected_pool_neckline": "🇨🇳 全量A股 (系统内置)",
+  "dingtalk_enabled": true,
+  "alert_fibo_in_zone_only": true,
+  "alert_cooldown_fibo": 240,
+  "alert_cooldown_ema_pivot": 240
 }
