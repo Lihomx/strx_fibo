@@ -2487,6 +2487,38 @@ def save_chartink(data: Dict) -> bool:
     return ok
 
 
+def append_chartink_results(new_records: List[Dict]) -> bool:
+    """增量合并导入 Chartink 扫描结果（自动去重并更新最新状态）"""
+    if not new_records:
+        return False
+    current_data = load_chartink()
+    passed_list = current_data.get("passed", []) if isinstance(current_data, dict) else []
+    
+    # 建立映射方便增量更新
+    rec_map = {}
+    for r in passed_list:
+        if isinstance(r, dict) and r.get("ticker"):
+            rec_map[str(r["ticker"]).strip().upper()] = r
+            
+    for r in new_records:
+        if isinstance(r, dict) and (r.get("ticker") or r.get("symbol")):
+            tk = str(r.get("ticker") or r.get("symbol")).strip().upper()
+            r["ticker"] = tk
+            r["passed"] = True
+            rec_map[tk] = r
+            
+    merged_passed = list(rec_map.values())
+    new_data = {
+        "passed": merged_passed,
+        "failed": current_data.get("failed", []) if isinstance(current_data, dict) else [],
+        "errors": current_data.get("errors", []) if isinstance(current_data, dict) else [],
+        "scanned_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "total": len(merged_passed),
+        "done_count": len(merged_passed)
+    }
+    return save_chartink(new_data)
+
+
 def clear_chartink_results() -> bool:
     """清空当前 Chartink 扫描结果（清空前会自动生成快照并同步至云端）"""
     data = load_chartink()

@@ -12,18 +12,19 @@ colab_chartink_script.py — Google Colab 独立大规模 Chartink 4H Breakout 7
 
 import json
 
-def generate_colab_chartink_script(tickers: list[str], pool_name: str = "系统品种库") -> str:
+def generate_colab_chartink_script(tickers: list[str], pool_name: str = "系统品种库", min_volume: int = 100000) -> str:
     """生成内置指定股票池代码的 Google Colab Chartink 4H 突破扫描脚本"""
     tickers_json = json.dumps(tickers, ensure_ascii=False)
     
     script = f'''# ==============================================================================
-# 🚀 Google Colab · Chartink 4 Hour Breakout 7条规则突破扫描脚本
+# 🚀 Google Colab · Chartink 4 Hour Breakout 7条规则突破极速扫描
 # 股票池来源: {pool_name} (共 {len(tickers)} 支品种)
 # 扫描周期: 4小时 (4H Breakout)
+# 判定标准: 100% 严格满足全部 7 条 Chartink 突破规则
 # ==============================================================================
 # 7条扫描条件（全部满足）：
-#   [0] 4H Volume[0]  > 4H Volume[-1] * 2 (或已完成根 > *2)
-#   [1] 4H Volume[-1] > 4H Volume[-2] * 1.5 (或已完成根 > *1.5)
+#   [0] 4H Volume[0]  > 4H Volume[-1] × 2 (或已完成根 > ×2)
+#   [1] 4H Volume[-1] > 4H Volume[-2] × 1.5 (或已完成根 > ×1.5)
 #   [2] Daily Close   > Daily Ichimoku Cloud Top (9,26,52)
 #   [3] Daily RSI(14) > 50
 #   [4] Daily Close   > Daily Supertrend(7,3)
@@ -35,7 +36,7 @@ def generate_colab_chartink_script(tickers: list[str], pool_name: str = "系统�
 # 2. 新建笔记本，将本脚本完整粘贴到一个代码单元格中
 # 3. 点击运行 (Shift + Enter)，脚本将自动在云端执行 64 线程极速并发扫描
 # 4. 扫描完成后会自动下载 `colab_chartink_results.csv`
-# 5. 回到 Streamlit 应用页面，拖入该 CSV 文件即可一键合并展示！
+# 5. 回到 Streamlit 应用「📈 4H Breakout」页面，拖入该 CSV 文件即可一键合并展示！
 # ==============================================================================
 
 # 1. 安装所需依赖
@@ -58,7 +59,7 @@ import numpy as np
 # ⏱️ 强制全局网络超时防卡死 (8秒自动熔断)
 socket.setdefaulttimeout(8)
 
-# 🤫 全局静音 Python 3.12 / jupyter_client / urllib3 警告提示
+# 🤫 全局静音警告提示
 os.environ["PYTHONWARNINGS"] = "ignore"
 warnings.filterwarnings("ignore")
 warnings.simplefilter("ignore")
@@ -75,11 +76,12 @@ logging.getLogger("ipykernel").setLevel(logging.CRITICAL)
 # ------------------------------------------------------------------------------
 # ⚙️ 股票池配置
 # ------------------------------------------------------------------------------
+MIN_AVG_VOLUME = {min_volume}
 SCAN_TICKERS = {tickers_json}
 
 
 # ------------------------------------------------------------------------------
-# 🧠 高性能直连数据获取与指标工具 (直连 Yahoo v8 API，杜绝 Cookie/Crumb 锁死卡顿)
+# 🧠 高性能直连数据获取与指标工具 (直连 Yahoo v8 API)
 # ------------------------------------------------------------------------------
 _SESSION = requests.Session()
 _adapter = HTTPAdapter(pool_connections=128, pool_maxsize=128, max_retries=1)
@@ -195,16 +197,21 @@ def _check_ticker_chartink(ticker: str) -> dict:
     """执行 7 条过滤规则并返回检测结果"""
     res = {{
         "ticker": ticker,
+        "symbol": ticker,
         "passed": False,
         "details": [],
         "error": None,
         "close": None,
         "volume_4h": None,
+        "avg_volume_20": 0.0,
+        "turnover": 0.0,
         "rsi": None,
         "cloud_top": None,
         "cloud_bot": None,
         "supertrend": None,
         "close_2h_m2": None,
+        "vol_ratio_0": None,
+        "vol_ratio_1": None,
         "scan_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }}
 
@@ -213,6 +220,17 @@ def _check_ticker_chartink(ticker: str) -> dict:
         df_1d = _fetch(ticker, "1d", "1y")
         if df_1d is None or len(df_1d) < 60:
             res["error"] = "日线数据不足"
+            return res
+
+        # 均量过滤
+        vols_d = df_1d["volume"].dropna().values
+        avg_v20 = float(np.mean(vols_d[-20:])) if len(vols_d) >= 20 else float(np.mean(vols_d))
+        latest_c = float(df_1d["close"].iloc[-1])
+        res["avg_volume_20"] = avg_v20
+        res["turnover"] = avg_v20 * latest_c
+
+        if MIN_AVG_VOLUME > 0 and avg_v20 < MIN_AVG_VOLUME:
+            res["error"] = f"均量不足 ({{avg_v20:,.0f}} < {{MIN_AVG_VOLUME:,.0f}})"
             return res
 
         # 2. 获取 1H 数据并重采样为 4H 与 2H (大幅提升速度与成功率)
@@ -268,8 +286,13 @@ def _check_ticker_chartink(ticker: str) -> dict:
         if df_2h is not None and len(df_2h) >= 3:
             c_2h_m2 = float(df_2h["close"].iloc[-3])
 
+        vr0 = (v0 / max(v1, 1.0)) if v0 > v1 * 2 else (v1 / max(v2, 1.0))
+        vr1 = (v1 / max(v2, 1.0)) if v1 > v2 * 1.5 else (v2 / max(v3, 1.0))
+
         res["close"]       = c_d
         res["volume_4h"]   = v0
+        res["vol_ratio_0"] = round(vr0, 2)
+        res["vol_ratio_1"] = round(vr1, 2)
         res["rsi"]         = rsi_v
         res["cloud_top"]   = ct_v
         res["cloud_bot"]   = cb_v
@@ -336,7 +359,7 @@ def _check_ticker_chartink(ticker: str) -> dict:
 def run_chartink_scanner():
     tickers = SCAN_TICKERS
     total_tickers = len(tickers)
-    MAX_WORKERS = 32
+    MAX_WORKERS = min(64, max(8, (os.cpu_count() or 4) * 8))
     
     print(f"\\n🚀 开启 Chartink 4H Breakout 极速并发扫描 (共 {{total_tickers}} 只股票, 线程数: {{MAX_WORKERS}})...\\n")
     sys.stdout.flush()
@@ -344,7 +367,6 @@ def run_chartink_scanner():
     start_time = time.time()
     completed = 0
     passed_records = []
-    all_records = []
     
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         future_map = {{executor.submit(_check_ticker_chartink, tk): tk for tk in tickers}}
@@ -354,43 +376,46 @@ def run_chartink_scanner():
             tk = future_map[future]
             try:
                 res = future.result()
-                all_records.append(res)
                 if res.get("passed"):
                     passed_records.append(res)
                     print(f"  🔥 [发现突破] {{tk}} 满足全部 7 条 4H 突破规则! (Close: {{res['close']}}, 4H Vol: {{res['volume_4h']:,.0f}}, RSI: {{res['rsi']:.1f}})")
                     sys.stdout.flush()
-            except Exception as e:
-                all_records.append({{"ticker": tk, "passed": False, "details": [], "error": str(e), "scan_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}})
+            except Exception:
+                pass
                 
-            print_step = 50 if total_tickers > 1000 else 25
+            print_step = 100 if total_tickers > 1000 else 25
             if completed % print_step == 0 or completed == total_tickers:
                 elapsed = time.time() - start_time
                 rate = completed / elapsed if elapsed > 0 else 1
                 rem = (total_tickers - completed) / rate
                 speed = completed / elapsed if elapsed > 0 else 0
-                print(f"[{{completed}}/{{total_tickers}}] 进度: {{completed*100//total_tickers}}% ({{speed:.1f}}只/秒) | 已匹配突破: {{len(passed_records)}} 支 | 预计剩余: {{int(rem//60)}}分{{int(rem%60)}}秒")
+                print(f"[{{completed}}/{{total_tickers}}] 进度: {{completed*100//total_tickers}}% ({{speed:.1f}}只/秒) | 已匹配 7条全部突破: {{len(passed_records)}} 支 | 预计剩余: {{int(rem//60)}}分{{int(rem%60)}}秒")
                 sys.stdout.flush()
 
     total_min = (time.time() - start_time) / 60
-    print(f"\\n🎉 扫描全部完成！共耗时 {{total_min:.1f}} 分钟，匹配到 {{len(passed_records)}} 支 4H 突破股票！")
+    print(f"\\n🎉 扫描全部完成！共耗时 {{total_min:.1f}} 分钟，严格检出 {{len(passed_records)}} 支 100% 满足全部 7 条规则的 4H 突破股票！")
     sys.stdout.flush()
 
     # 导出 CSV
-    if all_records:
+    if passed_records:
         csv_rows = []
-        for r in all_records:
+        for r in passed_records:
             details_str = json.dumps(r.get("details", []), ensure_ascii=False)
             csv_rows.append({{
                 "ticker": r.get("ticker", ""),
-                "passed": 1 if r.get("passed") else 0,
+                "symbol": r.get("ticker", ""),
+                "passed": 1,
                 "close": r.get("close", ""),
                 "volume_4h": r.get("volume_4h", ""),
+                "vol_ratio_0": r.get("vol_ratio_0", ""),
+                "vol_ratio_1": r.get("vol_ratio_1", ""),
+                "avg_volume_20": r.get("avg_volume_20", 0),
+                "turnover": r.get("turnover", 0),
                 "rsi": r.get("rsi", ""),
                 "cloud_top": r.get("cloud_top", ""),
                 "cloud_bot": r.get("cloud_bot", ""),
                 "supertrend": r.get("supertrend", ""),
                 "close_2h_m2": r.get("close_2h_m2", ""),
-                "error": r.get("error", "") or "",
                 "details_json": details_str,
                 "scan_time": r.get("scan_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
             }})
@@ -398,7 +423,7 @@ def run_chartink_scanner():
         out_df = pd.DataFrame(csv_rows)
         csv_filename = "colab_chartink_results.csv"
         out_df.to_csv(csv_filename, index=False, encoding="utf-8-sig")
-        print(f"💾 结果已保存至: {{csv_filename}} (包含通过 {{len(passed_records)}} 支, 共 {{len(all_records)}} 支)")
+        print(f"💾 结果已保存至: {{csv_filename}} (共 {{len(passed_records)}} 支 7条全中突破标的)")
         
         try:
             from google.colab import files
@@ -407,9 +432,10 @@ def run_chartink_scanner():
         except Exception:
             print(f"💡 可在 Colab 左侧文件树中右键下载 `{{csv_filename}}`")
     else:
-        print("⚠️ 未产生扫描结果。")
+        print("⚠️ 未产生扫描结果（无符合全部 7 条规则的突破品种）。")
 
 if __name__ == "__main__":
     run_chartink_scanner()
 '''
     return script
+
