@@ -428,6 +428,10 @@ import page_hotlist
 import page_universe
 import page_cloud
 import page_chartink
+try:
+    page_chartink = importlib.reload(page_chartink)
+except Exception:
+    pass
 import page_neckline
 import page_schedule
 import page_triple_bottom

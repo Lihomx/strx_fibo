@@ -12,6 +12,7 @@ page_chartink.py — Chartink · 4 Hour Breakout 7条规则突破扫描
 import time
 import datetime
 import json
+import textwrap
 import urllib.parse
 import streamlit as st
 import pandas as pd
@@ -20,6 +21,18 @@ import storage
 import bg_scan_manager
 import colab_chartink_script
 from assets import tv_url, sina_url
+
+_SAFE_RELOAD_FLAG = True
+
+
+def _render_html(html_str: str):
+    """安全渲染 HTML，彻底消除多行字符串缩进被 CommonMark 解析为 <pre><code> 块的问题"""
+    clean_html = textwrap.dedent(html_str).strip()
+    if hasattr(st, "html"):
+        st.html(clean_html)
+    else:
+        st.markdown(clean_html, unsafe_allow_html=True)
+
 
 # ── 依赖安全导入 ────────────────────────────────────────────────────
 try:
@@ -352,9 +365,11 @@ CI_TIME_URL_MAP = {
     "7d":  "⏱️ 最近 7 天 (1周内)",
     "15d": "🗓️ 最近 15 天",
     "30d": "📅 最近 30 天 (1个月内)",
+    "1m":  "📅 最近 30 天 (1个月内)",
+    "2m":  "🗓️ 最近 15 天",
     "all": "全部时间 (不限制)"
 }
-CI_TIME_REVERSE_MAP = {v: k for k, v in CI_TIME_URL_MAP.items()}
+CI_TIME_REVERSE_MAP = {v: k for k, v in CI_TIME_URL_MAP.items() if k not in ("1m", "2m")}
 
 # ── 2. 形态阶段状态 / 突破强度映射 ──
 CI_STAT_OPTIONS = [
@@ -368,6 +383,7 @@ CI_STAT_OPTIONS = [
 ]
 CI_STAT_URL_MAP = {
     "all":            "全部状态 (7条规则全中)",
+    "active":         "全部状态 (7条规则全中)",
     "extreme_vol":    "🔥 极度放量突破 (≥3.0x)",
     "strong_vol":     "🚀 强劲放量突破 (≥2.0x)",
     "strong_rsi":     "📈 RSI 强势区 (>60)",
@@ -375,7 +391,7 @@ CI_STAT_URL_MAP = {
     "cloud_surge":    "☁️ 远超一目云顶 (>3%)",
     "high_liquidity": "💎 高流动性优选 (≥50万股)"
 }
-CI_STAT_REVERSE_MAP = {v: k for k, v in CI_STAT_URL_MAP.items()}
+CI_STAT_REVERSE_MAP = {v: k for k, v in CI_STAT_URL_MAP.items() if k != "active"}
 
 # ── 3. 最低均量 / 成交额过滤映射 ──
 CI_VOL_OPTIONS = [
@@ -413,13 +429,14 @@ CI_SORT_OPTIONS = [
 CI_SORT_URL_MAP = {
     "time_desc":      "🕐 最新扫描时间 (新 → 旧)",
     "vol_ratio_desc": "🔥 4H 放量倍数 (高 → 低)",
+    "progress_desc":  "🔥 4H 放量倍数 (高 → 低)",
     "rsi_desc":       "📈 RSI(14) 强度 (高 → 低)",
     "volume_desc":    "📊 20日均量 (高 → 低 · 流动性优先)",
     "turnover_desc":  "💰 日均成交额 (高 → 低)",
     "price_desc":     "💲 收盘价 (高 → 低)",
     "ticker_asc":     "🔤 股票代码 (A → Z)"
 }
-CI_SORT_REVERSE_MAP = {v: k for k, v in CI_SORT_URL_MAP.items()}
+CI_SORT_REVERSE_MAP = {v: k for k, v in CI_SORT_URL_MAP.items() if k != "progress_desc"}
 
 
 def _parse_item_dt(dt_str):
@@ -516,7 +533,7 @@ def render_page_chartink():
     }
     </style>
     """
-    st.markdown(_style_code, unsafe_allow_html=True)
+    _render_html(_style_code)
 
     # ── 从 URL 参数初始化 / 恢复所有筛选状态 ──
     _url_time_raw = str(st.query_params.get("_time", "")).strip().lower()
@@ -623,10 +640,7 @@ def render_page_chartink():
         </div>
     </div>
     """
-    if hasattr(st, "html"):
-        st.html(_title_html)
-    else:
-        st.markdown(_title_html, unsafe_allow_html=True)
+    _render_html(_title_html)
     st.caption("严格依据 Chartink 4H 突破策略（4H成交量爆量倍数、日线一目均衡云、RSI(14)、Supertrend(7,3)、2H短期强势等 7 条量化规则）进行全量扫描与形态捕捉。")
 
     cache = storage.load_chartink()
@@ -1090,11 +1104,10 @@ def render_page_chartink():
                     _sync_ci_url_params(target_page=curr_page - 1)
                     st.rerun()
             with col_p2:
-                st.markdown(
+                _render_html(
                     f"<div style='text-align:center;padding-top:6px;font-size:13px;color:#94a3b8;'>"
                     f"第 <b style='color:#38bdf8;'>{curr_page}</b> / {total_pages} 页 (共 {match_count} 支)"
-                    f"</div>",
-                    unsafe_allow_html=True
+                    f"</div>"
                 )
             with col_p3:
                 if st.button("下一页 ➡️", key="ci_top_next_btn", disabled=(curr_page >= total_pages), use_container_width=True):
@@ -1159,37 +1172,36 @@ def render_page_chartink():
         with st.container(border=True):
             col_t1, col_t2 = st.columns([5, 3])
             with col_t1:
-                st.markdown(
-                    f"<div style='display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px;'>"
-                    f"<a href='/?_page=ticker&_ticker={ticker}{t_param}' target='_parent' style='color:#38bdf8; font-weight:800; font-size:18px; text-decoration:none;'>{ticker}</a> "
-                    f"<span style='color:#cbd5e1; font-size:14px; font-weight:600;'>· {name}</span> "
-                    f"{mkt_tag} "
-                    f"<span style='background:linear-gradient(135deg, rgba(34,197,94,0.2), rgba(16,185,129,0.3)); color:#4ade80; border:1px solid rgba(34,197,94,0.4); border-radius:6px; padding:2px 8px; font-size:12px; font-weight:700;'>"
-                    f"🚀 7条规则突破达成"
-                    f"</span>"
-                    f"</div>",
-                    unsafe_allow_html=True
+                _render_html(
+                    f"""
+                    <div style='display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px;'>
+                        <a href='/?_page=ticker&_ticker={ticker}{t_param}' target='_parent' style='color:#38bdf8; font-weight:800; font-size:18px; text-decoration:none;'>{ticker}</a>
+                        <span style='color:#cbd5e1; font-size:14px; font-weight:600;'>· {name}</span>
+                        {mkt_tag}
+                        <span style='background:linear-gradient(135deg, rgba(34,197,94,0.2), rgba(16,185,129,0.3)); color:#4ade80; border:1px solid rgba(34,197,94,0.4); border-radius:6px; padding:2px 8px; font-size:12px; font-weight:700;'>
+                            🚀 7条规则突破达成
+                        </span>
+                    </div>
+                    """
                 )
 
             with col_t2:
                 btn_col1, btn_col2, btn_col3 = st.columns(3)
                 with btn_col1:
-                    st.markdown(
+                    _render_html(
                         f'<a href="{tv_lnk}" target="_blank" class="tv-btn" data-ticker="{ticker}" '
                         f'style="display:block;text-align:center;padding:5px 0;background:rgba(56,189,248,0.15);'
                         f'border:1px solid rgba(56,189,248,0.3);color:#38bdf8;'
                         f'border-radius:4px;text-decoration:none;font-weight:600;font-size:12px;">'
-                        f'📈 TV 4H {click_badge}</a>',
-                        unsafe_allow_html=True
+                        f'📈 TV 4H {click_badge}</a>'
                     )
                 with btn_col2:
-                    st.markdown(
+                    _render_html(
                         f'<a href="{sina_lnk}" target="_blank" class="sina-btn" data-ticker="{ticker}" '
                         f'style="display:block;text-align:center;padding:5px 0;background:rgba(255,255,255,0.08);'
                         f'border:1px solid rgba(255,255,255,0.15);color:#cbd5e1;'
                         f'border-radius:4px;text-decoration:none;font-size:12px;">'
-                        f'🏦 新浪</a>',
-                        unsafe_allow_html=True
+                        f'🏦 新浪</a>'
                     )
                 with btn_col3:
                     if is_fav:
@@ -1206,7 +1218,7 @@ def render_page_chartink():
                             st.rerun()
 
             # 指标卡片网格与规则徽章
-            st.markdown(
+            _render_html(
                 f"""
                 <div class="ci-plan-box">
                     <div class="ci-plan-item">
@@ -1236,13 +1248,12 @@ def render_page_chartink():
                     <span class="ci-rule-badge">✔ [6] 2H收盘强势</span>
                 </div>
                 <div style="font-size:12px; color:#64748b; border-top:1px dashed rgba(255,255,255,0.08); padding-top:6px; margin-top:6px;">⏰ 扫描时间: {scan_time_val}</div>
-                """,
-                unsafe_allow_html=True
+                """
             )
 
     # 底部页码导航
     if total_pages > 1 and page_size_sel != "全部":
-        st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+        _render_html("<div style='height:12px;'></div>")
         col_b_p1, col_b_p2, col_b_p3 = st.columns([1, 2, 1])
         with col_b_p1:
             if st.button("⬅️ 上一页", key="ci_bot_prev_btn", disabled=(curr_page <= 1), use_container_width=True):
@@ -1250,11 +1261,10 @@ def render_page_chartink():
                 _sync_ci_url_params(target_page=curr_page - 1)
                 st.rerun()
         with col_b_p2:
-            st.markdown(
+            _render_html(
                 f"<div style='text-align:center;padding-top:6px;font-size:13px;color:#94a3b8;'>"
                 f"第 <b style='color:#38bdf8;'>{curr_page}</b> / {total_pages} 页 (共 {match_count} 支)"
-                f"</div>",
-                unsafe_allow_html=True
+                f"</div>"
             )
         with col_b_p3:
             if st.button("下一页 ➡️", key="ci_bot_next_btn", disabled=(curr_page >= total_pages), use_container_width=True):
