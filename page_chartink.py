@@ -825,8 +825,16 @@ def render_page_chartink():
 
             import cloud_sync
             sb_url, sb_key, sb_bucket = cloud_sync._get_secrets()
+            
+            import importlib
             try:
-                colab_code = colab_chartink_script.generate_colab_chartink_script(
+                gen_mod = importlib.import_module("colab_chartink_script")
+                gen_mod = importlib.reload(gen_mod)
+            except Exception:
+                import colab_chartink_script as gen_mod
+
+            try:
+                colab_code = gen_mod.generate_colab_chartink_script(
                     export_tickers,
                     pool_name=selected_pool,
                     min_volume=min_vol_val,
@@ -834,24 +842,12 @@ def render_page_chartink():
                     supabase_key=sb_key,
                     supabase_bucket=sb_bucket
                 )
-            except TypeError:
-                try:
-                    import importlib
-                    colab_chartink_script = importlib.reload(colab_chartink_script)
-                    colab_code = colab_chartink_script.generate_colab_chartink_script(
-                        export_tickers,
-                        pool_name=selected_pool,
-                        min_volume=min_vol_val,
-                        supabase_url=sb_url,
-                        supabase_key=sb_key,
-                        supabase_bucket=sb_bucket
-                    )
-                except Exception:
-                    colab_code = colab_chartink_script.generate_colab_chartink_script(
-                        export_tickers,
-                        pool_name=selected_pool,
-                        min_volume=min_vol_val
-                    )
+            except Exception:
+                colab_code = gen_mod.generate_colab_chartink_script(
+                    export_tickers,
+                    pool_name=selected_pool,
+                    min_volume=min_vol_val
+                )
 
             st.code(colab_code, language="python", line_numbers=True)
 
