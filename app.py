@@ -427,6 +427,11 @@ import page_watchlist
 import page_hotlist
 import page_universe
 import page_cloud
+import colab_chartink_script
+try:
+    colab_chartink_script = importlib.reload(colab_chartink_script)
+except Exception:
+    pass
 import page_chartink
 try:
     page_chartink = importlib.reload(page_chartink)

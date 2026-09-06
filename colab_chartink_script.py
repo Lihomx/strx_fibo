@@ -12,7 +12,7 @@ colab_chartink_script.py — Google Colab 独立大规模 Chartink 4H Breakout 7
 
 import json
 
-def generate_colab_chartink_script(tickers: list[str], pool_name: str = "系统品种库", min_volume: int = 100000, supabase_url: str = "", supabase_key: str = "", supabase_bucket: str = "strx") -> str:
+def generate_colab_chartink_script(tickers: list[str], pool_name: str = "系统品种库", min_volume: int = 100000, supabase_url: str = "", supabase_key: str = "", supabase_bucket: str = "strx", *args, **kwargs) -> str:
     """生成内置指定股票池代码的 Google Colab Chartink 4H 突破扫描脚本（支持结果自动直推 Supabase）"""
     tickers_json = json.dumps(tickers, ensure_ascii=False)
     

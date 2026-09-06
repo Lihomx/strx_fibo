@@ -20,6 +20,11 @@ import numpy as np
 import storage
 import bg_scan_manager
 import colab_chartink_script
+try:
+    import importlib
+    colab_chartink_script = importlib.reload(colab_chartink_script)
+except Exception:
+    pass
 from assets import tv_url, sina_url
 
 _SAFE_RELOAD_FLAG = True
@@ -820,14 +825,33 @@ def render_page_chartink():
 
             import cloud_sync
             sb_url, sb_key, sb_bucket = cloud_sync._get_secrets()
-            colab_code = colab_chartink_script.generate_colab_chartink_script(
-                export_tickers,
-                pool_name=selected_pool,
-                min_volume=min_vol_val,
-                supabase_url=sb_url,
-                supabase_key=sb_key,
-                supabase_bucket=sb_bucket
-            )
+            try:
+                colab_code = colab_chartink_script.generate_colab_chartink_script(
+                    export_tickers,
+                    pool_name=selected_pool,
+                    min_volume=min_vol_val,
+                    supabase_url=sb_url,
+                    supabase_key=sb_key,
+                    supabase_bucket=sb_bucket
+                )
+            except TypeError:
+                try:
+                    import importlib
+                    colab_chartink_script = importlib.reload(colab_chartink_script)
+                    colab_code = colab_chartink_script.generate_colab_chartink_script(
+                        export_tickers,
+                        pool_name=selected_pool,
+                        min_volume=min_vol_val,
+                        supabase_url=sb_url,
+                        supabase_key=sb_key,
+                        supabase_bucket=sb_bucket
+                    )
+                except Exception:
+                    colab_code = colab_chartink_script.generate_colab_chartink_script(
+                        export_tickers,
+                        pool_name=selected_pool,
+                        min_volume=min_vol_val
+                    )
 
             st.code(colab_code, language="python", line_numbers=True)
 
