@@ -18,6 +18,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import storage
+import cloud_sync
 import bg_scan_manager
 import colab_chartink_script
 try:
@@ -873,7 +874,7 @@ def render_page_chartink():
                 c_sb1, c_sb2 = st.columns([1.2, 1])
                 with c_sb1:
                     last_local_ts = str(scanned_at)[:19] if scanned_at else "暂无本地数据"
-                    st.caption(f"📅 本地数据时间: `{last_local_ts}` | 当前: `{passed_count}` 支")
+                    st.caption(f"📅 本地数据时间: `{last_local_ts}` | 当前: `{total_cnt}` 支")
                 with c_sb2:
                     btn_sync_sb = st.button("🔄 从云端一键同步", type="primary", use_container_width=True, key="btn_ci_sync_supabase", help="拉取 GitHub Actions 或 Colab 推送至 Supabase 的最新全量 4H 突破扫描结果")
                 
