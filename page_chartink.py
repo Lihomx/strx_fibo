@@ -442,95 +442,96 @@ def render():
 
 def render_page_chartink():
     # ── 自定义暗色样式 ──────────────────────────────────────────────
-    st.markdown(
-        """
-        <style>
-        .ci-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 8px;
-        }
-        .ci-title {
-            font-size: 24px;
-            font-weight: 800;
-            color: #f8fafc;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .ci-card {
-            background: rgba(30, 41, 59, 0.45);
-            border: 1px solid rgba(59, 130, 246, 0.25);
-            border-radius: 10px;
-            padding: 14px 16px;
-            margin-bottom: 12px;
-            transition: all 0.2s ease;
-        }
-        .ci-card:hover {
-            border-color: rgba(59, 130, 246, 0.6);
-            background: rgba(30, 41, 59, 0.7);
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
-        }
-        .ci-metric-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 8px;
-            background: rgba(15, 23, 42, 0.5);
-            padding: 10px 12px;
-            border-radius: 6px;
-            margin: 10px 0;
-            font-size: 12px;
-        }
-        .ci-metric-item {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-        .ci-metric-label {
-            color: #94a3b8;
-            font-size: 11px;
-        }
-        .ci-metric-val {
-            color: #f1f5f9;
-            font-weight: 700;
-            font-size: 13px;
-            font-family: monospace;
-        }
-        .ci-rule-badge {
-            display: inline-block;
-            background: rgba(34, 197, 94, 0.15);
-            color: #4ade80;
-            border: 1px solid rgba(34, 197, 94, 0.3);
-            border-radius: 4px;
-            padding: 2px 6px;
-            font-size: 11px;
-            font-weight: 600;
-            margin-right: 4px;
-            margin-bottom: 4px;
-        }
-        .ci-tag-us {
-            background: rgba(56, 189, 248, 0.15);
-            color: #38bdf8;
-            border: 1px solid rgba(56, 189, 248, 0.3);
-            border-radius: 4px;
-            padding: 2px 6px;
-            font-size: 11px;
-            font-weight: 600;
-        }
-        .ci-tag-a {
-            background: rgba(244, 63, 94, 0.15);
-            color: #fb7185;
-            border: 1px solid rgba(244, 63, 94, 0.3);
-            border-radius: 4px;
-            padding: 2px 6px;
-            font-size: 11px;
-            font-weight: 600;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+    _style_code = """
+    <style>
+    .ci-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+    }
+    .ci-title {
+        font-size: 24px;
+        font-weight: 800;
+        color: #f8fafc;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .ci-card {
+        background: rgba(30, 41, 59, 0.45);
+        border: 1px solid rgba(59, 130, 246, 0.25);
+        border-radius: 10px;
+        padding: 14px 16px;
+        margin-bottom: 12px;
+        transition: all 0.2s ease;
+    }
+    .ci-card:hover {
+        border-color: rgba(59, 130, 246, 0.6);
+        background: rgba(30, 41, 59, 0.7);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    }
+    .ci-metric-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+        background: rgba(15, 23, 42, 0.5);
+        padding: 10px 12px;
+        border-radius: 6px;
+        margin: 10px 0;
+        font-size: 12px;
+    }
+    .ci-metric-item {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+    .ci-metric-label {
+        color: #94a3b8;
+        font-size: 11px;
+    }
+    .ci-metric-val {
+        color: #f1f5f9;
+        font-weight: 700;
+        font-size: 13px;
+        font-family: monospace;
+    }
+    .ci-rule-badge {
+        display: inline-block;
+        background: rgba(34, 197, 94, 0.15);
+        color: #4ade80;
+        border: 1px solid rgba(34, 197, 94, 0.3);
+        border-radius: 4px;
+        padding: 2px 6px;
+        font-size: 11px;
+        font-weight: 600;
+        margin-right: 4px;
+        margin-bottom: 4px;
+    }
+    .ci-tag-us {
+        background: rgba(56, 189, 248, 0.15);
+        color: #38bdf8;
+        border: 1px solid rgba(56, 189, 248, 0.3);
+        border-radius: 4px;
+        padding: 2px 6px;
+        font-size: 11px;
+        font-weight: 600;
+    }
+    .ci-tag-a {
+        background: rgba(244, 63, 94, 0.15);
+        color: #fb7185;
+        border: 1px solid rgba(244, 63, 94, 0.3);
+        border-radius: 4px;
+        padding: 2px 6px;
+        font-size: 11px;
+        font-weight: 600;
+    }
+    </style>
+    """
+    if hasattr(st, "html"):
+        st.html(_style_code)
+    else:
+        st.markdown(_style_code, unsafe_allow_html=True)
 
     # ── 从 URL 参数初始化 / 恢复所有筛选状态 ──
     _url_time_raw = str(st.query_params.get("_time", "")).strip().lower()
@@ -630,16 +631,17 @@ def render_page_chartink():
         _sync_ci_url_params(target_page=1)
 
     # ── 1. 顶部标题与形态总体统计 ──
-    st.markdown(
-        """
-        <div class="ci-header">
-            <div class="ci-title">
-                <span>📈 Chartink · 4 Hour Breakout 7条规则突破扫描</span>
-            </div>
+    _title_html = """
+    <div class="ci-header">
+        <div class="ci-title">
+            <span>📈 Chartink · 4 Hour Breakout 7条规则突破扫描</span>
         </div>
-        """,
-        unsafe_allow_html=True
-    )
+    </div>
+    """
+    if hasattr(st, "html"):
+        st.html(_title_html)
+    else:
+        st.markdown(_title_html, unsafe_allow_html=True)
     st.caption("严格依据 Chartink 4H 突破策略（4H成交量爆量倍数、日线一目均衡云、RSI(14)、Supertrend(7,3)、2H短期强势等 7 条量化规则）进行全量扫描与形态捕捉。")
 
     cache = storage.load_chartink()
@@ -1127,7 +1129,7 @@ def render_page_chartink():
     t_param = f"&_t={t_token}" if t_token else ""
 
     # 渲染卡片
-    for r in p_slice:
+    for item_idx, r in enumerate(p_slice):
         ticker = str(r.get("ticker", "")).strip().upper()
         if not ticker:
             continue
@@ -1164,6 +1166,7 @@ def render_page_chartink():
 
         # 7条规则徽章
         rules_badges_html = (
+            '<div style="margin-top:4px; margin-bottom:8px;">'
             '<span class="ci-rule-badge">✔ [0] 4H放量>2x</span>'
             '<span class="ci-rule-badge">✔ [1] 前根放量>1.5x</span>'
             '<span class="ci-rule-badge">✔ [2] 云顶上方</span>'
@@ -1171,78 +1174,105 @@ def render_page_chartink():
             '<span class="ci-rule-badge">✔ [4] ST支撑上方</span>'
             '<span class="ci-rule-badge">✔ [5] 云底上方</span>'
             '<span class="ci-rule-badge">✔ [6] 2H收盘强势</span>'
+            '</div>'
         )
 
-        card_html = f"""
-        <div class="ci-card">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <a href="/?_page=ticker&_ticker={ticker}{t_param}" target="_parent" style="color:#38bdf8; font-weight:800; font-size:16px; text-decoration:none;">{ticker}</a>
-                    <span style="color:#cbd5e1; font-size:13px; font-weight:600;">{name}</span>
-                    {mkt_tag}
-                </div>
-                <div>
-                    <span style="background:linear-gradient(135deg, rgba(34,197,94,0.2), rgba(16,185,129,0.3)); color:#4ade80; border:1px solid rgba(34,197,94,0.4); border-radius:6px; padding:3px 10px; font-size:12px; font-weight:700;">
-                        🚀 7条规则突破达成
-                    </span>
-                </div>
-            </div>
-            
-            <div class="ci-metric-grid">
-                <div class="ci-metric-item">
-                    <span class="ci-metric-label">4H放量 / 前根倍数</span>
-                    <span class="ci-metric-val">{vr0_str} / {vr1_str}</span>
-                </div>
-                <div class="ci-metric-item">
-                    <span class="ci-metric-label">收盘价 / 一目云顶</span>
-                    <span class="ci-metric-val">${c_val:.4f} > ${ct_val:.4f}</span>
-                </div>
-                <div class="ci-metric-item">
-                    <span class="ci-metric-label">Daily RSI(14)</span>
-                    <span class="ci-metric-val" style="color:#38bdf8;">📈 {rsi_val:.1f} (>50)</span>
-                </div>
-                <div class="ci-metric-item">
-                    <span class="ci-metric-label">Supertrend / 2H[-2]</span>
-                    <span class="ci-metric-val">${st_val:.4f} | ${c2h_val:.4f}</span>
-                </div>
-            </div>
+        with st.container(border=True):
+            col_t1, col_t2 = st.columns([5, 3])
+            with col_t1:
+                hdr_html = (
+                    f"<div style='display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px;'>"
+                    f"<a href='/?_page=ticker&_ticker={ticker}{t_param}' target='_parent' style='color:#38bdf8; font-weight:800; font-size:17px; text-decoration:none;'>{ticker}</a>"
+                    f"<span style='color:#cbd5e1; font-size:14px; font-weight:600;'>{name}</span>"
+                    f"{mkt_tag}"
+                    f"<span style='background:linear-gradient(135deg, rgba(34,197,94,0.2), rgba(16,185,129,0.3)); color:#4ade80; border:1px solid rgba(34,197,94,0.4); border-radius:6px; padding:2px 8px; font-size:12px; font-weight:700;'>"
+                    f"🚀 7条规则突破达成"
+                    f"</span>"
+                    f"</div>"
+                )
+                if hasattr(st, "html"):
+                    st.html(hdr_html)
+                else:
+                    st.markdown(hdr_html, unsafe_allow_html=True)
 
-            <div style="margin-top:6px; margin-bottom:10px;">
-                {rules_badges_html}
-            </div>
+            with col_t2:
+                btn_col1, btn_col2, btn_col3 = st.columns(3)
+                with btn_col1:
+                    tv_btn_html = (
+                        f'<a href="{tv_lnk}" target="_blank" class="tv-btn" data-ticker="{ticker}" '
+                        f'style="display:block;text-align:center;padding:5px 0;background:rgba(56,189,248,0.15);'
+                        f'border:1px solid rgba(56,189,248,0.3);color:#38bdf8;'
+                        f'border-radius:4px;text-decoration:none;font-weight:600;font-size:12px;">'
+                        f'📈 TV 4H {click_badge}</a>'
+                    )
+                    if hasattr(st, "html"):
+                        st.html(tv_btn_html)
+                    else:
+                        st.markdown(tv_btn_html, unsafe_allow_html=True)
+                with btn_col2:
+                    sina_btn_html = (
+                        f'<a href="{sina_lnk}" target="_blank" class="sina-btn" data-ticker="{ticker}" '
+                        f'style="display:block;text-align:center;padding:5px 0;background:rgba(255,255,255,0.08);'
+                        f'border:1px solid rgba(255,255,255,0.15);color:#cbd5e1;'
+                        f'border-radius:4px;text-decoration:none;font-size:12px;">'
+                        f'🏦 新浪</a>'
+                    )
+                    if hasattr(st, "html"):
+                        st.html(sina_btn_html)
+                    else:
+                        st.markdown(sina_btn_html, unsafe_allow_html=True)
+                with btn_col3:
+                    if is_fav:
+                        if st.button("🗑️ 取消", key=f"ci_fav_del_{ticker}_{item_idx}", use_container_width=True):
+                            storage.remove_from_watchlist(ticker)
+                            st.toast(f"已将 {ticker} 从自选移除", icon="🗑️")
+                            time.sleep(0.3)
+                            st.rerun()
+                    else:
+                        if st.button("⭐ 收藏", key=f"ci_fav_add_{ticker}_{item_idx}", use_container_width=True):
+                            storage.add_to_watchlist(ticker=ticker, name=name, note="Chartink 4H Breakout 突破匹配")
+                            st.toast(f"⭐ 已将 {ticker} 加入自选收藏夹！", icon="⭐")
+                            time.sleep(0.3)
+                            st.rerun()
 
-            <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px dashed rgba(255,255,255,0.1); padding-top:8px; font-size:12px;">
-                <div style="color:#64748b;">
-                    ⏰ 扫描时间: {scan_time_val}
-                </div>
-                <div style="display:flex; gap:8px; align-items:center;">
-                    <a href="{tv_lnk}" target="_blank" class="tv-btn" data-ticker="{ticker}" style="color:#38bdf8; background:rgba(56,189,248,0.15); border:1px solid rgba(56,189,248,0.3); padding:3px 10px; border-radius:4px; text-decoration:none; font-weight:600;">
-                        📈 TV 4H 图表 {click_badge}
-                    </a>
-                    <a href="{sina_lnk}" target="_blank" class="sina-btn" data-ticker="{ticker}" style="color:#cbd5e1; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); padding:3px 8px; border-radius:4px; text-decoration:none;">
-                        🏦 新浪
-                    </a>
-                </div>
-            </div>
-        </div>
-        """
-        st.markdown(card_html, unsafe_allow_html=True)
-
-        # 收藏交互按钮
-        col_c_space, col_c_btn = st.columns([5, 1])
-        with col_c_btn:
-            if is_fav:
-                if st.button("🗑️ 取消自选", key=f"fav_btn_del_{ticker}", use_container_width=True):
-                    storage.remove_from_watchlist(ticker)
-                    st.toast(f"已将 {ticker} 从自选移除", icon="🗑️")
-                    time.sleep(0.3)
-                    st.rerun()
+            # 指标卡片网格
+            metric_grid_html = (
+                f"<div class='ci-metric-grid'>"
+                f"<div class='ci-metric-item'>"
+                f"<span class='ci-metric-label'>4H放量 / 前根倍数</span>"
+                f"<span class='ci-metric-val'>{vr0_str} / {vr1_str}</span>"
+                f"</div>"
+                f"<div class='ci-metric-item'>"
+                f"<span class='ci-metric-label'>收盘价 / 一目云顶</span>"
+                f"<span class='ci-metric-val'>${c_val:.4f} > ${ct_val:.4f}</span>"
+                f"</div>"
+                f"<div class='ci-metric-item'>"
+                f"<span class='ci-metric-label'>Daily RSI(14)</span>"
+                f"<span class='ci-metric-val' style='color:#38bdf8;'>📈 {rsi_val:.1f} (>50)</span>"
+                f"</div>"
+                f"<div class='ci-metric-item'>"
+                f"<span class='ci-metric-label'>Supertrend / 2H[-2]</span>"
+                f"<span class='ci-metric-val'>${st_val:.4f} | ${c2h_val:.4f}</span>"
+                f"</div>"
+                f"</div>"
+            )
+            if hasattr(st, "html"):
+                st.html(metric_grid_html)
             else:
-                if st.button("⭐ 加入自选", key=f"fav_btn_add_{ticker}", use_container_width=True):
-                    storage.add_to_watchlist(ticker=ticker, name=name, note="Chartink 4H Breakout 突破匹配")
-                    st.toast(f"⭐ 已将 {ticker} 加入自选收藏夹！", icon="⭐")
-                    time.sleep(0.3)
-                    st.rerun()
+                st.markdown(metric_grid_html, unsafe_allow_html=True)
+
+            # 7条规则徽章
+            if hasattr(st, "html"):
+                st.html(rules_badges_html)
+            else:
+                st.markdown(rules_badges_html, unsafe_allow_html=True)
+
+            # 底部扫描时间
+            ft_html = f"<div style='font-size:12px;color:#64748b;border-top:1px dashed rgba(255,255,255,0.08);padding-top:6px;'>⏰ 扫描时间: {scan_time_val}</div>"
+            if hasattr(st, "html"):
+                st.html(ft_html)
+            else:
+                st.markdown(ft_html, unsafe_allow_html=True)
 
     # 底部页码导航
     if total_pages > 1 and page_size_sel != "全部":
