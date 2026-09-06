@@ -345,8 +345,27 @@ def _check_ticker_chartink(ticker: str) -> dict:
             }},
         ]
 
+        is_passed = all(r["ok"] for r in rules)
+        
+        # 跑势进度与形态阶段划分 (以云顶/Supertrend 为突破基准)
+        ref_p = ct_v if (ct_v and ct_v > 0) else (st_v if (st_v and st_v > 0) else c_d)
+        if c_d and ref_p and c_d >= ref_p:
+            prog = round(max(0.0, ((c_d - ref_p) / ref_p) * 100.0), 1)
+        else:
+            prog = 0.0
+
+        if not is_passed or prog == 0.0:
+            if cb_v and c_d < cb_v:
+                status_str = "invalidated"
+            else:
+                status_str = "active"
+        else:
+            status_str = "confirmed"
+
         res["details"] = rules
-        res["passed"]  = all(r["ok"] for r in rules)
+        res["passed"]  = is_passed
+        res["status"]  = status_str
+        res["breakout_progress"] = prog
     except Exception as e:
         res["error"] = str(e)
 
@@ -378,7 +397,7 @@ def run_chartink_scanner():
                 res = future.result()
                 if res.get("passed"):
                     passed_records.append(res)
-                    print(f"  🔥 [发现突破] {{tk}} 满足全部 7 条 4H 突破规则! (Close: {{res['close']}}, 4H Vol: {{res['volume_4h']:,.0f}}, RSI: {{res['rsi']:.1f}})")
+                    print(f"  🔥 [发现突破] {{tk}} 满足全部 7 条 4H 突破规则! (Close: {{res['close']}}, 4H Vol: {{res['volume_4h']:,.0f}}, RSI: {{res['rsi']:.1f}}, 阶段: {{res['status']}} {{res['breakout_progress']}}%)")
                     sys.stdout.flush()
             except Exception:
                 pass
@@ -404,7 +423,9 @@ def run_chartink_scanner():
             csv_rows.append({{
                 "ticker": r.get("ticker", ""),
                 "symbol": r.get("ticker", ""),
-                "passed": 1,
+                "passed": 1 if r.get("passed") else 0,
+                "status": r.get("status", "confirmed"),
+                "breakout_progress": r.get("breakout_progress", 0.0),
                 "close": r.get("close", ""),
                 "volume_4h": r.get("volume_4h", ""),
                 "vol_ratio_0": r.get("vol_ratio_0", ""),

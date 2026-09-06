@@ -289,8 +289,25 @@ def _check_ticker(ticker: str) -> dict:
         },
     ]
 
+    is_passed = all(r["ok"] for r in rules)
+    ref_p = ct_v if (ct_v and ct_v > 0) else (st_v if (st_v and st_v > 0) else c_d)
+    if c_d and ref_p and c_d >= ref_p:
+        prog = round(max(0.0, ((c_d - ref_p) / ref_p) * 100.0), 1)
+    else:
+        prog = 0.0
+
+    if not is_passed or prog == 0.0:
+        if cb_v and c_d < cb_v:
+            status_str = "invalidated"
+        else:
+            status_str = "active"
+    else:
+        status_str = "confirmed"
+
     result["details"] = rules
-    result["passed"]  = all(r["ok"] for r in rules)
+    result["passed"]  = is_passed
+    result["status"]  = status_str
+    result["breakout_progress"] = prog
     return result
 
 
@@ -371,27 +388,25 @@ CI_TIME_URL_MAP = {
 }
 CI_TIME_REVERSE_MAP = {v: k for k, v in CI_TIME_URL_MAP.items() if k not in ("1m", "2m")}
 
-# ── 2. 形态阶段状态 / 突破强度映射 ──
+# ── 2. 形态阶段状态映射 ──
 CI_STAT_OPTIONS = [
-    "全部状态 (7条规则全中)",
-    "🔥 极度放量突破 (≥3.0x)",
-    "🚀 强劲放量突破 (≥2.0x)",
-    "📈 RSI 强势区 (>60)",
-    "⚡ RSI 超买强爆发 (>70)",
-    "☁️ 远超一目云顶 (>3%)",
-    "💎 高流动性优选 (≥50万股)"
+    "👀 观望蓄势中 (active 0%)",
+    "🚀 刚突破 (confirmed ≤20%)",
+    "⚡ 推进中 (confirmed 20~100%)",
+    "🏁 已超目标 (confirmed >100%)",
+    "❌ 已失效 (invalidated)",
+    "⏰ 已过期 (expired)"
 ]
 CI_STAT_URL_MAP = {
-    "all":            "全部状态 (7条规则全中)",
-    "active":         "全部状态 (7条规则全中)",
-    "extreme_vol":    "🔥 极度放量突破 (≥3.0x)",
-    "strong_vol":     "🚀 强劲放量突破 (≥2.0x)",
-    "strong_rsi":     "📈 RSI 强势区 (>60)",
-    "overbought_rsi": "⚡ RSI 超买强爆发 (>70)",
-    "cloud_surge":    "☁️ 远超一目云顶 (>3%)",
-    "high_liquidity": "💎 高流动性优选 (≥50万股)"
+    "active":      "👀 观望蓄势中 (active 0%)",
+    "early":       "🚀 刚突破 (confirmed ≤20%)",
+    "mid":         "⚡ 推进中 (confirmed 20~100%)",
+    "far":         "🏁 已超目标 (confirmed >100%)",
+    "invalidated": "❌ 已失效 (invalidated)",
+    "expired":     "⏰ 已过期 (expired)"
 }
-CI_STAT_REVERSE_MAP = {v: k for k, v in CI_STAT_URL_MAP.items() if k != "active"}
+CI_STAT_REVERSE_MAP = {v: k for k, v in CI_STAT_URL_MAP.items()}
+CI_DEFAULT_STATS = ["👀 观望蓄势中 (active 0%)", "🚀 刚突破 (confirmed ≤20%)"]
 
 # ── 3. 最低均量 / 成交额过滤映射 ──
 CI_VOL_OPTIONS = [
@@ -418,25 +433,57 @@ CI_VOL_REVERSE_MAP = {v: k for k, v in CI_VOL_URL_MAP.items()}
 
 # ── 4. 排序方式映射 ──
 CI_SORT_OPTIONS = [
-    "🕐 最新扫描时间 (新 → 旧)",
+    "🏃 跑势进度 (低 → 高 · 优先蓄势/刚突破)",
     "🔥 4H 放量倍数 (高 → 低)",
     "📈 RSI(14) 强度 (高 → 低)",
     "📊 20日均量 (高 → 低 · 流动性优先)",
     "💰 日均成交额 (高 → 低)",
     "💲 收盘价 (高 → 低)",
+    "🏃 跑势进度 (高 → 低)",
+    "🕐 最新扫描时间 (新 → 旧)",
     "🔤 股票代码 (A → Z)"
 ]
 CI_SORT_URL_MAP = {
-    "time_desc":      "🕐 最新扫描时间 (新 → 旧)",
+    "progress_asc":   "🏃 跑势进度 (低 → 高 · 优先蓄势/刚突破)",
     "vol_ratio_desc": "🔥 4H 放量倍数 (高 → 低)",
-    "progress_desc":  "🔥 4H 放量倍数 (高 → 低)",
+    "progress_desc":  "🏃 跑势进度 (高 → 低)",
     "rsi_desc":       "📈 RSI(14) 强度 (高 → 低)",
     "volume_desc":    "📊 20日均量 (高 → 低 · 流动性优先)",
     "turnover_desc":  "💰 日均成交额 (高 → 低)",
     "price_desc":     "💲 收盘价 (高 → 低)",
+    "time_desc":      "🕐 最新扫描时间 (新 → 旧)",
     "ticker_asc":     "🔤 股票代码 (A → Z)"
 }
-CI_SORT_REVERSE_MAP = {v: k for k, v in CI_SORT_URL_MAP.items() if k != "progress_desc"}
+CI_SORT_REVERSE_MAP = {v: k for k, v in CI_SORT_URL_MAP.items()}
+
+
+def _calc_ci_item_status_and_prog(r):
+    """统一计算或提取每条记录的 status 与 breakout_progress"""
+    c_val = _safe_float(r.get("close"), 0.0)
+    ct_val = _safe_float(r.get("cloud_top"), 0.0)
+    cb_val = _safe_float(r.get("cloud_bot"), 0.0)
+    st_val = _safe_float(r.get("supertrend"), 0.0)
+    is_passed = bool(r.get("passed", True))
+
+    if "breakout_progress" in r and r["breakout_progress"] is not None and str(r["breakout_progress"]) != "" and str(r["breakout_progress"]) != "nan":
+        prog = float(_safe_float(r.get("breakout_progress"), 0.0))
+        st_val_code = str(r.get("status") or ("confirmed" if is_passed else "active")).strip().lower()
+    else:
+        ref_p = ct_val if (ct_val and ct_val > 0) else (st_val if (st_val and st_val > 0) else c_val)
+        if c_val > 0 and ref_p > 0 and c_val >= ref_p:
+            prog = round(max(0.0, ((c_val - ref_p) / ref_p) * 100.0), 1)
+        else:
+            prog = 0.0
+        
+        if not is_passed or prog == 0.0:
+            if cb_val > 0 and c_val < cb_val:
+                st_val_code = "invalidated"
+            else:
+                st_val_code = "active"
+        else:
+            st_val_code = "confirmed"
+
+    return st_val_code, prog
 
 
 def _parse_item_dt(dt_str):
@@ -543,10 +590,15 @@ def render_page_chartink():
         st.session_state["ci_filter_time"] = CI_TIME_OPTIONS[0]
 
     _url_stat_raw = str(st.query_params.get("_stat", "")).strip().lower()
-    if _url_stat_raw in CI_STAT_URL_MAP:
-        st.session_state["ci_filter_stat"] = CI_STAT_URL_MAP[_url_stat_raw]
-    elif "ci_filter_stat" not in st.session_state:
-        st.session_state["ci_filter_stat"] = CI_STAT_OPTIONS[0]
+    if _url_stat_raw:
+        if _url_stat_raw in ("all", "全部"):
+            st.session_state["ci_filter_status"] = list(CI_STAT_OPTIONS)
+        else:
+            _stats = [CI_STAT_URL_MAP[s.strip()] for s in _url_stat_raw.split(",") if s.strip() in CI_STAT_URL_MAP]
+            if _stats:
+                st.session_state["ci_filter_status"] = _stats
+    if "ci_filter_status" not in st.session_state:
+        st.session_state["ci_filter_status"] = list(CI_DEFAULT_STATS)
 
     _url_vol_raw = str(st.query_params.get("_vol", "")).strip().lower()
     if _url_vol_raw in CI_VOL_URL_MAP:
@@ -593,10 +645,14 @@ def render_page_chartink():
             params["_time"] = _time_k
 
         # 2. 阶段状态 _stat
-        _cur_stat = st.session_state.get("ci_filter_stat", CI_STAT_OPTIONS[0])
-        _stat_k = CI_STAT_REVERSE_MAP.get(_cur_stat, "all")
-        if _stat_k != "all":
-            params["_stat"] = _stat_k
+        _cur_stat = st.session_state.get("ci_filter_status", CI_DEFAULT_STATS)
+        if isinstance(_cur_stat, list):
+            if set(_cur_stat) == set(CI_STAT_OPTIONS):
+                params["_stat"] = "all"
+            elif set(_cur_stat) != set(CI_DEFAULT_STATS):
+                _stat_keys = [CI_STAT_REVERSE_MAP[s] for s in _cur_stat if s in CI_STAT_REVERSE_MAP]
+                if _stat_keys:
+                    params["_stat"] = ",".join(_stat_keys)
 
         # 3. 均量过滤 _vol
         _cur_vol = st.session_state.get("ci_filter_vol", CI_VOL_OPTIONS[0])
@@ -611,8 +667,8 @@ def render_page_chartink():
 
         # 5. 排序 _sort
         _cur_sort = st.session_state.get("ci_sort_by", CI_SORT_OPTIONS[0])
-        _sort_k = CI_SORT_REVERSE_MAP.get(_cur_sort, "time_desc")
-        if _sort_k != "time_desc":
+        _sort_k = CI_SORT_REVERSE_MAP.get(_cur_sort, "progress_asc")
+        if _sort_k != "progress_asc":
             params["_sort"] = _sort_k
 
         # 6. 每页条数 _ps
@@ -648,22 +704,23 @@ def render_page_chartink():
     scanned_at = cache.get("scanned_at", "—") if isinstance(cache, dict) else "—"
 
     total_cnt = len(passed_records)
-    us_cnt = sum(1 for r in passed_records if not str(r.get("ticker", "")).endswith((".SS", ".SZ", ".BJ")) and not str(r.get("ticker", "")).isdigit())
-    a_cnt = sum(1 for r in passed_records if str(r.get("ticker", "")).endswith((".SS", ".SZ", ".BJ")) or str(r.get("ticker", "")).isdigit())
+    active_cnt = sum(1 for r in passed_records if _calc_ci_item_status_and_prog(r)[0] == "active")
+    early_cnt = sum(1 for r in passed_records if _calc_ci_item_status_and_prog(r)[0] == "confirmed" and _calc_ci_item_status_and_prog(r)[1] <= 20.0)
+    mid_cnt = sum(1 for r in passed_records if _calc_ci_item_status_and_prog(r)[0] == "confirmed" and _calc_ci_item_status_and_prog(r)[1] > 20.0)
     extreme_vol_cnt = sum(1 for r in passed_records if _safe_float(r.get("vol_ratio_0"), 0.0) >= 3.0)
     strong_rsi_cnt = sum(1 for r in passed_records if _safe_float(r.get("rsi"), 0.0) >= 60.0)
 
     col_m1, col_m2, col_m3, col_m4, col_m5, col_m6 = st.columns(6)
     with col_m1:
-        st.metric("📊 突破总数", f"{total_cnt} 条", delta="7条全部满足" if total_cnt > 0 else None)
+        st.metric("📊 扫描总数", f"{total_cnt} 支", delta="7条规则突破" if total_cnt > 0 else None)
     with col_m2:
-        st.metric("🇺🇸 美股突破", f"{us_cnt} 支")
+        st.metric("👀 观望蓄势中", f"{active_cnt} 支")
     with col_m3:
-        st.metric("🇨🇳 A股突破", f"{a_cnt} 支")
+        st.metric("🚀 刚突破 (≤20%)", f"{early_cnt} 支")
     with col_m4:
-        st.metric("🔥 4H极度放量(≥3x)", f"{extreme_vol_cnt} 支")
+        st.metric("⚡ 推进中 (>20%)", f"{mid_cnt} 支")
     with col_m5:
-        st.metric("📈 RSI强势区(>60)", f"{strong_rsi_cnt} 支")
+        st.metric("🔥 4H极度放量(≥3x)", f"{extreme_vol_cnt} 支")
     with col_m6:
         st.metric("🕐 最近扫描时间", str(scanned_at)[:16] if scanned_at else "—")
 
@@ -809,10 +866,15 @@ def render_page_chartink():
                                 except Exception:
                                     pass
 
+                            st_in = str(row_val.get("status") or ("confirmed" if bool(row_val.get("passed", True)) else "active")).strip().lower()
+                            prog_in = _safe_float(row_val.get("breakout_progress"), None)
+
                             rec = {
                                 "ticker": tk,
                                 "symbol": tk,
-                                "passed": True,
+                                "passed": bool(row_val.get("passed", True)),
+                                "status": st_in,
+                                "breakout_progress": prog_in,
                                 "close": _safe_float(row_val.get("close"), 0.0),
                                 "volume_4h": _safe_float(row_val.get("volume_4h"), 0.0),
                                 "vol_ratio_0": _safe_float(row_val.get("vol_ratio_0"), None),
@@ -831,17 +893,20 @@ def render_page_chartink():
 
                         st.success(f"✅ 校验成功：解析到 **{len(parsed_records)}** 条 4H 突破达成记录！")
                         if parsed_records:
-                            preview_df = pd.DataFrame([
-                                {
+                            preview_rows = []
+                            for r in parsed_records[:8]:
+                                st_code, p_val = _calc_ci_item_status_and_prog(r)
+                                st_name = "👀 观望蓄势中" if st_code == "active" else (f"🚀 刚突破 ({p_val:.1f}%)" if p_val <= 20.0 else f"⚡ 推进中 ({p_val:.1f}%)")
+                                preview_rows.append({
                                     "代码": r["ticker"],
+                                    "阶段状态": st_name,
                                     "收盘价": f"${r['close']:.4f}" if r["close"] else "—",
                                     "4H成交量": f"{r['volume_4h']:,.0f}" if r["volume_4h"] else "—",
                                     "4H爆量": f"{r['vol_ratio_0']}x" if r.get("vol_ratio_0") else "—",
                                     "RSI": f"{r['rsi']:.1f}" if r["rsi"] else "—",
                                     "时间": r["scan_time"]
-                                }
-                                for r in parsed_records[:8]
-                            ])
+                                })
+                            preview_df = pd.DataFrame(preview_rows)
                             st.dataframe(preview_df, use_container_width=True, hide_index=True)
 
                         if st.button("📥 确认增量导入并合并到数据库", type="primary", use_container_width=True, key="btn_confirm_import_chartink"):
@@ -933,15 +998,13 @@ def render_page_chartink():
             help="【时效筛选】：过滤历史已久的扫描记录，聚焦最近 24小时、3天或1周内刚刚爆量突破的最新品种。"
         )
     with col_f3:
-        _cur_stat_val = st.session_state.get("ci_filter_stat", CI_STAT_OPTIONS[0])
-        _cur_stat_idx = CI_STAT_OPTIONS.index(_cur_stat_val) if _cur_stat_val in CI_STAT_OPTIONS else 0
-        stat_filter = st.selectbox(
+        st_status = st.multiselect(
             "📌 形态阶段状态",
-            CI_STAT_OPTIONS,
-            index=_cur_stat_idx,
-            key="ci_filter_stat",
+            options=CI_STAT_OPTIONS,
+            default=st.session_state.get("ci_filter_status", CI_DEFAULT_STATS),
+            key="ci_filter_status",
             on_change=_on_ci_filter_change,
-            help="【突破强度与阶段】：筛选 7条全部满足、≥3x极度爆量、RSI强势区(>60)、RSI超买爆发(>70)、远超云顶(>3%)或高流动性优选品种。"
+            help="【形态阶段筛选】：可多选「👀 观望蓄势中 (active 0%)」与「🚀 刚突破 (confirmed ≤20%)」，精准锁定刚刚起爆与蓄力阶段的优质标的。"
         )
     with col_f4:
         _cur_vol_val = st.session_state.get("ci_filter_vol", CI_VOL_OPTIONS[0])
@@ -963,7 +1026,7 @@ def render_page_chartink():
             index=_cur_sort_idx,
             key="ci_sort_by",
             on_change=_on_ci_filter_change,
-            help="支持按最新扫描时间、4H放量倍数、RSI强度、20日均量、日均成交额等维度排序。"
+            help="支持按跑势进度(优先蓄势/刚突破)、4H放量倍数、RSI强度、20日均量、日均成交额等维度排序。"
         )
 
     # 预加载品种名称字典
@@ -994,21 +1057,25 @@ def render_page_chartink():
         filtered_items = [r for r in filtered_items if _is_within_time(r)]
 
     # 2. 形态阶段状态过滤
-    if stat_filter == "🔥 极度放量突破 (≥3.0x)":
-        filtered_items = [r for r in filtered_items if _safe_float(r.get("vol_ratio_0"), 0.0) >= 3.0]
-    elif stat_filter == "🚀 强劲放量突破 (≥2.0x)":
-        filtered_items = [r for r in filtered_items if _safe_float(r.get("vol_ratio_0"), 0.0) >= 2.0]
-    elif stat_filter == "📈 RSI 强势区 (>60)":
-        filtered_items = [r for r in filtered_items if _safe_float(r.get("rsi"), 0.0) >= 60.0]
-    elif stat_filter == "⚡ RSI 超买强爆发 (>70)":
-        filtered_items = [r for r in filtered_items if _safe_float(r.get("rsi"), 0.0) >= 70.0]
-    elif stat_filter == "☁️ 远超一目云顶 (>3%)":
-        filtered_items = [
-            r for r in filtered_items 
-            if _safe_float(r.get("cloud_top"), 0.0) > 0 and _safe_float(r.get("close"), 0.0) >= _safe_float(r.get("cloud_top"), 0.0) * 1.03
-        ]
-    elif stat_filter == "💎 高流动性优选 (≥50万股)":
-        filtered_items = [r for r in filtered_items if _safe_float(r.get("avg_volume_20"), 0.0) >= 500000]
+    if st_status:
+        def _match_status(r):
+            st_code, p_val = _calc_ci_item_status_and_prog(r)
+            is_active = (st_code == "active")
+            is_early = (st_code == "confirmed" and p_val <= 20.0)
+            is_mid = (st_code == "confirmed" and 20.0 < p_val <= 100.0)
+            is_far = (st_code == "confirmed" and p_val > 100.0)
+            is_invalidated = (st_code == "invalidated")
+            is_expired = (st_code == "expired")
+
+            for s in st_status:
+                if "观望蓄势中" in s and is_active: return True
+                if "刚突破" in s and is_early: return True
+                if "推进中" in s and is_mid: return True
+                if "已超目标" in s and is_far: return True
+                if "已失效" in s and is_invalidated: return True
+                if "已过期" in s and is_expired: return True
+            return False
+        filtered_items = [r for r in filtered_items if _match_status(r)]
 
     # 3. 均量与成交额过滤
     if vol_filter == "🔥 20日均量 ≥ 10 万股":
@@ -1035,7 +1102,11 @@ def render_page_chartink():
         ]
 
     # 5. 排序
-    if sort_mode == "🔥 4H 放量倍数 (高 → 低)":
+    if sort_mode == "🏃 跑势进度 (低 → 高 · 优先蓄势/刚突破)":
+        filtered_items = sorted(filtered_items, key=lambda x: (_calc_ci_item_status_and_prog(x)[1], -_safe_float(x.get("vol_ratio_0"), 0.0)))
+    elif sort_mode == "🏃 跑势进度 (高 → 低)":
+        filtered_items = sorted(filtered_items, key=lambda x: _calc_ci_item_status_and_prog(x)[1], reverse=True)
+    elif sort_mode == "🔥 4H 放量倍数 (高 → 低)":
         filtered_items = sorted(filtered_items, key=lambda x: _safe_float(x.get("vol_ratio_0"), 0.0), reverse=True)
     elif sort_mode == "📈 RSI(14) 强度 (高 → 低)":
         filtered_items = sorted(filtered_items, key=lambda x: _safe_float(x.get("rsi"), 0.0), reverse=True)
@@ -1169,6 +1240,20 @@ def render_page_chartink():
         c2h_str = f"{price_pfx}{c2h_val:.2f}" if c2h_val else "—"
         rsi_str = f"{rsi_val:.1f}" if rsi_val is not None else "—"
 
+        st_code, prog_val = _calc_ci_item_status_and_prog(r)
+        if st_code == "active":
+            status_badge = "<span style='font-size:12px;background:rgba(59,130,246,0.18);color:#93c5fd;border:1px solid rgba(59,130,246,0.4);padding:2px 8px;border-radius:4px;font-weight:700;'>👀 观望蓄势中 (0%)</span>"
+        elif st_code == "confirmed" and prog_val <= 20.0:
+            status_badge = f"<span style='font-size:12px;background:rgba(34,197,94,0.22);color:#4ade80;border:1px solid rgba(34,197,94,0.5);padding:2px 8px;border-radius:4px;font-weight:700;'>🚀 刚突破 ({prog_val:.1f}%)</span>"
+        elif st_code == "confirmed" and 20.0 < prog_val <= 100.0:
+            status_badge = f"<span style='font-size:12px;background:rgba(245,158,11,0.2);color:#fde047;border:1px solid rgba(245,158,11,0.5);padding:2px 8px;border-radius:4px;font-weight:700;'>⚡ 推进中 ({prog_val:.1f}%)</span>"
+        elif st_code == "confirmed" and prog_val > 100.0:
+            status_badge = f"<span style='font-size:12px;background:rgba(249,115,22,0.2);color:#fb923c;border:1px solid rgba(249,115,22,0.5);padding:2px 8px;border-radius:4px;font-weight:700;'>🏁 已超目标 ({prog_val:.1f}%)</span>"
+        elif st_code == "invalidated":
+            status_badge = "<span style='font-size:12px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>❌ 已失效</span>"
+        else:
+            status_badge = "<span style='font-size:12px;background:rgba(100,116,139,0.15);color:#94a3b8;border:1px solid rgba(100,116,139,0.3);padding:2px 8px;border-radius:4px;font-weight:600;'>⏰ 已过期</span>"
+
         with st.container(border=True):
             col_t1, col_t2 = st.columns([5, 3])
             with col_t1:
@@ -1178,9 +1263,7 @@ def render_page_chartink():
                         <a href='/?_page=ticker&_ticker={ticker}{t_param}' target='_parent' style='color:#38bdf8; font-weight:800; font-size:18px; text-decoration:none;'>{ticker}</a>
                         <span style='color:#cbd5e1; font-size:14px; font-weight:600;'>· {name}</span>
                         {mkt_tag}
-                        <span style='background:linear-gradient(135deg, rgba(34,197,94,0.2), rgba(16,185,129,0.3)); color:#4ade80; border:1px solid rgba(34,197,94,0.4); border-radius:6px; padding:2px 8px; font-size:12px; font-weight:700;'>
-                            🚀 7条规则突破达成
-                        </span>
+                        {status_badge}
                     </div>
                     """
                 )
