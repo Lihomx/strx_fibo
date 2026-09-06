@@ -458,43 +458,31 @@ def render_page_chartink():
         align-items: center;
         gap: 8px;
     }
-    .ci-card {
-        background: rgba(30, 41, 59, 0.45);
-        border: 1px solid rgba(59, 130, 246, 0.25);
-        border-radius: 10px;
-        padding: 14px 16px;
-        margin-bottom: 12px;
-        transition: all 0.2s ease;
-    }
-    .ci-card:hover {
-        border-color: rgba(59, 130, 246, 0.6);
-        background: rgba(30, 41, 59, 0.7);
-        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
-    }
-    .ci-metric-grid {
+    .ci-plan-box, .ci-metric-grid {
+        background: rgba(15, 23, 42, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin: 8px 0;
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 8px;
-        background: rgba(15, 23, 42, 0.5);
-        padding: 10px 12px;
-        border-radius: 6px;
-        margin: 10px 0;
-        font-size: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        gap: 10px;
     }
-    .ci-metric-item {
+    .ci-plan-item, .ci-metric-item {
         display: flex;
         flex-direction: column;
-        gap: 2px;
     }
-    .ci-metric-label {
-        color: #94a3b8;
+    .ci-plan-label, .ci-metric-label {
         font-size: 11px;
+        color: #94a3b8;
+        font-weight: 600;
     }
-    .ci-metric-val {
-        color: #f1f5f9;
-        font-weight: 700;
-        font-size: 13px;
+    .ci-plan-val, .ci-metric-val {
+        font-size: 14px;
+        font-weight: 800;
         font-family: monospace;
+        margin-top: 2px;
+        color: #f1f5f9;
     }
     .ci-rule-badge {
         display: inline-block;
@@ -528,10 +516,7 @@ def render_page_chartink():
     }
     </style>
     """
-    if hasattr(st, "html"):
-        st.html(_style_code)
-    else:
-        st.markdown(_style_code, unsafe_allow_html=True)
+    st.markdown(_style_code, unsafe_allow_html=True)
 
     # ── 从 URL 参数初始化 / 恢复所有筛选状态 ──
     _url_time_raw = str(st.query_params.get("_time", "")).strip().lower()
@@ -1164,63 +1149,48 @@ def render_page_chartink():
         vr0_str = f"🔥 {vr0_val:.1f}x (爆量)" if vr0_val >= 2.0 else f"{vr0_val:.1f}x"
         vr1_str = f"{vr1_val:.1f}x" if vr1_val > 0 else "—"
 
-        # 7条规则徽章
-        rules_badges_html = (
-            '<div style="margin-top:4px; margin-bottom:8px;">'
-            '<span class="ci-rule-badge">✔ [0] 4H放量>2x</span>'
-            '<span class="ci-rule-badge">✔ [1] 前根放量>1.5x</span>'
-            '<span class="ci-rule-badge">✔ [2] 云顶上方</span>'
-            '<span class="ci-rule-badge">✔ [3] RSI>50</span>'
-            '<span class="ci-rule-badge">✔ [4] ST支撑上方</span>'
-            '<span class="ci-rule-badge">✔ [5] 云底上方</span>'
-            '<span class="ci-rule-badge">✔ [6] 2H收盘强势</span>'
-            '</div>'
-        )
+        price_pfx = "¥" if is_a_share else "$"
+        c_str = f"{price_pfx}{c_val:.2f}" if c_val else "—"
+        ct_str = f"{price_pfx}{ct_val:.2f}" if ct_val else "—"
+        st_str = f"{price_pfx}{st_val:.2f}" if st_val else "—"
+        c2h_str = f"{price_pfx}{c2h_val:.2f}" if c2h_val else "—"
+        rsi_str = f"{rsi_val:.1f}" if rsi_val is not None else "—"
 
         with st.container(border=True):
             col_t1, col_t2 = st.columns([5, 3])
             with col_t1:
-                hdr_html = (
+                st.markdown(
                     f"<div style='display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px;'>"
-                    f"<a href='/?_page=ticker&_ticker={ticker}{t_param}' target='_parent' style='color:#38bdf8; font-weight:800; font-size:17px; text-decoration:none;'>{ticker}</a>"
-                    f"<span style='color:#cbd5e1; font-size:14px; font-weight:600;'>{name}</span>"
-                    f"{mkt_tag}"
+                    f"<a href='/?_page=ticker&_ticker={ticker}{t_param}' target='_parent' style='color:#38bdf8; font-weight:800; font-size:18px; text-decoration:none;'>{ticker}</a> "
+                    f"<span style='color:#cbd5e1; font-size:14px; font-weight:600;'>· {name}</span> "
+                    f"{mkt_tag} "
                     f"<span style='background:linear-gradient(135deg, rgba(34,197,94,0.2), rgba(16,185,129,0.3)); color:#4ade80; border:1px solid rgba(34,197,94,0.4); border-radius:6px; padding:2px 8px; font-size:12px; font-weight:700;'>"
                     f"🚀 7条规则突破达成"
                     f"</span>"
-                    f"</div>"
+                    f"</div>",
+                    unsafe_allow_html=True
                 )
-                if hasattr(st, "html"):
-                    st.html(hdr_html)
-                else:
-                    st.markdown(hdr_html, unsafe_allow_html=True)
 
             with col_t2:
                 btn_col1, btn_col2, btn_col3 = st.columns(3)
                 with btn_col1:
-                    tv_btn_html = (
+                    st.markdown(
                         f'<a href="{tv_lnk}" target="_blank" class="tv-btn" data-ticker="{ticker}" '
                         f'style="display:block;text-align:center;padding:5px 0;background:rgba(56,189,248,0.15);'
                         f'border:1px solid rgba(56,189,248,0.3);color:#38bdf8;'
                         f'border-radius:4px;text-decoration:none;font-weight:600;font-size:12px;">'
-                        f'📈 TV 4H {click_badge}</a>'
+                        f'📈 TV 4H {click_badge}</a>',
+                        unsafe_allow_html=True
                     )
-                    if hasattr(st, "html"):
-                        st.html(tv_btn_html)
-                    else:
-                        st.markdown(tv_btn_html, unsafe_allow_html=True)
                 with btn_col2:
-                    sina_btn_html = (
+                    st.markdown(
                         f'<a href="{sina_lnk}" target="_blank" class="sina-btn" data-ticker="{ticker}" '
                         f'style="display:block;text-align:center;padding:5px 0;background:rgba(255,255,255,0.08);'
                         f'border:1px solid rgba(255,255,255,0.15);color:#cbd5e1;'
                         f'border-radius:4px;text-decoration:none;font-size:12px;">'
-                        f'🏦 新浪</a>'
+                        f'🏦 新浪</a>',
+                        unsafe_allow_html=True
                     )
-                    if hasattr(st, "html"):
-                        st.html(sina_btn_html)
-                    else:
-                        st.markdown(sina_btn_html, unsafe_allow_html=True)
                 with btn_col3:
                     if is_fav:
                         if st.button("🗑️ 取消", key=f"ci_fav_del_{ticker}_{item_idx}", use_container_width=True):
@@ -1235,44 +1205,40 @@ def render_page_chartink():
                             time.sleep(0.3)
                             st.rerun()
 
-            # 指标卡片网格
-            metric_grid_html = (
-                f"<div class='ci-metric-grid'>"
-                f"<div class='ci-metric-item'>"
-                f"<span class='ci-metric-label'>4H放量 / 前根倍数</span>"
-                f"<span class='ci-metric-val'>{vr0_str} / {vr1_str}</span>"
-                f"</div>"
-                f"<div class='ci-metric-item'>"
-                f"<span class='ci-metric-label'>收盘价 / 一目云顶</span>"
-                f"<span class='ci-metric-val'>${c_val:.4f} > ${ct_val:.4f}</span>"
-                f"</div>"
-                f"<div class='ci-metric-item'>"
-                f"<span class='ci-metric-label'>Daily RSI(14)</span>"
-                f"<span class='ci-metric-val' style='color:#38bdf8;'>📈 {rsi_val:.1f} (>50)</span>"
-                f"</div>"
-                f"<div class='ci-metric-item'>"
-                f"<span class='ci-metric-label'>Supertrend / 2H[-2]</span>"
-                f"<span class='ci-metric-val'>${st_val:.4f} | ${c2h_val:.4f}</span>"
-                f"</div>"
-                f"</div>"
+            # 指标卡片网格与规则徽章
+            st.markdown(
+                f"""
+                <div class="ci-plan-box">
+                    <div class="ci-plan-item">
+                        <span class="ci-plan-label">4H放量 / 前根倍数</span>
+                        <span class="ci-plan-val">{vr0_str} / {vr1_str}</span>
+                    </div>
+                    <div class="ci-plan-item">
+                        <span class="ci-plan-label">收盘价 / 一目云顶</span>
+                        <span class="ci-plan-val">{c_str} &gt; {ct_str}</span>
+                    </div>
+                    <div class="ci-plan-item">
+                        <span class="ci-plan-label">Daily RSI(14)</span>
+                        <span class="ci-plan-val" style="color:#38bdf8;">📈 {rsi_str} (&gt;50)</span>
+                    </div>
+                    <div class="ci-plan-item">
+                        <span class="ci-plan-label">Supertrend / 2H[-2]</span>
+                        <span class="ci-plan-val">{st_str} | {c2h_str}</span>
+                    </div>
+                </div>
+                <div style="margin-top:6px; margin-bottom:8px; display:flex; flex-wrap:wrap; gap:4px;">
+                    <span class="ci-rule-badge">✔ [0] 4H放量&gt;2x</span>
+                    <span class="ci-rule-badge">✔ [1] 前根放量&gt;1.5x</span>
+                    <span class="ci-rule-badge">✔ [2] 云顶上方</span>
+                    <span class="ci-rule-badge">✔ [3] RSI&gt;50</span>
+                    <span class="ci-rule-badge">✔ [4] ST支撑上方</span>
+                    <span class="ci-rule-badge">✔ [5] 云底上方</span>
+                    <span class="ci-rule-badge">✔ [6] 2H收盘强势</span>
+                </div>
+                <div style="font-size:12px; color:#64748b; border-top:1px dashed rgba(255,255,255,0.08); padding-top:6px; margin-top:6px;">⏰ 扫描时间: {scan_time_val}</div>
+                """,
+                unsafe_allow_html=True
             )
-            if hasattr(st, "html"):
-                st.html(metric_grid_html)
-            else:
-                st.markdown(metric_grid_html, unsafe_allow_html=True)
-
-            # 7条规则徽章
-            if hasattr(st, "html"):
-                st.html(rules_badges_html)
-            else:
-                st.markdown(rules_badges_html, unsafe_allow_html=True)
-
-            # 底部扫描时间
-            ft_html = f"<div style='font-size:12px;color:#64748b;border-top:1px dashed rgba(255,255,255,0.08);padding-top:6px;'>⏰ 扫描时间: {scan_time_val}</div>"
-            if hasattr(st, "html"):
-                st.html(ft_html)
-            else:
-                st.markdown(ft_html, unsafe_allow_html=True)
 
     # 底部页码导航
     if total_pages > 1 and page_size_sel != "全部":
