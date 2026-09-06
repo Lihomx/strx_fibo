@@ -219,7 +219,7 @@ def _upload_latest(file_key: str, data: Any) -> Tuple[bool, str]:
 def _download_latest(file_key: str) -> Optional[Any]:
     # 拦截并阻止拉取非关键或超大文件以节省 Supabase 流出带宽 (Egress)
     # 本地已有缓存或不需要云端初始化的资产一律直接跳过
-    if file_key in ("symbols", "symbol_groups", "chartink", "scan_history", "scan_results", "scan_groups", "tb_snapshots"):
+    if file_key in ("symbols", "symbol_groups", "scan_history", "scan_results", "scan_groups", "tb_snapshots"):
         logger.info(f"下载拦截：{file_key} 属于大体积非核心资产，跳过云端下载以节省流量，优先使用本地缓存。")
         return None
     fname = _LATEST_FILES.get(file_key, f"{file_key}.json")
@@ -628,10 +628,12 @@ def pull_chartink() -> Tuple[bool, str]:
     try:
         from storage import F_CHARTINK, _save
         cloud_data = _download_latest("chartink")
-        if not isinstance(cloud_data, dict):
+        if not isinstance(cloud_data, dict) or not cloud_data:
             return False, "云端无 Chartink 扫描数据"
         _save(F_CHARTINK, cloud_data)
-        return True, "Chartink 扫描数据已从云端恢复"
+        passed_cnt = len(cloud_data.get("passed", []))
+        scanned_at = cloud_data.get("scanned_at", "—")
+        return True, f"已从云端同步最新数据：共 {passed_cnt} 条 4H 突破形态 (扫描于 {scanned_at})"
     except Exception as e:
         return False, f"pull_chartink 异常：{e}"
 

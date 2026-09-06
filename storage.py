@@ -2519,6 +2519,34 @@ def append_chartink_results(new_records: List[Dict]) -> bool:
     return save_chartink(new_data)
 
 
+def overwrite_chartink_results(new_records: List[Dict], scanned_at: Optional[str] = None) -> bool:
+    """每日全量覆盖 Chartink 扫描结果（覆盖前自动生成历史快照备份）"""
+    current_data = load_chartink()
+    if current_data and isinstance(current_data, dict) and (current_data.get("passed") or current_data.get("total")):
+        backup_chartink(current_data)
+        
+    clean_records = []
+    seen = set()
+    for r in (new_records or []):
+        if isinstance(r, dict) and (r.get("ticker") or r.get("symbol")):
+            tk = str(r.get("ticker") or r.get("symbol")).strip().upper()
+            if tk not in seen:
+                seen.add(tk)
+                r["ticker"] = tk
+                r["passed"] = True
+                clean_records.append(r)
+
+    new_data = {
+        "passed": clean_records,
+        "failed": [],
+        "errors": [],
+        "scanned_at": scanned_at or time.strftime("%Y-%m-%d %H:%M:%S"),
+        "total": len(clean_records),
+        "done_count": len(clean_records)
+    }
+    return save_chartink(new_data)
+
+
 def clear_chartink_results() -> bool:
     """清空当前 Chartink 扫描结果（清空前会自动生成快照并同步至云端）"""
     data = load_chartink()

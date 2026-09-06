@@ -1,0 +1,85 @@
+name: Chartink 4H Breakout 每日自动扫描与云端推送
+
+on:
+  # ============================================================================
+  # ⏰ 1. 定时触发 (Cron 调度)
+  # GitHub Actions 使用 UTC 时间。
+  # 常用时间参考：
+  #   - '30 21 * * 1-5'  : 美东收盘后 16:30 (UTC 21:30 / 北京时间次日 05:30，周一至周五) [当前默认]
+  #   - '30 7 * * 1-5'   : A股收盘后 15:30 (UTC 07:30 / 北京时间 15:30，周一至周五)
+  #   - '0 */4 * * *'    : 每 4 小时全天候自动运行一次
+  #   - '0 10,14,18 * * *': 每天固定时间点运行多次 (UTC 10:00, 14:00, 18:00)
+  # 💡 如需修改运行时间或频率，直接修改下方 schedule.cron 的表达式即可生效！
+  # ============================================================================
+  schedule:
+    - cron: '30 21 * * 1-5'
+
+  # ============================================================================
+  # 🖱️ 2. 手动在 GitHub 网页界面一键触发 (workflow_dispatch)
+  # 前往仓库 -> Actions -> 选择本工作流 -> 点击 "Run workflow" 即可随时运行
+  # ============================================================================
+  workflow_dispatch:
+    inputs:
+      pool:
+        description: '🎯 选择扫描股票池 (Stock Pool)'
+        required: true
+        default: 'us'
+        type: choice
+        options:
+          - 'us'   # 🇺🇸 全量美股 (约 6,000+ 支)
+          - 'cn'   # 🇨🇳 全量 A 股 (约 5,000+ 支)
+          - 'all'  # 🌐 A股 + 美股全量市场 (11,000+ 支)
+      min_volume:
+        description: '📊 最低 20 日均量过滤 (Min 20-Day Avg Volume, 仙股过滤)'
+        required: true
+        default: '100000'
+        type: string
+
+jobs:
+  chartink_scan:
+    name: 🚀 4H 突破扫描与 Supabase 直推
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: 📥 检出项目代码
+        uses: actions/checkout@v4
+
+      - name: 🐍 配置 Python 3.11 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 📦 安装必要依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pandas numpy toml
+
+      - name: ⚡ 执行 Chartink 7条规则突破无头扫描
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET || 'strx' }}
+        run: |
+          POOL="${{ github.event.inputs.pool || 'us' }}"
+          MIN_VOL="${{ github.event.inputs.min_volume || '100000' }}"
+          echo "=================================================="
+          echo "🚀 启动 Chartink 4H Breakout 自动化云端扫描"
+          echo "🎯 目标股票池: $POOL | 最低均量: $MIN_VOL"
+          echo "=================================================="
+          
+          python scanner_chartink_cli.py \
+            --pool "$POOL" \
+            --min-volume "$MIN_VOL" \
+            --workers 64
+
+      - name: 💾 归档并留存本次扫描产物 (CSV 与 JSON)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: chartink-results-${{ github.run_id }}
+          path: |
+            colab_chartink_results.csv
+            data_chartink.json
+          retention-days: 14

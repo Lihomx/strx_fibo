@@ -734,18 +734,22 @@ def render_page_chartink():
             all_symbols = storage.load_symbols() or []
             groups = storage.load_symbol_groups() or []
 
-            pool_options = ["🇺🇸 全量美股 (系统内置)", "🇨🇳 全量A股 (系统内置)", "🌐 全部组去重合并 (全量市场)"]
+            pool_options = [
+                "🇨🇳 1. 全量 A 股 (主板/创业/科创/北交)",
+                "🇺🇸 2. 全量美股 (NASDAQ/NYSE/AMEX)",
+                "🌐 3. A股全量 + 美股全量 (全部市场)",
+                "⭐ 我的自选关注列表"
+            ]
             for g in groups:
-                if g.get("name"):
+                if g.get("name") and not any(x in g.get("name", "") for x in ["全量A股", "全量美股"]):
                     pool_options.append(f"📁 分组: {g.get('name')}")
-            pool_options.append("⭐ 我的自选关注列表")
 
             c_p1, c_p2, c_p3 = st.columns([1.5, 1.1, 1.4])
             with c_p1:
                 selected_pool = st.selectbox(
                     "🎯 选择扫描股票池",
                     pool_options,
-                    index=0,
+                    index=1,
                     key="ci_colab_pool_select"
                 )
             with c_p2:
@@ -779,13 +783,12 @@ def render_page_chartink():
                 min_vol_val = _VOL_MAP.get(vol_option, 100000)
 
             export_tickers = []
-            if "全部组去重合并" in selected_pool:
-                all_tks = []
-                for g in groups:
-                    for tk in g.get("tickers", []):
-                        if tk and isinstance(tk, str):
-                            all_tks.append(tk.strip().upper())
-                export_tickers = list(dict.fromkeys(all_tks))
+            if "A股全量 + 美股全量" in selected_pool or "全部组去重合并" in selected_pool:
+                a_grp = next((g for g in groups if "全量A股" in g.get("name", "")), None)
+                us_grp = next((g for g in groups if "全量美股" in g.get("name", "")), None)
+                a_tks = a_grp.get("tickers", []) if a_grp else [s["ticker"] for s in all_symbols if s["ticker"].endswith((".SS", ".SZ", ".BJ")) or s["ticker"].isdigit()]
+                us_tks = us_grp.get("tickers", []) if us_grp else [s["ticker"] for s in all_symbols if not s["ticker"].endswith((".SS", ".SZ", ".BJ")) and not s["ticker"].isdigit()]
+                export_tickers = list(dict.fromkeys(a_tks + us_tks))
             elif "全量美股" in selected_pool:
                 us_grp = next((g for g in groups if "全量美股" in g.get("name", "")), None)
                 if us_grp and us_grp.get("tickers"):
@@ -815,10 +818,15 @@ def render_page_chartink():
             vol_hint = f" | 均量: ≥ {min_vol_val//10000}万股" if min_vol_val > 0 else " | 均量: 不限"
             st.info(f"📋 选定股票池: **{len(export_tickers)}** 支品种 | 周期: **4h**{vol_hint} | 判定: **100% 严格满足全部 7 条突破规则** (代码已内置，右上角可一键复制)：")
 
+            import cloud_sync
+            sb_url, sb_key, sb_bucket = cloud_sync._get_secrets()
             colab_code = colab_chartink_script.generate_colab_chartink_script(
                 export_tickers,
                 pool_name=selected_pool,
-                min_volume=min_vol_val
+                min_volume=min_vol_val,
+                supabase_url=sb_url,
+                supabase_key=sb_key,
+                supabase_bucket=sb_bucket
             )
 
             st.code(colab_code, language="python", line_numbers=True)
@@ -836,8 +844,45 @@ def render_page_chartink():
                 st.caption("💡 提示：点击代码框右上角复制图标，直接粘贴至 Colab 新建笔记本运行即可。")
 
         with colab_c2:
-            st.markdown("##### 2. 导入 Colab 扫描结果 CSV")
-            st.caption("上传从 Google Colab 导出的 `colab_chartink_results.csv` 文件，系统将自动增量合并到数据库。")
+            st.markdown("##### 2. 云端全自动同步与导入")
+            st.caption("支持从 Supabase 云端一键同步每日自动化扫描结果，或手动上传 Colab 导出的 CSV。")
+
+            sync_box = st.container(border=True)
+            with sync_box:
+                st.markdown("**☁️ Supabase 云端极速同步**")
+                c_sb1, c_sb2 = st.columns([1.2, 1])
+                with c_sb1:
+                    last_local_ts = str(scanned_at)[:19] if scanned_at else "暂无本地数据"
+                    st.caption(f"📅 本地数据时间: `{last_local_ts}` | 当前: `{passed_count}` 支")
+                with c_sb2:
+                    btn_sync_sb = st.button("🔄 从云端一键同步", type="primary", use_container_width=True, key="btn_ci_sync_supabase", help="拉取 GitHub Actions 或 Colab 推送至 Supabase 的最新全量 4H 突破扫描结果")
+                
+                if btn_sync_sb:
+                    with st.spinner("正在从 Supabase 云端拉取最新 Chartink 突破结果..."):
+                        ok_pull, msg_pull = cloud_sync.pull_chartink()
+                        if ok_pull:
+                            st.toast(msg_pull, icon="🎉")
+                            time.sleep(0.5)
+                            st.rerun()
+                        else:
+                            st.error(f"❌ 同步失败: {msg_pull}")
+
+            with st.expander("🤖 查看 GitHub Actions 每日全自动定时运行指南", expanded=False):
+                st.markdown("""
+                **如何实现每天完全免开机、全自动无人值守扫描？**
+                1. 仓库已包含自动化工作流文件：`.github/workflows/chartink_daily_scan.yml`。
+                2. 前往你的 GitHub 仓库 -> **Settings** -> **Secrets and variables** -> **Actions**。
+                3. 新增两个 Repository Secrets：
+                   - `SUPABASE_URL`: 你的 Supabase 项目 URL
+                   - `SUPABASE_KEY`: 你的 Supabase Service Role Key (或 API Key)
+                4. **定时自动触发**：默认在美东收盘后自动运行一次（可随时在 YAML 文件中调整 Cron 时间或频率）。
+                5. **网页手动触发**：前往仓库 **Actions** 标签页，随时一键点击 **Run workflow** 运行！
+                6. 运行完成后，回到本页面点击上方的 **「🔄 从云端一键同步」** 即可瞬间载入！
+                """)
+
+            st.markdown("---")
+            st.markdown("##### 📁 备用：手动导入 Colab CSV")
+            st.caption("上传从 Google Colab 导出的 `colab_chartink_results.csv` 文件，系统将覆盖或合并到数据库。")
 
             uploaded_file = st.file_uploader(
                 "选择或拖拽 Colab 导出的 CSV 文件",
@@ -909,11 +954,19 @@ def render_page_chartink():
                             preview_df = pd.DataFrame(preview_rows)
                             st.dataframe(preview_df, use_container_width=True, hide_index=True)
 
-                        if st.button("📥 确认增量导入并合并到数据库", type="primary", use_container_width=True, key="btn_confirm_import_chartink"):
-                            storage.append_chartink_results(parsed_records)
-                            st.toast(f"🎉 成功导入并合并 {len(parsed_records)} 条 4H 突破形态！", icon="✅")
-                            time.sleep(0.5)
-                            st.rerun()
+                        btn_c1, btn_c2 = st.columns(2)
+                        with btn_c1:
+                            if st.button("📥 确认全量覆盖导入 (推荐)", type="primary", use_container_width=True, key="btn_confirm_import_chartink"):
+                                storage.overwrite_chartink_results(parsed_records)
+                                st.toast(f"🎉 成功全量导入 {len(parsed_records)} 条 4H 突破形态！", icon="✅")
+                                time.sleep(0.5)
+                                st.rerun()
+                        with btn_c2:
+                            if st.button("➕ 增量合并导入", type="secondary", use_container_width=True, key="btn_confirm_append_chartink"):
+                                storage.append_chartink_results(parsed_records)
+                                st.toast(f"🎉 成功增量合并 {len(parsed_records)} 条 4H 突破形态！", icon="✅")
+                                time.sleep(0.5)
+                                st.rerun()
 
                 except Exception as ex:
                     st.error(f"❌ 读取 CSV 失败: {ex}")

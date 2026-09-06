@@ -12,8 +12,8 @@ colab_chartink_script.py — Google Colab 独立大规模 Chartink 4H Breakout 7
 
 import json
 
-def generate_colab_chartink_script(tickers: list[str], pool_name: str = "系统品种库", min_volume: int = 100000) -> str:
-    """生成内置指定股票池代码的 Google Colab Chartink 4H 突破扫描脚本"""
+def generate_colab_chartink_script(tickers: list[str], pool_name: str = "系统品种库", min_volume: int = 100000, supabase_url: str = "", supabase_key: str = "", supabase_bucket: str = "strx") -> str:
+    """生成内置指定股票池代码的 Google Colab Chartink 4H 突破扫描脚本（支持结果自动直推 Supabase）"""
     tickers_json = json.dumps(tickers, ensure_ascii=False)
     
     script = f'''# ==============================================================================
@@ -35,8 +35,8 @@ def generate_colab_chartink_script(tickers: list[str], pool_name: str = "系统�
 # 1. 打开 Google Colab (https://colab.research.google.com/)
 # 2. 新建笔记本，将本脚本完整粘贴到一个代码单元格中
 # 3. 点击运行 (Shift + Enter)，脚本将自动在云端执行 64 线程极速并发扫描
-# 4. 扫描完成后会自动下载 `colab_chartink_results.csv`
-# 5. 回到 Streamlit 应用「📈 4H Breakout」页面，拖入该 CSV 文件即可一键合并展示！
+# 4. 扫描完成后会自动将结果直推到 Supabase 云端，并自动下载 `colab_chartink_results.csv`
+# 5. 回到 Streamlit 应用「📈 4H Breakout」页面，点击「☁️ 从云端同步」即可一键展示！
 # ==============================================================================
 
 # 1. 安装所需依赖
@@ -74,10 +74,15 @@ logging.getLogger("jupyter_client").setLevel(logging.CRITICAL)
 logging.getLogger("ipykernel").setLevel(logging.CRITICAL)
 
 # ------------------------------------------------------------------------------
-# ⚙️ 股票池配置
+# ⚙️ 股票池与云端直传配置
 # ------------------------------------------------------------------------------
 MIN_AVG_VOLUME = {min_volume}
 SCAN_TICKERS = {tickers_json}
+
+# ☁️ Supabase 云端同步配置（如为空可在运行前填入，或使用 Colab 左侧 Secrets）
+SUPABASE_URL = "{supabase_url}"
+SUPABASE_KEY = "{supabase_key}"
+SUPABASE_BUCKET = "{supabase_bucket}"
 
 
 # ------------------------------------------------------------------------------
@@ -444,14 +449,71 @@ def run_chartink_scanner():
         out_df = pd.DataFrame(csv_rows)
         csv_filename = "colab_chartink_results.csv"
         out_df.to_csv(csv_filename, index=False, encoding="utf-8-sig")
-        print(f"💾 结果已保存至: {{csv_filename}} (共 {{len(passed_records)}} 支 7条全中突破标的)")
+        print(f"💾 结果已保存至本地: {{csv_filename}} (共 {{len(passed_records)}} 支 7条全中突破标的)")
         
+        # ☁️ 自动全量覆盖上传到 Supabase
+        sb_url = SUPABASE_URL.strip().rstrip("/")
+        sb_key = SUPABASE_KEY.strip()
+        sb_bucket = SUPABASE_BUCKET.strip()
+        
+        # 兼容读取 Colab Secrets (如有)
+        if not sb_url or not sb_key:
+            try:
+                from google.colab import userdata
+                sb_url = sb_url or userdata.get('SUPABASE_URL') or ""
+                sb_key = sb_key or userdata.get('SUPABASE_KEY') or ""
+            except Exception:
+                pass
+
+        if sb_url and sb_key:
+            print("\\n☁️ 正在将最新扫描结果推送到 Supabase 云端存储 (全量覆盖更新)...")
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            payload_dict = {{
+                "passed": passed_records,
+                "failed": [],
+                "errors": [],
+                "scanned_at": now_str,
+                "total": len(passed_records),
+                "done_count": len(passed_records),
+                "pool": "{pool_name}",
+                "min_volume": MIN_AVG_VOLUME
+            }}
+            payload_bytes = json.dumps(payload_dict, ensure_ascii=False).encode("utf-8")
+            hdrs = {{
+                "apikey": sb_key,
+                "Authorization": f"Bearer {{sb_key}}",
+                "Content-Type": "application/octet-stream",
+                "x-upsert": "true",
+            }}
+            target_url = f"{{sb_url}}/storage/v1/object/{{sb_bucket}}/latest/data_chartink.json"
+            try:
+                r_up = requests.post(target_url, headers=hdrs, data=payload_bytes, timeout=30)
+                if r_up.status_code in (400, 409, 422):
+                    r_up = requests.put(target_url, headers=hdrs, data=payload_bytes, timeout=30)
+                if r_up.status_code in (200, 201):
+                    print("🎉 [成功] 结果已全量覆盖推送至 Supabase 云端！")
+                    print("👉 回到 Streamlit 应用「📈 4H Breakout」页面，点击「☁️ 从云端同步」即可立即查看！")
+                    
+                    # 额外备份一份带时间戳的历史快照
+                    ts_snap = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    snap_url = f"{{sb_url}}/storage/v1/object/{{sb_bucket}}/backups/chartink_{{ts_snap}}.json"
+                    try:
+                        requests.post(snap_url, headers=hdrs, data=payload_bytes, timeout=15)
+                    except Exception:
+                        pass
+                else:
+                    print(f"⚠️ 云端直传失败 (HTTP {{r_up.status_code}}): {{r_up.text[:120]}}")
+            except Exception as e_sb:
+                print(f"⚠️ 云端直传网络异常: {{e_sb}}")
+        else:
+            print("💡 提示：如需扫描后全自动推送到 Streamlit，请在脚本顶部填入 SUPABASE_URL 与 SUPABASE_KEY。")
+
         try:
             from google.colab import files
-            print("⬇️ 正在触发自动下载到本地...")
+            print("⬇️ 正在触发备用 CSV 自动下载...")
             files.download(csv_filename)
         except Exception:
-            print(f"💡 可在 Colab 左侧文件树中右键下载 `{{csv_filename}}`")
+            print(f"💡 备用下载：可在 Colab 左侧文件树中右键下载 `{{csv_filename}}`")
     else:
         print("⚠️ 未产生扫描结果（无符合全部 7 条规则的突破品种）。")
 
