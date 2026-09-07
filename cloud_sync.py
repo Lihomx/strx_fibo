@@ -611,10 +611,14 @@ def pull_tb_batch_state() -> Tuple[bool, str]:
 
 
 
-def push_chartink() -> Tuple[bool, str]:
+def push_chartink(force: bool = False) -> Tuple[bool, str]:
     try:
         import storage as loc
         data = loc.load_chartink()
+        passed = data.get("passed", []) if isinstance(data, dict) else []
+        if not passed and not force:
+            # 本地无有效突破记录时坚决不推送，保护由 GitHub Actions / Colab 扫描推送到云端的结果不被抹空
+            return False, "本地 Chartink 数据为空，已拦截推送以保护云端成果"
         ok, msg = _upload_latest("chartink", data)
         _upload_snapshot("chartink", data)
         if ok:
@@ -628,8 +632,27 @@ def pull_chartink() -> Tuple[bool, str]:
     try:
         from storage import F_CHARTINK, _save
         cloud_data = _download_latest("chartink")
-        if not isinstance(cloud_data, dict) or not cloud_data:
+        
+        # 降级容错：若 latest 为空或格式无效，自动从 backups/ 历史快照拉取最新的有效扫描
+        if not isinstance(cloud_data, dict) or not cloud_data.get("passed"):
+            try:
+                snaps = _list_objects("backups/")
+                ci_snaps = [s for s in snaps if "chartink" in s.get("name", "") and s.get("name", "").endswith(".json")]
+                ci_snaps.sort(key=lambda x: x.get("name", ""), reverse=True)
+                if ci_snaps:
+                    latest_snap_name = ci_snaps[0].get("name")
+                    full_snap_path = latest_snap_name if latest_snap_name.startswith("backups/") else f"backups/{latest_snap_name}"
+                    snap_data = _download_path(full_snap_path)
+                    if isinstance(snap_data, dict) and snap_data.get("passed"):
+                        cloud_data = snap_data
+                        # 自动修复 latest/ 主指针，确保下次秒级直读
+                        _upload_latest("chartink", cloud_data)
+            except Exception as e_snap:
+                logger.debug(f"chartink snapshot fallback error: {e_snap}")
+
+        if not isinstance(cloud_data, dict) or not cloud_data.get("passed"):
             return False, "云端无 Chartink 扫描数据"
+
         _save(F_CHARTINK, cloud_data)
         passed_cnt = len(cloud_data.get("passed", []))
         scanned_at = cloud_data.get("scanned_at", "—")
