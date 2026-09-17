@@ -28,6 +28,8 @@ F_ALLRES  = os.path.join(_BASE, "data_allresults.json")
 F_ALERTS  = os.path.join(_BASE, "data_alerts.json")
 F_GROUPS  = os.path.join(_BASE, "data_groups.json")
 F_SCAN_SNAPSHOT_DIR = os.path.join(_BASE, "scan_snapshots")
+F_CASE_STUDIES     = os.path.join(_BASE, "data_case_studies.json")
+CASE_SNAPSHOT_DIR  = os.path.join(_BASE, "case_snapshots")
 
 def get_allres_path(date_str: str) -> str:
     clean_date = "".join(c for c in str(date_str) if c.isalnum() or c in ("-", "_"))
@@ -50,6 +52,10 @@ def _ensure_backup_dir():
 
 def _ensure_scan_snapshot_dir():
     os.makedirs(F_SCAN_SNAPSHOT_DIR, exist_ok=True)
+
+
+def _ensure_case_snapshot_dir():
+    os.makedirs(CASE_SNAPSHOT_DIR, exist_ok=True)
 
 
 IO_LOCK = threading.Lock()
@@ -3005,6 +3011,123 @@ def clear_scan_checkpoint() -> bool:
         except Exception:
             pass
     return ok
+
+
+# ── 启动案例库 (Case Study Lab) 存储支持 ───────────────────────
+def load_case_studies() -> List[Dict]:
+    """读取所有案例，如果文件不存在则自动初始化预设经典标杆案例"""
+    data = _load(F_CASE_STUDIES, None)
+    if data is None or not isinstance(data, list) or len(data) == 0:
+        data = init_demo_case_studies()
+    return data
+
+
+def save_case_study(case_data: Dict) -> bool:
+    """新增或更新案例"""
+    _ensure_case_snapshot_dir()
+    cases = _load(F_CASE_STUDIES, [])
+    if not isinstance(cases, list):
+        cases = []
+    
+    cid = case_data.get("id")
+    if not cid:
+        cid = f"case_{int(time.time()*1000)}"
+        case_data["id"] = cid
+    
+    if "created_at" not in case_data:
+        case_data["created_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    case_data["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    found = False
+    for i, c in enumerate(cases):
+        if c.get("id") == cid:
+            cases[i] = case_data
+            found = True
+            break
+    if not found:
+        cases.insert(0, case_data)
+    
+    return _save(F_CASE_STUDIES, cases)
+
+
+def delete_case_study(case_id: str) -> bool:
+    """删除案例及其关联的本地截图"""
+    cases = _load(F_CASE_STUDIES, [])
+    if not isinstance(cases, list):
+        return False
+    
+    target_case = next((c for c in cases if c.get("id") == case_id), None)
+    new_cases = [c for c in cases if c.get("id") != case_id]
+    ok = _save(F_CASE_STUDIES, new_cases)
+    
+    if ok and target_case:
+        for img_key in ("img_htf", "img_ltf"):
+            p = target_case.get(img_key)
+            if p and os.path.exists(p) and CASE_SNAPSHOT_DIR in os.path.abspath(p):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
+    return ok
+
+
+def init_demo_case_studies() -> List[Dict]:
+    """初始化 2 个经典长周期趋势启动案例作为示范样本"""
+    _ensure_case_snapshot_dir()
+    demos = [
+        {
+            "id": "case_btc_2020",
+            "ticker": "BTCUSDT",
+            "name": "比特币 (Bitcoin)",
+            "category": "Crypto 加密货币",
+            "launch_time": "2020-10",
+            "direction": "做多 (Long)",
+            "trend_scale": "周线/月线超级大牛市 (由 $10,500 启动飙升至 $64,000+)",
+            "indicators": [
+                "均线粘合走平",
+                "EMA多头发散",
+                "布林带极致收口(Squeeze)",
+                "长期箱体/颈线放量突破",
+                "MACD零轴二次金叉",
+                "放量突破筹码密集区",
+                "站上关键均线 (EMA20/50)"
+            ],
+            "custom_indicators": ["周线级别长期下降趋势线放量突破", "200周均线支撑坚挺"],
+            "notes": "2020年9月-10月，BTC在10,000-10,500反复震荡蓄势近4个月。周线布林带宽度创下历史罕见极致收敛（TTM Squeeze极致挤压），EMA20/50在水上高度粘合后出现向上金叉发散。随着10月中旬放量大阳突破10,500强阻力颈线，确认周图大趋势启动，随后数月无大幅回撤直接展开主升浪。",
+            "img_htf": "",
+            "img_ltf": "",
+            "created_at": "2026-09-16 12:00:00",
+            "updated_at": "2026-09-16 12:00:00"
+        },
+        {
+            "id": "case_gold_2019",
+            "ticker": "XAUUSD",
+            "name": "现货黄金 (Gold)",
+            "category": "Commodity 大宗商品/外汇",
+            "launch_time": "2019-06",
+            "direction": "做多 (Long)",
+            "trend_scale": "突破长达6年大底 (由 $1,350 启动飙升至 $2,075 创历史新高)",
+            "indicators": [
+                "均线粘合走平",
+                "EMA多头发散",
+                "布林带极致收口(Squeeze)",
+                "长期箱体/颈线放量突破",
+                "多重底结构 (W底/三重底)",
+                "假跌破快速拉回 (Spring/假动作)",
+                "MACD零轴二次金叉",
+                "放量突破筹码密集区"
+            ],
+            "custom_indicators": ["月线级别Cup and Handle杯柄形态突破", "突破6年水平阻力带$1350"],
+            "notes": "黄金自2013年至2019年长达6年受制于1350美元颈线压制。2019年5月曾出现快速刺破下探并迅速被多头收回（典型的Spring假跌破诱空洗盘）。6月周线收大实体饱满阳线突破1350，月线布林带张口走阔，月线MACD由零轴上方发散上行，确认长达数年的大牛市破茧启动。",
+            "img_htf": "",
+            "img_ltf": "",
+            "created_at": "2026-09-16 12:00:00",
+            "updated_at": "2026-09-16 12:00:00"
+        }
+    ]
+    _save(F_CASE_STUDIES, demos)
+    return demos
+
 
 
 
