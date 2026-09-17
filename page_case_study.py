@@ -20,7 +20,13 @@ import streamlit as st
 from datetime import datetime
 from typing import Dict, List, Any
 
+import importlib
 import storage
+if not hasattr(storage, "load_case_studies"):
+    try:
+        storage = importlib.reload(storage)
+    except Exception:
+        pass
 
 # 预设常见长周期趋势启动指标与形态特征
 PRESET_INDICATORS = [
