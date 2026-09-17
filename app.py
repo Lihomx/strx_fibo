@@ -405,7 +405,7 @@ _st_components.html(r"""<script>
 # ── 导入页面模块（直接 import，无子文件夹）──────────────────────────
 import importlib
 import storage
-if not hasattr(storage, "load_case_studies"):
+if not hasattr(storage, "load_launch_box") or not hasattr(storage, "load_case_studies"):
     try:
         storage = importlib.reload(storage)
     except Exception:

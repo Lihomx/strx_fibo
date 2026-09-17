@@ -22,7 +22,87 @@ import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 
+import importlib
 import storage
+
+if not hasattr(storage, "load_launch_box"):
+    try:
+        storage = importlib.reload(storage)
+    except Exception:
+        pass
+
+
+def _safe_load_launch_box() -> List[Dict]:
+    global storage
+    if not hasattr(storage, "load_launch_box"):
+        try:
+            storage = importlib.reload(storage)
+        except Exception:
+            pass
+    if hasattr(storage, "load_launch_box"):
+        try:
+            return storage.load_launch_box()
+        except Exception:
+            pass
+    try:
+        import os
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        f_path = os.path.join(base_dir, "data_launch_box.json")
+        if os.path.exists(f_path):
+            with open(f_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    return data
+    except Exception:
+        pass
+    return []
+
+
+def _safe_append_launch_box_results(items: List[Dict]) -> bool:
+    global storage
+    if not hasattr(storage, "append_launch_box_results"):
+        try:
+            storage = importlib.reload(storage)
+        except Exception:
+            pass
+    if hasattr(storage, "append_launch_box_results"):
+        try:
+            return storage.append_launch_box_results(items)
+        except Exception:
+            pass
+    return False
+
+
+def _safe_clear_launch_box_results() -> bool:
+    global storage
+    if not hasattr(storage, "clear_launch_box_results"):
+        try:
+            storage = importlib.reload(storage)
+        except Exception:
+            pass
+    if hasattr(storage, "clear_launch_box_results"):
+        try:
+            return storage.clear_launch_box_results()
+        except Exception:
+            pass
+    return False
+
+
+def _safe_init_demo_launch_boxes() -> List[Dict]:
+    global storage
+    if not hasattr(storage, "init_demo_launch_boxes"):
+        try:
+            storage = importlib.reload(storage)
+        except Exception:
+            pass
+    if hasattr(storage, "init_demo_launch_boxes"):
+        try:
+            return storage.init_demo_launch_boxes()
+        except Exception:
+            pass
+    return []
+
+
 import launch_box_scanner
 import colab_launch_box_script
 
@@ -35,6 +115,7 @@ LAUNCH_BOX_TIMEFRAMES = {
     "4h":  ("1h",  "730d", "4小时 (H4)"),
     "60m": ("60m", "720d", "1小时 (H1)"),
 }
+
 
 
 def _fetch_name(ticker: str) -> str:
@@ -305,7 +386,7 @@ def render():
     )
 
     # 自动加载启动点数据
-    all_patterns = storage.load_launch_box()
+    all_patterns = _safe_load_launch_box()
 
     # ── 1. 状态映射 ──
     _STAT_OPTIONS = [
@@ -853,7 +934,7 @@ def render():
                         st.success(f"📊 成功读取有效信号记录: **{len(df_up)}** 条")
                         if st.button("📥 确认导入并合并至数据库", key="lb_confirm_import_btn", use_container_width=True):
                             new_items = df_up.to_dict(orient="records")
-                            storage.append_launch_box_results(new_items)
+                            _safe_append_launch_box_results(new_items)
                             st.toast(f"✅ 成功导入 {len(new_items)} 条记录！", icon="🎉")
                             time.sleep(1)
                             st.rerun()
@@ -875,7 +956,7 @@ def render():
                         results = launch_box_scanner.calculate_launch_box(df, symbol=test_sym.upper(), period="1d")
                         if results:
                             res_dicts = [r.to_dict() for r in results]
-                            storage.append_launch_box_results(res_dicts)
+                            _safe_append_launch_box_results(res_dicts)
                             st.success(f"🎉 扫描完成！共发现 **{len(results)}** 个中枢启动信号，已自动保存！")
                             time.sleep(1)
                             st.rerun()
@@ -891,8 +972,9 @@ def render():
             st.caption("重置数据库将恢复至出厂预设的 8 个经典标杆案例（洛阳钼业、MARA、TSLA、冠龙节能、西方石油、五粮液等）。")
         with c_rst2:
             if st.button("🗑️ 恢复预设标杆数据库", key="lb_btn_reset_demo"):
-                storage.clear_launch_box_results()
-                storage.init_demo_launch_boxes()
+                _safe_clear_launch_box_results()
+                _safe_init_demo_launch_boxes()
                 st.toast("✅ 已恢复预设经典标杆案例！", icon="♻️")
                 time.sleep(1)
                 st.rerun()
+
