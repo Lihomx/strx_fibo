@@ -545,6 +545,63 @@ def render():
     with c_m5:
         st.metric("⚖️ 平均黄金盈亏比", f"1 : {avg_rr3}", help="达到 TP3 斐波那契超级主升目标的平均风险回报比")
 
+    # ── 跨策略二次精筛联动通道 (Launch Box -> Chartink 4H Breakout) ──
+    launch_tickers = list(dict.fromkeys([
+        str(r.get("symbol") or r.get("ticker", "")).strip().upper()
+        for r in all_patterns if (r.get("symbol") or r.get("ticker"))
+    ]))
+
+    with st.container(border=True):
+        c_pipe_info, c_pipe_act1, c_pipe_act2 = st.columns([2.2, 1.1, 0.9])
+        with c_pipe_info:
+            sample_tks = ", ".join(launch_tickers[:7]) + ("..." if len(launch_tickers) > 7 else "")
+            st.markdown(
+                f"**🎯 策略共振精筛 · 将当前 Launch Box 结果送入 Chartink · 4 Hour Breakout 7条规则突破扫描**<br>"
+                f"<span style='font-size:12px;color:#94a3b8;'>"
+                f"当前数据库共就绪 <b>{len(launch_tickers)}</b> 支中枢蓄势突破标的（<code>{sample_tks}</code>）。"
+                f"支持一键带入 <b>Chartink 4H 突破扫描</b>，执行 4H 成交量倍数、一目均衡云、RSI(14)、Supertrend(7,3)、2H 破位等 7 条严苛规则的二次共振核验！"
+                f"</span>",
+                unsafe_allow_html=True
+            )
+        with c_pipe_act1:
+            if st.button("🚀 一键带入 Chartink 4H 扫描", type="primary", use_container_width=True, key="lb_goto_chartink_btn", help="自动将这批标的同步为 Chartink 专用股票池并跳转至 Chartink 页面"):
+                # 同步为自定义分组
+                try:
+                    groups = storage.load_symbol_groups() or []
+                    target = next((g for g in groups if "Launch Box" in g.get("name", "") or "矩形蓄势" in g.get("name", "")), None)
+                    if not target:
+                        import uuid
+                        groups.append({
+                            "id": str(uuid.uuid4())[:8],
+                            "name": "🚀 矩形蓄势突破标的 (Launch Box)",
+                            "tickers": launch_tickers,
+                            "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+                        })
+                    else:
+                        target["tickers"] = launch_tickers
+                    storage.save_symbol_groups(groups)
+                except Exception:
+                    pass
+                st.session_state["page"] = "chartink"
+                st.session_state["ci_colab_pool_select"] = "🚀 4. 矩形中枢突破标的 (Launch Box 扫描结果)"
+                st.query_params["_page"] = "chartink"
+                st.query_params["_pool"] = "launch_box"
+                st.rerun()
+        with c_pipe_act2:
+            with st.popover("📋 查看 / 复制标的代码", use_container_width=True):
+                st.markdown(f"**当前 Launch Box 标的 ({len(launch_tickers)} 支)**")
+                tk_csv_str = ", ".join(launch_tickers)
+                st.text_area("标的代码列表 (逗号分隔)", value=tk_csv_str, height=120, key="lb_copy_tickers_area")
+                df_exp = pd.DataFrame([{"ticker": t, "source": "launch_box"} for t in launch_tickers])
+                st.download_button(
+                    "📥 导出代码 CSV",
+                    data=df_exp.to_csv(index=False).encode("utf-8"),
+                    file_name=f"launch_box_tickers_{len(launch_tickers)}.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                    key="lb_download_tickers_csv_btn"
+                )
+
     # ── 选项卡构建 ──
     tab_list, tab_colab, tab_import = st.tabs([
         "📊 启动点列表 (Card / Table / Charts)",

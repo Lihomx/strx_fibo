@@ -643,6 +643,9 @@ def render_page_chartink():
         if _t_val:
             params["_t"] = str(_t_val)
         params["_page"] = "chartink"
+        _pool_val = st.query_params.get("_pool", "")
+        if _pool_val:
+            params["_pool"] = str(_pool_val)
 
         # 1. 形态时效 _time
         _cur_time = st.session_state.get("ci_filter_time", CI_TIME_OPTIONS[0])
@@ -731,7 +734,8 @@ def render_page_chartink():
         st.metric("🕐 最近扫描时间", str(scanned_at)[:16] if scanned_at else "—")
 
     # ── 2. Google Colab 独立云端扫描与 1 键导入 ──
-    with st.expander("🚀 1. Google Colab 独立云端极速扫描与 1 键导入 (推荐 · 50+只/秒并发)", expanded=False):
+    _exp_colab = bool(st.query_params.get("_pool") in ("launch_box", "launchbox", "lb"))
+    with st.expander("🚀 1. Google Colab 独立云端极速扫描与 1 键导入 (推荐 · 50+只/秒并发)", expanded=_exp_colab):
         colab_c1, colab_c2 = st.columns([1.2, 1])
         with colab_c1:
             st.markdown("##### 1. 生成并复制 Google Colab 扫描脚本")
@@ -744,18 +748,26 @@ def render_page_chartink():
                 "🇨🇳 1. 全量 A 股 (主板/创业/科创/北交)",
                 "🇺🇸 2. 全量美股 (NASDAQ/NYSE/AMEX)",
                 "🌐 3. A股全量 + 美股全量 (全部市场)",
+                "🚀 4. 矩形中枢突破标的 (Launch Box 扫描结果)",
                 "⭐ 我的自选关注列表"
             ]
             for g in groups:
-                if g.get("name") and not any(x in g.get("name", "") for x in ["全量A股", "全量美股"]):
+                if g.get("name") and not any(x in g.get("name", "") for x in ["全量A股", "全量美股", "Launch Box", "矩形蓄势"]):
                     pool_options.append(f"📁 分组: {g.get('name')}")
+
+            _default_pool_idx = 1
+            _url_pool = str(st.query_params.get("_pool", "")).lower()
+            if _url_pool in ("launch_box", "launchbox", "lb") or st.session_state.get("ci_colab_pool_select") == "🚀 4. 矩形中枢突破标的 (Launch Box 扫描结果)":
+                _default_pool_idx = 3
+            elif st.session_state.get("ci_colab_pool_select") in pool_options:
+                _default_pool_idx = pool_options.index(st.session_state.get("ci_colab_pool_select"))
 
             c_p1, c_p2, c_p3 = st.columns([1.5, 1.1, 1.4])
             with c_p1:
                 selected_pool = st.selectbox(
                     "🎯 选择扫描股票池",
                     pool_options,
-                    index=1,
+                    index=_default_pool_idx,
                     key="ci_colab_pool_select"
                 )
             with c_p2:
@@ -807,6 +819,18 @@ def render_page_chartink():
                     export_tickers = a_grp["tickers"]
                 else:
                     export_tickers = [s["ticker"] for s in all_symbols if s["ticker"].endswith((".SS", ".SZ", ".BJ")) or s["ticker"].isdigit()]
+            elif "矩形中枢突破" in selected_pool or "Launch Box" in selected_pool:
+                try:
+                    if hasattr(storage, "load_launch_box"):
+                        lb_items = storage.load_launch_box()
+                    else:
+                        from page_launch_box import _safe_load_launch_box
+                        lb_items = _safe_load_launch_box()
+                except Exception:
+                    lb_items = []
+                export_tickers = [item.get("symbol") or item.get("ticker") for item in lb_items if isinstance(item, dict) and (item.get("symbol") or item.get("ticker"))]
+                if not export_tickers:
+                    export_tickers = ["603993.SS", "MARA", "TSLA", "301151.SZ", "MRVL", "OXY", "000858.SZ", "600487.SS"]
             elif "自选关注" in selected_pool:
                 wl = storage.load_watchlist() or []
                 export_tickers = [w["ticker"] for w in wl if w.get("ticker")]
@@ -822,7 +846,8 @@ def render_page_chartink():
             export_tickers = list(dict.fromkeys([t.strip().upper() for t in export_tickers if t and isinstance(t, str)]))
 
             vol_hint = f" | 均量: ≥ {min_vol_val//10000}万股" if min_vol_val > 0 else " | 均量: 不限"
-            st.info(f"📋 选定股票池: **{len(export_tickers)}** 支品种 | 周期: **4h**{vol_hint} | 判定: **100% 严格满足全部 7 条突破规则** (代码已内置，右上角可一键复制)：")
+            source_tag = " (来源: 🚀 矩形中枢突破 Launch Box 扫描结果)" if ("Launch Box" in selected_pool or "矩形中枢" in selected_pool) else ""
+            st.info(f"📋 选定股票池: **{len(export_tickers)}** 支品种{source_tag} | 周期: **4h**{vol_hint} | 判定: **100% 严格满足全部 7 条突破规则** (代码已内置，右上角可一键复制)：")
 
             import cloud_sync
             sb_url, sb_key, sb_bucket = cloud_sync._get_secrets()
@@ -863,6 +888,56 @@ def render_page_chartink():
                 )
             with col_btn2:
                 st.caption("💡 提示：点击代码框右上角复制图标，直接粘贴至 Colab 新建笔记本运行即可。")
+
+            # ── 网页端即时执行 4H 突破规则精筛（适合精简股票池）──
+            st.markdown("---")
+            st.markdown("##### ⚡ 网页端即时快速扫描 (免 Colab · 适合精选池 / Launch Box 标的)")
+            st.caption(f"直接在当前网页端对选中的 **{len(export_tickers)}** 支标的执行 4H成交量暴涨、一目均衡云、RSI(14)、Supertrend(7,3)、2H破位等全部 7 条量化规则核验。")
+            
+            c_run1, c_run2 = st.columns([1.5, 1])
+            with c_run1:
+                run_local_chartink = st.button(
+                    f"⚡ 立即在网页端扫描这 {len(export_tickers)} 支标的",
+                    type="primary",
+                    use_container_width=True,
+                    key="btn_run_local_chartink_pool"
+                )
+            with c_run2:
+                scan_mode = st.radio("写入模式", ["➕ 增量合并 (保留历史)", "🔄 全量覆盖 (仅看本次)"], horizontal=True, key="ci_local_scan_mode")
+
+            if run_local_chartink:
+                prog_bar = st.progress(0, text="正在拉取行情数据并核验 4H 突破规则...")
+                passed_hits = []
+                failed_cnt = 0
+                error_cnt = 0
+                
+                total_tks = len(export_tickers)
+                for idx_tk, tk in enumerate(export_tickers):
+                    prog_pct = (idx_tk + 1) / total_tks
+                    prog_bar.progress(prog_pct, text=f"({idx_tk+1}/{total_tks}) 正在分析 {tk} (4H爆量/一目均衡/RSI/Supertrend/2H)...")
+                    try:
+                        res = _check_ticker(tk)
+                        if res.get("passed"):
+                            passed_hits.append(res)
+                        elif res.get("error"):
+                            error_cnt += 1
+                        else:
+                            failed_cnt += 1
+                    except Exception:
+                        error_cnt += 1
+                
+                prog_bar.progress(1.0, text=f"✅ 扫描完成！共核验 {total_tks} 支，达成 7 条突破规则: {len(passed_hits)} 支")
+                if passed_hits:
+                    if "全量覆盖" in scan_mode:
+                        storage.overwrite_chartink_results(passed_hits)
+                    else:
+                        storage.append_chartink_results(passed_hits)
+                    st.success(f"🎉 成功筛选出 **{len(passed_hits)}** 支同时达成「矩形中枢蓄势」+「4H 七条突破规则」的双重强共振龙头标的！")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.info(f"ℹ️ 在当前的 {total_tks} 支标的中，目前暂未出现当根 4H 100% 满足全部 7 条严格突破规则的标的（已保存状态，建议持续跟踪或在 Colab 放宽成交量）。")
+
 
         with colab_c2:
             st.markdown("##### 2. 云端全自动同步与导入")
