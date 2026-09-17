@@ -492,14 +492,27 @@ def _calc_ci_item_status_and_prog(r):
     return st_val_code, prog
 
 
-def _parse_item_dt(dt_str):
-    if not dt_str or dt_str == "—":
+def _parse_item_dt(dt_val):
+    if not dt_val or dt_val == "—" or str(dt_val).strip() in ("", "none", "null", "nan"):
         return None
+    if isinstance(dt_val, (datetime.datetime, datetime.date)):
+        return datetime.datetime.combine(dt_val, datetime.time.min) if not isinstance(dt_val, datetime.datetime) else dt_val
+    s = str(dt_val).strip().replace("T", " ").replace("Z", "")
+    if "+" in s:
+        s = s.split("+")[0].strip()
+    if "." in s:
+        s = s.split(".")[0].strip()
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d", "%Y/%m/%d %H:%M:%S", "%Y/%m/%d"):
         try:
-            return datetime.datetime.strptime(str(dt_str).strip()[:19], fmt)
+            return datetime.datetime.strptime(s[:19], fmt)
         except Exception:
             pass
+    try:
+        dt = pd.to_datetime(dt_val)
+        if pd.notna(dt):
+            return dt.to_pydatetime()
+    except Exception:
+        pass
     return None
 
 
@@ -588,53 +601,56 @@ def render_page_chartink():
     """
     _render_html(_style_code)
 
-    # ── 从 URL 参数初始化 / 恢复所有筛选状态 ──
-    _url_time_raw = str(st.query_params.get("_time", "")).strip().lower()
-    if _url_time_raw in CI_TIME_URL_MAP:
-        st.session_state["ci_filter_time"] = CI_TIME_URL_MAP[_url_time_raw]
-    elif "ci_filter_time" not in st.session_state:
-        st.session_state["ci_filter_time"] = CI_TIME_OPTIONS[0]
-
-    _url_stat_raw = str(st.query_params.get("_stat", "")).strip().lower()
-    if _url_stat_raw:
-        if _url_stat_raw in ("all", "全部"):
-            st.session_state["ci_filter_status"] = list(CI_STAT_OPTIONS)
+    # ── 从 URL 参数初始化 / 恢复所有筛选状态（仅在初次加载时赋值，避免覆盖交互状态）──
+    if "ci_filter_time" not in st.session_state:
+        _url_time_raw = str(st.query_params.get("_time", "")).strip().lower()
+        if _url_time_raw in CI_TIME_URL_MAP:
+            st.session_state["ci_filter_time"] = CI_TIME_URL_MAP[_url_time_raw]
         else:
-            _stats = [CI_STAT_URL_MAP[s.strip()] for s in _url_stat_raw.split(",") if s.strip() in CI_STAT_URL_MAP]
-            if _stats:
-                st.session_state["ci_filter_status"] = _stats
+            st.session_state["ci_filter_time"] = CI_TIME_OPTIONS[0]
+
     if "ci_filter_status" not in st.session_state:
-        st.session_state["ci_filter_status"] = list(CI_DEFAULT_STATS)
+        _url_stat_raw = str(st.query_params.get("_stat", "")).strip().lower()
+        if _url_stat_raw:
+            if _url_stat_raw in ("all", "全部"):
+                st.session_state["ci_filter_status"] = list(CI_STAT_OPTIONS)
+            else:
+                _stats = [CI_STAT_URL_MAP[s.strip()] for s in _url_stat_raw.split(",") if s.strip() in CI_STAT_URL_MAP]
+                st.session_state["ci_filter_status"] = _stats if _stats else list(CI_DEFAULT_STATS)
+        else:
+            st.session_state["ci_filter_status"] = list(CI_DEFAULT_STATS)
 
-    _url_vol_raw = str(st.query_params.get("_vol", "")).strip().lower()
-    if _url_vol_raw in CI_VOL_URL_MAP:
-        st.session_state["ci_filter_vol"] = CI_VOL_URL_MAP[_url_vol_raw]
-    elif "ci_filter_vol" not in st.session_state:
-        st.session_state["ci_filter_vol"] = CI_VOL_OPTIONS[0]
+    if "ci_filter_vol" not in st.session_state:
+        _url_vol_raw = str(st.query_params.get("_vol", "")).strip().lower()
+        if _url_vol_raw in CI_VOL_URL_MAP:
+            st.session_state["ci_filter_vol"] = CI_VOL_URL_MAP[_url_vol_raw]
+        else:
+            st.session_state["ci_filter_vol"] = CI_VOL_OPTIONS[0]
 
-    _url_q_raw = str(st.query_params.get("_q", "")).strip()
-    if _url_q_raw:
-        st.session_state["ci_search_kw"] = _url_q_raw
-    elif "ci_search_kw" not in st.session_state:
-        st.session_state["ci_search_kw"] = ""
+    if "ci_search_kw" not in st.session_state:
+        _url_q_raw = str(st.query_params.get("_q", "")).strip()
+        st.session_state["ci_search_kw"] = _url_q_raw if _url_q_raw else ""
 
-    _url_sort_raw = str(st.query_params.get("_sort", "")).strip().lower()
-    if _url_sort_raw in CI_SORT_URL_MAP:
-        st.session_state["ci_sort_by"] = CI_SORT_URL_MAP[_url_sort_raw]
-    elif "ci_sort_by" not in st.session_state:
-        st.session_state["ci_sort_by"] = CI_SORT_OPTIONS[0]
+    if "ci_sort_by" not in st.session_state:
+        _url_sort_raw = str(st.query_params.get("_sort", "")).strip().lower()
+        if _url_sort_raw in CI_SORT_URL_MAP:
+            st.session_state["ci_sort_by"] = CI_SORT_URL_MAP[_url_sort_raw]
+        else:
+            st.session_state["ci_sort_by"] = CI_SORT_OPTIONS[0]
 
-    _url_ps_raw = str(st.query_params.get("_ps", "")).strip()
-    if _url_ps_raw in ("20", "50", "100", "all", "全部"):
-        st.session_state["ci_page_size"] = "全部" if _url_ps_raw in ("all", "全部") else int(_url_ps_raw)
-    elif "ci_page_size" not in st.session_state:
-        st.session_state["ci_page_size"] = 20
+    if "ci_page_size" not in st.session_state:
+        _url_ps_raw = str(st.query_params.get("_ps", "")).strip()
+        if _url_ps_raw in ("20", "50", "100", "all", "全部"):
+            st.session_state["ci_page_size"] = "全部" if _url_ps_raw in ("all", "全部") else int(_url_ps_raw)
+        else:
+            st.session_state["ci_page_size"] = 20
 
-    _url_p_raw = str(st.query_params.get("_p", "")).strip()
-    if _url_p_raw.isdigit():
-        st.session_state["ci_curr_page"] = max(1, int(_url_p_raw))
-    elif "ci_curr_page" not in st.session_state:
-        st.session_state["ci_curr_page"] = 1
+    if "ci_curr_page" not in st.session_state:
+        _url_p_raw = str(st.query_params.get("_p", "")).strip()
+        if _url_p_raw.isdigit():
+            st.session_state["ci_curr_page"] = max(1, int(_url_p_raw))
+        else:
+            st.session_state["ci_curr_page"] = 1
 
     # ── URL 双向同步辅助函数 ──
     def _sync_ci_url_params(target_page=1):
@@ -695,6 +711,16 @@ def render_page_chartink():
     def _on_ci_filter_change():
         """筛选控件变更时重置页码为 1 并同步 URL"""
         st.session_state["ci_curr_page"] = 1
+        if "ci_filter_time_widget" in st.session_state:
+            st.session_state["ci_filter_time"] = st.session_state["ci_filter_time_widget"]
+        if "ci_filter_status_widget" in st.session_state:
+            st.session_state["ci_filter_status"] = st.session_state["ci_filter_status_widget"]
+        if "ci_filter_vol_widget" in st.session_state:
+            st.session_state["ci_filter_vol"] = st.session_state["ci_filter_vol_widget"]
+        if "ci_sort_by_widget" in st.session_state:
+            st.session_state["ci_sort_by"] = st.session_state["ci_sort_by_widget"]
+        if "ci_search_kw_widget" in st.session_state:
+            st.session_state["ci_search_kw"] = st.session_state["ci_search_kw_widget"]
         _sync_ci_url_params(target_page=1)
 
     # ── 1. 顶部标题与形态总体统计 ──
@@ -1132,9 +1158,10 @@ def render_page_chartink():
             "🔍 搜索代码 / 品种名称",
             value=_cur_kw,
             placeholder="输入代码如 AAPL, TSLA...",
-            key="ci_search_kw",
+            key="ci_search_kw_widget",
             on_change=_on_ci_filter_change
         )
+        st.session_state["ci_search_kw"] = search_kw
     with col_f2:
         _cur_time_val = st.session_state.get("ci_filter_time", CI_TIME_OPTIONS[0])
         _cur_time_idx = CI_TIME_OPTIONS.index(_cur_time_val) if _cur_time_val in CI_TIME_OPTIONS else 0
@@ -1142,19 +1169,21 @@ def render_page_chartink():
             "⏳ 形态时效 (发生时间)",
             CI_TIME_OPTIONS,
             index=_cur_time_idx,
-            key="ci_filter_time",
+            key="ci_filter_time_widget",
             on_change=_on_ci_filter_change,
             help="【时效筛选】：过滤历史已久的扫描记录，聚焦最近 24小时、3天或1周内刚刚爆量突破的最新品种。"
         )
+        st.session_state["ci_filter_time"] = time_filter
     with col_f3:
         st_status = st.multiselect(
             "📌 形态阶段状态",
             options=CI_STAT_OPTIONS,
             default=st.session_state.get("ci_filter_status", CI_DEFAULT_STATS),
-            key="ci_filter_status",
+            key="ci_filter_status_widget",
             on_change=_on_ci_filter_change,
             help="【形态阶段筛选】：可多选「👀 观望蓄势中 (active 0%)」与「🚀 刚突破 (confirmed ≤20%)」，精准锁定刚刚起爆与蓄力阶段的优质标的。"
         )
+        st.session_state["ci_filter_status"] = st_status
     with col_f4:
         _cur_vol_val = st.session_state.get("ci_filter_vol", CI_VOL_OPTIONS[0])
         _cur_vol_idx = CI_VOL_OPTIONS.index(_cur_vol_val) if _cur_vol_val in CI_VOL_OPTIONS else 0
@@ -1162,10 +1191,11 @@ def render_page_chartink():
             "📊 最低成交量 / 活跃度",
             CI_VOL_OPTIONS,
             index=_cur_vol_idx,
-            key="ci_filter_vol",
+            key="ci_filter_vol_widget",
             on_change=_on_ci_filter_change,
             help="过滤低流动性/仙股/僵尸股，确保标的具备充沛交易活跃度与流动性。"
         )
+        st.session_state["ci_filter_vol"] = vol_filter
     with col_f5:
         _cur_sort_val = st.session_state.get("ci_sort_by", CI_SORT_OPTIONS[0])
         _cur_sort_idx = CI_SORT_OPTIONS.index(_cur_sort_val) if _cur_sort_val in CI_SORT_OPTIONS else 0
@@ -1173,10 +1203,11 @@ def render_page_chartink():
             "↕️ 排序方式",
             CI_SORT_OPTIONS,
             index=_cur_sort_idx,
-            key="ci_sort_by",
+            key="ci_sort_by_widget",
             on_change=_on_ci_filter_change,
             help="支持按跑势进度(优先蓄势/刚突破)、4H放量倍数、RSI强度、20日均量、日均成交额等维度排序。"
         )
+        st.session_state["ci_sort_by"] = sort_mode
 
     # 预加载品种名称字典
     all_sym_list = storage.load_symbols() or []
@@ -1185,24 +1216,46 @@ def render_page_chartink():
     # 过滤链计算
     filtered_items = list(passed_records)
 
-    # 1. 形态时效过滤
-    now_dt = datetime.datetime.now()
-    _cutoff_days = {
-        "🔥 最近 1 天 (24小时内)": 1,
-        "🌟 最近 3 天 (推荐)": 3,
-        "⏱️ 最近 7 天 (1周内)": 7,
-        "🗓️ 最近 15 天": 15,
-        "📅 最近 30 天 (1个月内)": 30,
+    # 1. 形态时效 (发生时间) 过滤
+    # 结合「扫描发生时间戳」与「4H 突破发生推进度/新鲜度」双重时效判定
+    _TIME_MAX_PROG = {
+        "🔥 最近 1 天 (24小时内)": (1, 6.0),    # 发生于 24h 内 / 刚起爆推进 ≤6% 或蓄势 0%
+        "🌟 最近 3 天 (推荐)":    (3, 15.0),   # 发生于 3天内 / 推进 ≤15%
+        "⏱️ 最近 7 天 (1周内)":   (7, 30.0),   # 发生于 1周内 / 推进 ≤30%
+        "🗓️ 最近 15 天":         (15, 60.0),  # 发生于 15天内 / 推进 ≤60%
+        "📅 最近 30 天 (1个月内)": (30, 120.0), # 发生于 1个月内 / 推进 ≤120%
     }
-    if time_filter in _cutoff_days:
-        cutoff_days = _cutoff_days[time_filter]
-        cutoff_time = now_dt - datetime.timedelta(days=cutoff_days)
+
+    if time_filter in _TIME_MAX_PROG:
+        max_days, max_prog = _TIME_MAX_PROG[time_filter]
+        
+        all_dts = []
+        for r in filtered_items:
+            dt_r = _parse_item_dt(r.get("scan_time") or r.get("time") or r.get("date"))
+            if dt_r:
+                all_dts.append(dt_r)
+        
+        now_dt = datetime.datetime.now()
+        max_dataset_dt = max(all_dts) if all_dts else now_dt
+        # 若数据集中的最新记录在 2 天内，基准为当前时间；若数据集属于过去批次，则以数据集最新时间为基准
+        base_dt = now_dt if (now_dt - max_dataset_dt).days <= 2 else max_dataset_dt
+        cutoff_time = base_dt - datetime.timedelta(days=max_days)
+
         def _is_within_time(r):
-            st_str = r.get("scan_time") or r.get("time") or ""
+            # A. 形态突破推进空间/新鲜度约束（例如已拉升 30%~100% 的标的，绝非「最近1天刚突破」）
+            st_code, prog = _calc_ci_item_status_and_prog(r)
+            if st_code == "confirmed" and prog > max_prog:
+                return False
+
+            # B. 时间戳维度：若带有明确时间戳，早于截止时间（允许12小时缓冲），则剔除
+            st_str = r.get("scan_time") or r.get("time") or r.get("date") or ""
             item_dt = _parse_item_dt(st_str)
-            if item_dt is None:
-                return True
-            return item_dt >= cutoff_time
+            if item_dt is not None:
+                if item_dt < (cutoff_time - datetime.timedelta(hours=12)):
+                    return False
+
+            return True
+
         filtered_items = [r for r in filtered_items if _is_within_time(r)]
 
     # 2. 形态阶段状态过滤
