@@ -449,6 +449,11 @@ try:
     page_case_study = importlib.reload(page_case_study)
 except Exception:
     pass
+import page_launch_box
+try:
+    page_launch_box = importlib.reload(page_launch_box)
+except Exception:
+    pass
 
 
 
@@ -1029,6 +1034,7 @@ def sidebar():
             ("💥", "假跌破爆发",         "failed_breakdown"),
             ("📈", "4H Breakout",        "chartink"),
             ("⚡", "4H 结构颈线",        "neckline"),
+            ("🚀", "趋势启动扫描",       "launch_box"),
             ("🔬", "启动案例库",         "case_study"),
             ("⏰", "定时扫描",           "schedule"),
             ("🌍", "全量品种库",         "universe"),
@@ -1553,7 +1559,7 @@ def main():
 
     # ── URL 参数跳转与同步 ────────────────────────────────────────────
     _VALID_PAGES = ("watchlist","hotlist","scanner","confluence","alerts","settings",
-                    "history","cloud","universe","chartink","neckline","schedule","triple_bottom","triple_pattern","failed_breakdown","symbols","alert_logs","ticker","case_study")
+                    "history","cloud","universe","chartink","neckline","schedule","triple_bottom","triple_pattern","failed_breakdown","symbols","alert_logs","ticker","case_study","launch_box")
     _url_page = st.query_params.get("_page", "")
     if _url_page and _url_page in _VALID_PAGES:
         st.session_state["page"] = _url_page
@@ -1592,7 +1598,8 @@ def main():
         "failed_breakdown": page_failed_breakdown.render_failed_breakdown_page,
         "chartink":         getattr(page_chartink, "render_page_chartink", getattr(page_chartink, "render", None)),
         "neckline":         getattr(page_neckline, "render_page_neckline", getattr(page_neckline, "render", None)),
-        "case_study":       getattr(page_case_study, "render", None),
+        "launch_box":       page_launch_box.render,
+        "case_study":       getattr(page_launch_box, "render", getattr(page_case_study, "render", None)),
         "universe":         page_universe.render,
         "watchlist":        page_watchlist.render,
         "hotlist":          page_hotlist.render,
@@ -1605,6 +1612,7 @@ def main():
         "symbols":          page_symbols.render,
         "ticker":           page_ticker.render,
     }
+
     
     render_fn = dispatch.get(p, page_scanner.render)
     try:
@@ -1638,7 +1646,8 @@ def main():
                 "failed_breakdown": "假跌破爆发",
                 "chartink": "4H Breakout",
                 "neckline": "4H 结构颈线",
-                "case_study": "启动案例库",
+                "launch_box": "趋势启动扫描",
+                "case_study": "趋势启动扫描",
                 "schedule": "定时扫描",
                 "universe": "全量品种库",
                 "watchlist": "自选收藏",
@@ -1660,7 +1669,7 @@ def main():
 
 
     # ── 移动端悬浮扫描按钮（FAB） ────────────────────────────────
-    _support_scan_pages = {"scanner", "triple_bottom", "triple_pattern", "chartink", "neckline", "universe"}
+    _support_scan_pages = {"scanner", "triple_bottom", "triple_pattern", "chartink", "neckline", "universe", "launch_box"}
     if p in _support_scan_pages:
         import bg_scan_manager
         is_running = bg_scan_manager.is_running()
@@ -1674,12 +1683,15 @@ def main():
                 fab_text = "📐 分析扫描"
             elif p == "triple_pattern":
                 fab_text = "🌟 顶底扫描"
+            elif p == "launch_box":
+                fab_text = "🚀 启动扫描"
             elif p == "chartink":
                 fab_text = "📈 4H扫描"
             elif p == "neckline":
                 fab_text = "⚡ 颈线扫描"
             else:
                 fab_text = "🌍 批量扫描"
+
             btn_disabled = False
 
         # 1. 隐藏的 Streamlit 原生按钮，用来接收点击事件并刷新 state
