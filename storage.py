@@ -2720,6 +2720,10 @@ def load_symbols() -> List[Dict]:
         items = []
     return [i for i in items if isinstance(i, dict) and i.get("ticker")]
 
+def load_universe() -> List[Dict]:
+    """返回自定义品种库列表（别名兼容）"""
+    return load_symbols()
+
 def save_symbols(items: List[Dict]) -> bool:
     ok = _save(F_SYMBOLS, items)
     if ok:

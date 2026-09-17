@@ -870,27 +870,48 @@ def render():
             min_vol_val = _VOL_M.get(vol_opt, 100000)
 
         # 准备待导出股票列表
-        all_syms = storage.load_universe()
+        all_syms = []
+        try:
+            if hasattr(storage, "load_symbols"):
+                all_syms = storage.load_symbols() or []
+            elif hasattr(storage, "load_universe"):
+                all_syms = storage.load_universe() or []
+            else:
+                import os
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+                f_path = os.path.join(base_dir, "data_symbols.json")
+                if os.path.exists(f_path):
+                    with open(f_path, "r", encoding="utf-8") as f:
+                        all_syms = json.load(f)
+        except Exception:
+            all_syms = []
+
         export_tickers = []
         if "全量A股" in selected_pool:
-            export_tickers = [s["ticker"] for s in all_syms if (s["ticker"].endswith(".SS") or s["ticker"].endswith(".SZ") or s["ticker"].endswith(".BJ"))]
+            export_tickers = [s["ticker"] for s in all_syms if isinstance(s, dict) and (s.get("ticker", "").endswith(".SS") or s.get("ticker", "").endswith(".SZ") or s.get("ticker", "").endswith(".BJ") or s.get("ticker", "").isdigit())]
             if not export_tickers:
                 export_tickers = ["603993.SS", "301151.SZ", "600487.SS", "688110.SS", "002475.SZ", "000858.SZ", "600519.SS", "300750.SZ"]
         elif "全量美股" in selected_pool:
-            export_tickers = [s["ticker"] for s in all_syms if not (s["ticker"].endswith(".SS") or s["ticker"].endswith(".SZ") or s["ticker"].endswith(".BJ"))]
+            export_tickers = [s["ticker"] for s in all_syms if isinstance(s, dict) and not (s.get("ticker", "").endswith(".SS") or s.get("ticker", "").endswith(".SZ") or s.get("ticker", "").endswith(".BJ") or s.get("ticker", "").isdigit())]
             if not export_tickers:
                 export_tickers = ["MARA", "TSLA", "MRVL", "OXY", "NVDA", "AAPL", "MSFT", "AMZN", "GOOGL", "META"]
         elif "自选" in selected_pool:
-            wl = storage.load_watchlist()
-            export_tickers = [w.get("ticker", "") for w in wl if w.get("ticker")]
+            try:
+                wl = storage.load_watchlist() if hasattr(storage, "load_watchlist") else []
+            except Exception:
+                wl = []
+            export_tickers = [w.get("ticker", "") for w in wl if isinstance(w, dict) and w.get("ticker")]
             if not export_tickers:
                 export_tickers = ["MARA", "TSLA", "603993.SS", "301151.SZ", "OXY"]
         elif selected_pool.startswith("📁 分组:"):
             g_name = selected_pool.replace("📁 分组: ", "").strip()
-            from assets import ASSET_GROUPS
-            export_tickers = ASSET_GROUPS.get(g_name, [])
+            try:
+                from assets import ASSET_GROUPS
+                export_tickers = ASSET_GROUPS.get(g_name, [])
+            except Exception:
+                export_tickers = []
         else:
-            export_tickers = [s["ticker"] for s in all_syms]
+            export_tickers = [s["ticker"] for s in all_syms if isinstance(s, dict) and s.get("ticker")]
 
         export_tickers = list(dict.fromkeys([t.strip().upper() for t in export_tickers if t]))
         st.info(f"📋 当前股票池共 **{len(export_tickers)}** 支标的 | 周期: **日线 (D1)** | 算法: **35~55天矩形中枢蓄势 + 布林带挤压 + 放量突破**")
