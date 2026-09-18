@@ -900,7 +900,13 @@ def render():
             except Exception:
                 group_names = []
 
-            pool_options = ["🌐 全量A股 (约 5,000 支)", "🇺🇸 全量美股 (约 4,000 支)", "⭐ 自选股票池", "🔥 热门资产组"]
+            pool_options = [
+                "🌐 中国A股 + 美国股票 (全量合并 · 约 12,000 支)",
+                "🇨🇳 全量A股 (约 5,000 支)",
+                "🇺🇸 全量美股 (约 7,000 支)",
+                "⭐ 自选股票池",
+                "🔥 热门资产组"
+            ]
             if group_names:
                 pool_options.extend([f"📁 分组: {g}" for g in group_names])
 
@@ -944,7 +950,11 @@ def render():
             all_syms = []
 
         export_tickers = []
-        if "全量A股" in selected_pool:
+        if "中国A股 + 美国股票" in selected_pool or "A股 + 美股" in selected_pool or "全量合并" in selected_pool:
+            export_tickers = [s["ticker"] for s in all_syms if isinstance(s, dict) and s.get("ticker")]
+            if not export_tickers:
+                export_tickers = ["603993.SS", "301151.SZ", "600487.SS", "688110.SS", "002475.SZ", "000858.SZ", "600519.SS", "300750.SZ", "MARA", "TSLA", "MRVL", "OXY", "NVDA", "AAPL", "MSFT", "AMZN", "GOOGL", "META"]
+        elif "全量A股" in selected_pool:
             export_tickers = [s["ticker"] for s in all_syms if isinstance(s, dict) and (s.get("ticker", "").endswith(".SS") or s.get("ticker", "").endswith(".SZ") or s.get("ticker", "").endswith(".BJ") or s.get("ticker", "").isdigit())]
             if not export_tickers:
                 export_tickers = ["603993.SS", "301151.SZ", "600487.SS", "688110.SS", "002475.SZ", "000858.SZ", "600519.SS", "300750.SZ"]
@@ -960,6 +970,12 @@ def render():
             export_tickers = [w.get("ticker", "") for w in wl if isinstance(w, dict) and w.get("ticker")]
             if not export_tickers:
                 export_tickers = ["MARA", "TSLA", "603993.SS", "301151.SZ", "OXY"]
+        elif "热门资产组" in selected_pool:
+            try:
+                from assets import ASSETS
+                export_tickers = list(ASSETS.keys())
+            except Exception:
+                export_tickers = []
         elif selected_pool.startswith("📁 分组:"):
             g_name = selected_pool.replace("📁 分组: ", "").strip()
             try:
@@ -967,6 +983,14 @@ def render():
                 export_tickers = ASSET_GROUPS.get(g_name, [])
             except Exception:
                 export_tickers = []
+            if not export_tickers:
+                try:
+                    grps = storage.load_symbol_groups() or []
+                    match_g = next((g for g in grps if g.get("name") == g_name), None)
+                    if match_g:
+                        export_tickers = match_g.get("tickers", [])
+                except Exception:
+                    pass
         else:
             export_tickers = [s["ticker"] for s in all_syms if isinstance(s, dict) and s.get("ticker")]
 

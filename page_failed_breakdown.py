@@ -420,7 +420,12 @@ def render_failed_breakdown_page():
             all_symbols = _stg.load_symbols() if hasattr(_stg, "load_symbols") else []
             groups = _stg.load_symbol_groups() if hasattr(_stg, "load_symbol_groups") else []
 
-            pool_options = ["🇺🇸 全量美股 (系统内置)", "🇨🇳 全量A股 (系统内置)", "🌐 全部组去重合并 (全量市场)"]
+            pool_options = [
+                "🌐 中国A股 + 美国股票 (全量合并 · 约 12,000 支)",
+                "🇨🇳 全量A股 (系统内置 · 约 5,000 支)",
+                "🇺🇸 全量美股 (系统内置 · 约 7,000 支)",
+                "🌐 全部组去重合并 (全量市场)"
+            ]
             for g in groups:
                 if isinstance(g, dict) and g.get("name"):
                     pool_options.append(f"📁 分组: {g.get('name')}")
@@ -465,11 +470,11 @@ def render_failed_breakdown_page():
                 min_vol_val = _VOL_MAP.get(vol_option, 100000)
 
             export_tickers = []
-            if selected_pool == "🌐 全部组去重合并 (全量市场)":
-                for g in groups:
-                    export_tickers.extend(g.get("tickers", []))
+            if "中国A股 + 美国股票" in selected_pool or "全量合并" in selected_pool or selected_pool == "🌐 全部组去重合并 (全量市场)":
+                export_tickers = [s["ticker"] for s in all_symbols if isinstance(s, dict) and s.get("ticker")]
                 if not export_tickers:
-                    export_tickers = [s["ticker"] for s in all_symbols]
+                    for g in groups:
+                        export_tickers.extend(g.get("tickers", []))
             elif "全量美股" in selected_pool:
                 export_tickers = [s["ticker"] for s in all_symbols if not (s["ticker"].endswith(".SS") or s["ticker"].endswith(".SZ") or s["ticker"].endswith(".BJ") or s["ticker"].isdigit())]
             elif "全量A股" in selected_pool:

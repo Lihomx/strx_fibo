@@ -721,6 +721,7 @@ def render_triple_bottom_page():
             total_unique_in_groups = len(dict.fromkeys(all_group_tickers_raw)) if all_group_tickers_raw else 0
             
             pool_options = [
+                "🌐 中国A股 + 美国股票 (全量合并 · 约 12,000 支)",
                 f"🌐 全部分组合并 (全部 {len(groups)} 个组·去重共 {total_unique_in_groups} 支)",
                 "🎯 自定义勾选多个分组 (多选并去重合并)",
                 "🇺🇸 全量美股 (系统内置)",
@@ -827,7 +828,16 @@ def render_triple_bottom_page():
 
             # 提取对应股票代码
             export_tickers = []
-            if "全部分组合并" in selected_pool:
+            if "中国A股 + 美国股票" in selected_pool or "全量合并" in selected_pool:
+                export_tickers = [s["ticker"] for s in all_symbols if isinstance(s, dict) and s.get("ticker")]
+                if not export_tickers:
+                    all_tks = []
+                    for g in groups:
+                        for tk in g.get("tickers", []):
+                            if tk and isinstance(tk, str):
+                                all_tks.append(tk.strip().upper())
+                    export_tickers = list(dict.fromkeys(all_tks))
+            elif "全部分组合并" in selected_pool:
                 all_tks = []
                 for g in groups:
                     for tk in g.get("tickers", []):

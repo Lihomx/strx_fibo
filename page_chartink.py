@@ -771,9 +771,9 @@ def render_page_chartink():
             groups = storage.load_symbol_groups() or []
 
             pool_options = [
-                "🇨🇳 1. 全量 A 股 (主板/创业/科创/北交)",
-                "🇺🇸 2. 全量美股 (NASDAQ/NYSE/AMEX)",
-                "🌐 3. A股全量 + 美股全量 (全部市场)",
+                "🌐 1. 中国A股 + 美国股票 (全量合并 · 约 12,000 支)",
+                "🇨🇳 2. 全量 A 股 (主板/创业/科创/北交 · 约 5,000 支)",
+                "🇺🇸 3. 全量美股 (NASDAQ/NYSE/AMEX · 约 7,000 支)",
                 "🚀 4. 矩形中枢突破标的 (Launch Box 扫描结果)",
                 "⭐ 我的自选关注列表"
             ]
@@ -781,10 +781,10 @@ def render_page_chartink():
                 if g.get("name") and not any(x in g.get("name", "") for x in ["全量A股", "全量美股", "Launch Box", "矩形蓄势"]):
                     pool_options.append(f"📁 分组: {g.get('name')}")
 
-            _default_pool_idx = 1
+            _default_pool_idx = 0
             _url_pool = str(st.query_params.get("_pool", "")).lower()
             if _url_pool in ("launch_box", "launchbox", "lb") or st.session_state.get("ci_colab_pool_select") == "🚀 4. 矩形中枢突破标的 (Launch Box 扫描结果)":
-                _default_pool_idx = 3
+                _default_pool_idx = next((i for i, p in enumerate(pool_options) if "Launch Box" in p or "矩形中枢" in p), 3)
             elif st.session_state.get("ci_colab_pool_select") in pool_options:
                 _default_pool_idx = pool_options.index(st.session_state.get("ci_colab_pool_select"))
 
@@ -827,24 +827,26 @@ def render_page_chartink():
                 min_vol_val = _VOL_MAP.get(vol_option, 100000)
 
             export_tickers = []
-            if "A股全量 + 美股全量" in selected_pool or "全部组去重合并" in selected_pool:
-                a_grp = next((g for g in groups if "全量A股" in g.get("name", "")), None)
-                us_grp = next((g for g in groups if "全量美股" in g.get("name", "")), None)
-                a_tks = a_grp.get("tickers", []) if a_grp else [s["ticker"] for s in all_symbols if s["ticker"].endswith((".SS", ".SZ", ".BJ")) or s["ticker"].isdigit()]
-                us_tks = us_grp.get("tickers", []) if us_grp else [s["ticker"] for s in all_symbols if not s["ticker"].endswith((".SS", ".SZ", ".BJ")) and not s["ticker"].isdigit()]
-                export_tickers = list(dict.fromkeys(a_tks + us_tks))
+            if "中国A股 + 美国股票" in selected_pool or "A股全量 + 美股全量" in selected_pool or "全部组去重合并" in selected_pool or "全量合并" in selected_pool:
+                export_tickers = [s["ticker"] for s in all_symbols if isinstance(s, dict) and s.get("ticker")]
+                if not export_tickers:
+                    a_grp = next((g for g in groups if "全量A股" in g.get("name", "")), None)
+                    us_grp = next((g for g in groups if "全量美股" in g.get("name", "")), None)
+                    a_tks = a_grp.get("tickers", []) if a_grp else [s["ticker"] for s in all_symbols if s["ticker"].endswith((".SS", ".SZ", ".BJ")) or s["ticker"].isdigit()]
+                    us_tks = us_grp.get("tickers", []) if us_grp else [s["ticker"] for s in all_symbols if not s["ticker"].endswith((".SS", ".SZ", ".BJ")) and not s["ticker"].isdigit()]
+                    export_tickers = list(dict.fromkeys(a_tks + us_tks))
             elif "全量美股" in selected_pool:
-                us_grp = next((g for g in groups if "全量美股" in g.get("name", "")), None)
-                if us_grp and us_grp.get("tickers"):
-                    export_tickers = us_grp["tickers"]
-                else:
-                    export_tickers = [s["ticker"] for s in all_symbols if not s["ticker"].endswith((".SS", ".SZ", ".BJ")) and not s["ticker"].isdigit()]
+                export_tickers = [s["ticker"] for s in all_symbols if isinstance(s, dict) and not (s.get("ticker", "").endswith((".SS", ".SZ", ".BJ")) or s.get("ticker", "").isdigit())]
+                if not export_tickers:
+                    us_grp = next((g for g in groups if "全量美股" in g.get("name", "")), None)
+                    if us_grp and us_grp.get("tickers"):
+                        export_tickers = us_grp["tickers"]
             elif "全量A股" in selected_pool:
-                a_grp = next((g for g in groups if "全量A股" in g.get("name", "")), None)
-                if a_grp and a_grp.get("tickers"):
-                    export_tickers = a_grp["tickers"]
-                else:
-                    export_tickers = [s["ticker"] for s in all_symbols if s["ticker"].endswith((".SS", ".SZ", ".BJ")) or s["ticker"].isdigit()]
+                export_tickers = [s["ticker"] for s in all_symbols if isinstance(s, dict) and (s.get("ticker", "").endswith((".SS", ".SZ", ".BJ")) or s.get("ticker", "").isdigit())]
+                if not export_tickers:
+                    a_grp = next((g for g in groups if "全量A股" in g.get("name", "")), None)
+                    if a_grp and a_grp.get("tickers"):
+                        export_tickers = a_grp["tickers"]
             elif "矩形中枢突破" in selected_pool or "Launch Box" in selected_pool:
                 try:
                     if hasattr(storage, "load_launch_box"):
