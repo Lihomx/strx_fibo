@@ -885,6 +885,27 @@ def render():
                 fig = render_launch_box_chart(item)
                 st.plotly_chart(fig, use_container_width=True, key=f"lb_chart_{sym}_{b_date}")
 
+        if page_items:
+            st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+            st.markdown(
+                f"""
+                <div class="lb-pagination">
+                    <div style="display:flex;gap:6px;">
+                        <a href="{_make_url(1)}" target="_self" class="{first_cls}">⏮ 首页</a>
+                        <a href="{_make_url(max(1, current_page - 1))}" target="_self" class="{prev_cls}">◀ 上一页</a>
+                    </div>
+                    <div class="lb-page-info">
+                        📄 第 <span style="color:#a855f7;">{current_page}</span> / {total_pages} 页 (共 <span style="color:#38bdf8;">{total_items}</span> 条有效启动信号)
+                    </div>
+                    <div style="display:flex;gap:6px;">
+                        <a href="{_make_url(min(total_pages, current_page + 1))}" target="_self" class="{next_cls}">下一页 ▶</a>
+                        <a href="{_make_url(total_pages)}" target="_self" class="{last_cls}">末页 ⏭</a>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
     # ──────────────────────────────────────────────────────────────────────────
     # TAB 2: Google Colab 云端全量极速扫描脚本
     # ──────────────────────────────────────────────────────────────────────────

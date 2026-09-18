@@ -597,6 +597,50 @@ def render_page_chartink():
         font-size: 11px;
         font-weight: 600;
     }
+    .ci-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin: 14px 0;
+        padding: 8px 12px;
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 8px;
+    }
+    .ci-page-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6px 14px;
+        background: rgba(56, 189, 248, 0.15);
+        color: #38bdf8 !important;
+        border: 1px solid rgba(56, 189, 248, 0.35);
+        border-radius: 6px;
+        text-decoration: none !important;
+        font-size: 13px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+    }
+    .ci-page-btn:hover {
+        background: rgba(56, 189, 248, 0.3);
+        color: #ffffff !important;
+        border-color: rgba(56, 189, 248, 0.7);
+    }
+    .ci-page-btn.disabled {
+        background: rgba(148, 163, 184, 0.08);
+        color: #64748b !important;
+        border-color: rgba(148, 163, 184, 0.15);
+        cursor: not-allowed;
+        pointer-events: none;
+    }
+    .ci-page-info {
+        color: #cbd5e1;
+        font-size: 14px;
+        font-weight: 600;
+        text-align: center;
+        flex: 1;
+    }
     </style>
     """
     _render_html(_style_code)
@@ -645,14 +689,58 @@ def render_page_chartink():
         else:
             st.session_state["ci_page_size"] = 20
 
-    if "ci_curr_page" not in st.session_state:
-        _url_p_raw = str(st.query_params.get("_p", "")).strip()
-        if _url_p_raw.isdigit():
-            st.session_state["ci_curr_page"] = max(1, int(_url_p_raw))
-        else:
-            st.session_state["ci_curr_page"] = 1
+    _url_p_raw = str(st.query_params.get("_p", "")).strip()
+    if _url_p_raw.isdigit():
+        st.session_state["ci_curr_page"] = max(1, int(_url_p_raw))
+    elif "ci_curr_page" not in st.session_state:
+        st.session_state["ci_curr_page"] = 1
 
     # ── URL 双向同步辅助函数 ──
+    def _make_ci_page_url(target_page=1):
+        params = {}
+        _t_val = st.query_params.get("_t", "")
+        if _t_val:
+            params["_t"] = str(_t_val)
+        params["_page"] = "chartink"
+        _pool_val = st.query_params.get("_pool", "")
+        if _pool_val:
+            params["_pool"] = str(_pool_val)
+
+        _cur_time = st.session_state.get("ci_filter_time", CI_TIME_OPTIONS[0])
+        _time_k = CI_TIME_REVERSE_MAP.get(_cur_time, "3d")
+        if _time_k != "3d":
+            params["_time"] = _time_k
+
+        _cur_stat = st.session_state.get("ci_filter_status", CI_DEFAULT_STATS)
+        if isinstance(_cur_stat, list):
+            if set(_cur_stat) == set(CI_STAT_OPTIONS):
+                params["_stat"] = "all"
+            elif set(_cur_stat) != set(CI_DEFAULT_STATS):
+                _stat_keys = [CI_STAT_REVERSE_MAP[s] for s in _cur_stat if s in CI_STAT_REVERSE_MAP]
+                if _stat_keys:
+                    params["_stat"] = ",".join(_stat_keys)
+
+        _cur_vol = st.session_state.get("ci_filter_vol", CI_VOL_OPTIONS[0])
+        _vol_k = CI_VOL_REVERSE_MAP.get(_cur_vol, "all")
+        if _vol_k != "all":
+            params["_vol"] = _vol_k
+
+        _cur_q = str(st.session_state.get("ci_search_kw", "")).strip()
+        if _cur_q:
+            params["_q"] = _cur_q
+
+        _cur_sort = st.session_state.get("ci_sort_by", CI_SORT_OPTIONS[0])
+        _sort_k = CI_SORT_REVERSE_MAP.get(_cur_sort, "progress_asc")
+        if _sort_k != "progress_asc":
+            params["_sort"] = _sort_k
+
+        _cur_ps = st.session_state.get("ci_page_size", 20)
+        if str(_cur_ps) != "20":
+            params["_ps"] = str(_cur_ps)
+
+        params["_p"] = str(target_page)
+        return "/?" + "&".join(f"{k}={v}" for k, v in params.items())
+
     def _sync_ci_url_params(target_page=1):
         params = {}
         _t_val = st.query_params.get("_t", "")
@@ -707,6 +795,54 @@ def render_page_chartink():
         st.query_params.clear()
         st.query_params.update(params)
         return params
+
+    def _render_ci_pagination_bar(cur_p: int, tot_p: int, tot_items: int, p_sz: int, is_bottom: bool = False):
+        first_url = _make_ci_page_url(1)
+        prev_url = _make_ci_page_url(max(1, cur_p - 1))
+        next_url = _make_ci_page_url(min(tot_p, cur_p + 1))
+        last_url = _make_ci_page_url(tot_p)
+
+        first_cls = "ci-page-btn disabled" if cur_p <= 1 else "ci-page-btn"
+        prev_cls = "ci-page-btn disabled" if cur_p <= 1 else "ci-page-btn"
+        next_cls = "ci-page-btn disabled" if cur_p >= tot_p else "ci-page-btn"
+        last_cls = "ci-page-btn disabled" if cur_p >= tot_p else "ci-page-btn"
+
+        if p_sz > 0 and tot_items > 0:
+            start_n = (cur_p - 1) * p_sz + 1
+            end_n = min(cur_p * p_sz, tot_items)
+        else:
+            start_n = 1 if tot_items > 0 else 0
+            end_n = tot_items
+
+        if not is_bottom:
+            if tot_p > 1:
+                info_text = f"📄 第 <span style='color:#38bdf8;'>{cur_p}</span> / {tot_p} 页 (符合筛选 <span style='color:#4ade80;'>{tot_items}</span> 条，当前显示第 {start_n} ~ {end_n} 条)"
+            else:
+                info_text = f"📄 第 <span style='color:#38bdf8;'>1</span> / 1 页 (符合筛选共 <span style='color:#4ade80;'>{tot_items}</span> 条，已全部展示)"
+        else:
+            if tot_p > 1:
+                info_text = f"📄 第 <span style='color:#38bdf8;'>{cur_p}</span> / {tot_p} 页 (共 <span style='color:#4ade80;'>{tot_items}</span> 条 4H 突破)"
+            else:
+                info_text = f"📄 第 <span style='color:#38bdf8;'>1</span> / 1 页 (共 <span style='color:#4ade80;'>{tot_items}</span> 条 4H 突破已全部呈现)"
+
+        st.markdown(
+            f"""
+            <div class="ci-pagination">
+                <div style="display:flex;gap:6px;">
+                    <a href="{first_url}" target="_self" class="{first_cls}">⏮ 首页</a>
+                    <a href="{prev_url}" target="_self" class="{prev_cls}">◀ 上一页</a>
+                </div>
+                <div class="ci-page-info">
+                    {info_text}
+                </div>
+                <div style="display:flex;gap:6px;">
+                    <a href="{next_url}" target="_self" class="{next_cls}">下一页 ▶</a>
+                    <a href="{last_url}" target="_self" class="{last_cls}">末页 ⏭</a>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
     def _on_ci_filter_change():
         """筛选控件变更时重置页码为 1 并同步 URL"""
@@ -1361,37 +1497,29 @@ def render_page_chartink():
         return
 
     # 分页计算
+    _url_p_raw = str(st.query_params.get("_p", "")).strip()
+    if _url_p_raw.isdigit():
+        curr_page = max(1, int(_url_p_raw))
+    else:
+        curr_page = st.session_state.get("ci_curr_page", 1)
+
     if page_size_sel == "全部":
         p_slice = filtered_items
         total_pages = 1
         curr_page = 1
+        st.session_state["ci_curr_page"] = 1
+        p_size_num = match_count
     else:
-        ps = int(page_size_sel)
-        total_pages = max(1, (match_count + ps - 1) // ps)
-        curr_page = min(max(1, st.session_state.get("ci_curr_page", 1)), total_pages)
+        p_size_num = int(page_size_sel)
+        total_pages = max(1, (match_count + p_size_num - 1) // p_size_num)
+        curr_page = min(max(1, curr_page), total_pages)
         st.session_state["ci_curr_page"] = curr_page
 
-        if total_pages > 1:
-            col_p1, col_p2, col_p3 = st.columns([1, 2, 1])
-            with col_p1:
-                if st.button("⬅️ 上一页", key="ci_top_prev_btn", disabled=(curr_page <= 1), use_container_width=True):
-                    st.session_state["ci_curr_page"] = curr_page - 1
-                    _sync_ci_url_params(target_page=curr_page - 1)
-                    st.rerun()
-            with col_p2:
-                _render_html(
-                    f"<div style='text-align:center;padding-top:6px;font-size:13px;color:#94a3b8;'>"
-                    f"第 <b style='color:#38bdf8;'>{curr_page}</b> / {total_pages} 页 (共 {match_count} 支)"
-                    f"</div>"
-                )
-            with col_p3:
-                if st.button("下一页 ➡️", key="ci_top_next_btn", disabled=(curr_page >= total_pages), use_container_width=True):
-                    st.session_state["ci_curr_page"] = curr_page + 1
-                    _sync_ci_url_params(target_page=curr_page + 1)
-                    st.rerun()
+        start_i = (curr_page - 1) * p_size_num
+        p_slice = filtered_items[start_i:start_i + p_size_num]
 
-        start_i = (curr_page - 1) * ps
-        p_slice = filtered_items[start_i:start_i + ps]
+    # 顶部页码导航栏（统一呈现，无论1页还是多页均显示清晰的当前页及翻页状态）
+    _render_ci_pagination_bar(curr_page, total_pages, match_count, p_size_num, is_bottom=False)
 
     # 加载自选与点击计数
     wl_items = storage.load_watchlist() or []
@@ -1538,26 +1666,9 @@ def render_page_chartink():
                 """
             )
 
-    # 底部页码导航
-    if total_pages > 1 and page_size_sel != "全部":
-        _render_html("<div style='height:12px;'></div>")
-        col_b_p1, col_b_p2, col_b_p3 = st.columns([1, 2, 1])
-        with col_b_p1:
-            if st.button("⬅️ 上一页", key="ci_bot_prev_btn", disabled=(curr_page <= 1), use_container_width=True):
-                st.session_state["ci_curr_page"] = curr_page - 1
-                _sync_ci_url_params(target_page=curr_page - 1)
-                st.rerun()
-        with col_b_p2:
-            _render_html(
-                f"<div style='text-align:center;padding-top:6px;font-size:13px;color:#94a3b8;'>"
-                f"第 <b style='color:#38bdf8;'>{curr_page}</b> / {total_pages} 页 (共 {match_count} 支)"
-                f"</div>"
-            )
-        with col_b_p3:
-            if st.button("下一页 ➡️", key="ci_bot_next_btn", disabled=(curr_page >= total_pages), use_container_width=True):
-                st.session_state["ci_curr_page"] = curr_page + 1
-                _sync_ci_url_params(target_page=curr_page + 1)
-                st.rerun()
+    # 底部页码导航栏（统一呈现，无论1页还是多页均显示清晰的当前页及翻页状态）
+    _render_html("<div style='height:12px;'></div>")
+    _render_ci_pagination_bar(curr_page, total_pages, match_count, p_size_num if page_size_sel != "全部" else match_count, is_bottom=True)
 
     # 隐形事件监听组件：捕捉原链接点击
     _js_code = """
