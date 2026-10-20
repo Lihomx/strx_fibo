@@ -454,6 +454,12 @@ try:
     page_launch_box = importlib.reload(page_launch_box)
 except Exception:
     pass
+import page_weekly_bottom2
+try:
+    page_weekly_bottom2 = importlib.reload(page_weekly_bottom2)
+except Exception:
+    pass
+
 
 
 
@@ -1031,6 +1037,7 @@ def sidebar():
             ("⚡", "共振检测",           "confluence"),
             ("📐", "三重底扫描",         "triple_bottom"),
             ("🌟", "三重顶底",           "triple_pattern"),
+            ("🎯", "周线底2监测",         "weekly_bottom2"),
             ("💥", "假跌破爆发",         "failed_breakdown"),
             ("📈", "4H Breakout",        "chartink"),
             ("⚡", "4H 结构颈线",        "neckline"),
@@ -1559,7 +1566,7 @@ def main():
 
     # ── URL 参数跳转与同步 ────────────────────────────────────────────
     _VALID_PAGES = ("watchlist","hotlist","scanner","confluence","alerts","settings",
-                    "history","cloud","universe","chartink","neckline","schedule","triple_bottom","triple_pattern","failed_breakdown","symbols","alert_logs","ticker","case_study","launch_box")
+                    "history","cloud","universe","chartink","neckline","schedule","triple_bottom","triple_pattern","weekly_bottom2","failed_breakdown","symbols","alert_logs","ticker","case_study","launch_box")
     _url_page = st.query_params.get("_page", "")
     if _url_page and _url_page in _VALID_PAGES:
         st.session_state["page"] = _url_page
@@ -1595,6 +1602,7 @@ def main():
         "confluence":       page_confluence.render,
         "triple_bottom":    page_triple_bottom.render_triple_bottom_page,
         "triple_pattern":   page_triple_pattern.render_triple_pattern_page,
+        "weekly_bottom2":   page_weekly_bottom2.render_weekly_bottom2_page,
         "failed_breakdown": page_failed_breakdown.render_failed_breakdown_page,
         "chartink":         getattr(page_chartink, "render_page_chartink", getattr(page_chartink, "render", None)),
         "neckline":         getattr(page_neckline, "render_page_neckline", getattr(page_neckline, "render", None)),
@@ -1643,6 +1651,7 @@ def main():
                 "confluence": "共振检测",
                 "triple_bottom": "三重底扫描",
                 "triple_pattern": "三重顶底",
+                "weekly_bottom2": "周线底2监测",
                 "failed_breakdown": "假跌破爆发",
                 "chartink": "4H Breakout",
                 "neckline": "4H 结构颈线",
@@ -1669,7 +1678,7 @@ def main():
 
 
     # ── 移动端悬浮扫描按钮（FAB） ────────────────────────────────
-    _support_scan_pages = {"scanner", "triple_bottom", "triple_pattern", "chartink", "neckline", "universe", "launch_box"}
+    _support_scan_pages = {"scanner", "triple_bottom", "triple_pattern", "weekly_bottom2", "chartink", "neckline", "universe", "launch_box"}
     if p in _support_scan_pages:
         import bg_scan_manager
         is_running = bg_scan_manager.is_running()
@@ -1683,6 +1692,8 @@ def main():
                 fab_text = "📐 分析扫描"
             elif p == "triple_pattern":
                 fab_text = "🌟 顶底扫描"
+            elif p == "weekly_bottom2":
+                fab_text = "🎯 底2扫描"
             elif p == "launch_box":
                 fab_text = "🚀 启动扫描"
             elif p == "chartink":

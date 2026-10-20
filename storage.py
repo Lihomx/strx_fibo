@@ -875,6 +875,8 @@ F_TRIPLE_BOTTOM = os.path.join(_BASE, "data_triple_bottom.json")
 F_TB_SNAPSHOT_DIR = os.path.join(_BASE, "triple_bottom_snapshots")
 F_TRIPLE_PATTERN = os.path.join(_BASE, "data_triple_pattern.json")
 F_TP_SNAPSHOT_DIR = os.path.join(_BASE, "triple_pattern_snapshots")
+F_WEEKLY_BOTTOM2 = os.path.join(_BASE, "data_weekly_bottom2.json")
+F_WB2_SNAPSHOT_DIR = os.path.join(_BASE, "weekly_bottom2_snapshots")
 F_FAILED_BREAKDOWN = os.path.join(_BASE, "data_failed_breakdown.json")
 F_FB_SNAPSHOT_DIR = os.path.join(_BASE, "failed_breakdown_snapshots")
 
@@ -2075,6 +2077,68 @@ def clear_triple_pattern_results() -> bool:
     if current_items:
         backup_triple_pattern(current_items)
     return save_triple_pattern([])
+
+
+# ── 周线前底与潜在底2监测持久化 ────────────────────────────────────
+def load_weekly_bottom2() -> List[Dict]:
+    """返回周线潜在底2扫描结果列表，按 (symbol, period) 自动去重并按置信度排序"""
+    res = _load(F_WEEKLY_BOTTOM2, [])
+    if not isinstance(res, list):
+        return []
+    seen = {}
+    for r in res:
+        if not isinstance(r, dict) or not r.get("symbol"):
+            continue
+        k = (str(r.get("symbol")).upper(), str(r.get("period", "1w")).lower())
+        if k not in seen or float(r.get("confidence", 0)) > float(seen[k].get("confidence", 0)):
+            seen[k] = r
+    deduped = list(seen.values())
+    deduped.sort(
+        key=lambda x: (
+            1 if x.get("status") == "active_in_zone" else (2 if x.get("status") == "bounced_out" else 3),
+            -float(x.get("confidence", 0.0)),
+            -float(x.get("close_diff_pct", 0.0))
+        )
+    )
+    return deduped
+
+
+def save_weekly_bottom2(items: List[Dict], with_backup: bool = True) -> bool:
+    """保存周线潜在底2扫描结果"""
+    items = [r for r in items if isinstance(r, dict)]
+    if with_backup:
+        return _save_with_backup(F_WEEKLY_BOTTOM2, items)
+    else:
+        return _save(F_WEEKLY_BOTTOM2, items)
+
+
+def append_weekly_bottom2_results(new_items: List[Dict], with_backup: bool = True) -> bool:
+    """增量合并周线潜在底2扫描结果：去重合并，保留最新或最高置信度结果"""
+    if not new_items:
+        return True
+    current = load_weekly_bottom2()
+    item_map = {}
+    for it in current:
+        k = (str(it.get("symbol", "")).upper(), str(it.get("period", "1w")).lower())
+        item_map[k] = it
+    for it in new_items:
+        if isinstance(it, dict) and it.get("symbol"):
+            k = (str(it.get("symbol", "")).upper(), str(it.get("period", "1w")).lower())
+            item_map[k] = it
+    merged = list(item_map.values())
+    merged.sort(
+        key=lambda x: (
+            1 if x.get("status") == "active_in_zone" else (2 if x.get("status") == "bounced_out" else 3),
+            -float(x.get("confidence", 0.0)),
+            -float(x.get("close_diff_pct", 0.0))
+        )
+    )
+    return save_weekly_bottom2(merged, with_backup=with_backup)
+
+
+def clear_weekly_bottom2_results() -> bool:
+    """清空当前周线潜在底2扫描结果"""
+    return save_weekly_bottom2([])
 
 
 # ── 三重顶底分批扫描状态持久化 ────────────────────────────────────

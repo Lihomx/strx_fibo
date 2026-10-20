@@ -907,27 +907,35 @@ def render_triple_pattern_page():
         # 形态子类过滤
         pname = r.get("pattern", "")
         if "1~2个月周线 W 底" in st_patt or "全部 1~2个月周线 W 底" in st_patt or ("W 底" in st_patt and "全部" in st_patt):
-            if not (("周线" in pname and ("双底" in pname or "W-Bottom" in pname)) or ("假跌破双底" in pname or "抬高双底" in pname or "持平双底" in pname)):
+            if not (("周线" in pname and ("双底" in pname or "W-Bottom" in pname or "DB" in pname)) or ("假跌破双底" in pname or "抬高双底" in pname or "持平双底" in pname or "双底" in pname or "DB" in pname)):
                 continue
-        elif "假跌破双底" in st_patt and "假跌破双底" not in pname: continue
-        elif "抬高双底" in st_patt and "抬高双底" not in pname: continue
-        elif "持平双底" in st_patt and "持平双底" not in pname: continue
+        elif "假跌破双底" in st_patt:
+            if not ("假跌破" in pname or "跌破失败" in pname or "Failed BO below DB" in pname):
+                continue
+        elif "抬高双底" in st_patt:
+            if not ("抬高双底" in pname or "HL DB" in pname or "抬高" in pname):
+                continue
+        elif "持平双底" in st_patt:
+            if not ("持平双底" in pname or "双底" in pname or "DB" in pname or "Double Bottom" in pname):
+                continue
         elif st_patt == "完美形态 (Perfect)" and "完美" not in pname: continue
         elif st_patt == "头肩形态 (Head & Shoulders)" and "头肩" not in pname: continue
-        elif st_patt == "失败突破假破型 (Failed BO)" and ("失败突破" not in pname and "跌破失败" not in pname): continue
-        elif st_patt == "双顶底回调型 (Pullback)" and "回调" not in pname: continue
-        elif st_patt == "楔形形态 (Wedge)" and "楔形" not in pname: continue
-        elif st_patt == "收敛三角形 (Triangle)" and "三角" not in pname: continue
+        elif st_patt == "失败突破假破型 (Failed BO)" and ("失败突破" not in pname and "跌破失败" not in pname and "Failed BO" not in pname): continue
+        elif st_patt == "双顶底回调型 (Pullback)" and ("回调" not in pname and "Pullback" not in pname): continue
+        elif st_patt == "楔形形态 (Wedge)" and ("楔形" not in pname and "Wedge" not in pname): continue
+        elif st_patt == "收敛三角形 (Triangle)" and ("三角" not in pname and "Triangle" not in pname): continue
 
-        # 周期过滤
-        if r.get("period") not in st_period:
+        # 周期过滤 (若用户未勾选则默认匹配全部周期)
+        eff_periods = st_period if st_period else _ALL_PERIODS
+        if r.get("period") not in eff_periods:
             continue
 
         # 状态阶段划分与跑势过滤
         st_val = r.get("status", "active")
         prog = float(r.get("breakout_progress", 0.0))
 
-        # 状态多选过滤
+        # 状态多选过滤 (若用户未勾选则默认匹配全部状态)
+        eff_status = st_status if st_status else _STAT_OPTIONS
         is_active = (st_val == "active")
         is_early = (st_val == "confirmed" and prog <= 20.0)
         is_mid = (st_val == "confirmed" and 20.0 < prog <= 100.0)
@@ -936,7 +944,7 @@ def render_triple_pattern_page():
         is_expired = (st_val == "expired")
 
         matched_status = False
-        for s in st_status:
+        for s in eff_status:
             if "观望蓄势中" in s and is_active: matched_status = True
             elif "刚突破" in s and is_early: matched_status = True
             elif "推进中" in s and is_mid: matched_status = True
@@ -998,7 +1006,7 @@ def render_triple_pattern_page():
         filtered.append(r)
 
     # 搜索与排序
-    col_s1, col_s2, col_s3 = st.columns([2, 1.4, 1])
+    col_s1, col_s2, col_s3, col_s4 = st.columns([1.8, 1.2, 0.9, 0.9])
     with col_s1:
         _cur_q_val = str(st.session_state.get("tp_search_query", ""))
         search_query = st.text_input(
@@ -1028,6 +1036,19 @@ def render_triple_pattern_page():
             key="tp_page_size",
             on_change=_on_tp_filter_change,
         )
+    with col_s4:
+        st.write("")
+        st.write("")
+        if st.button("🔄 重置筛选", key="tp_reset_top_filters", use_container_width=True, help="一键恢复所有默认筛选"):
+            st.session_state["tp_filter_direction"] = "全部方向"
+            st.session_state["tp_filter_pattern"] = "全部形态"
+            st.session_state["tp_filter_period"] = list(_ALL_PERIODS)
+            st.session_state["tp_filter_status"] = list(_DEFAULT_STATS)
+            st.session_state["tp_progress_slider"] = 20
+            st.session_state["tp_filter_time"] = _TIME_OPTIONS[0]
+            st.session_state["tp_filter_volume"] = _VOL_OPTIONS[0]
+            st.session_state["tp_search_query"] = ""
+            st.rerun()
 
     if search_query.strip():
         q = search_query.strip().upper()
@@ -1247,6 +1268,34 @@ def render_triple_pattern_page():
     start_idx = (current_page - 1) * page_size
     end_idx = min(start_idx + page_size, total_items)
     page_items = filtered[start_idx:end_idx]
+
+    if total_items == 0:
+        with st.container(border=True):
+            st.warning("⚠️ 当前筛选条件下未找到匹配的形态记录")
+            st.markdown(
+                f"""
+                <div style="font-size:13px;line-height:1.8;color:#cbd5e1;">
+                <b>当前数据库已成功导入 {total_patterns_cnt} 条形态记录</b>（其中看涨三重底 {bull_cnt} 条 / 看跌三重顶 {bear_cnt} 条）。<br>
+                当前显示 0 条是因为筛选条件产生了约束冲突，请排查以下几点：<br>
+                1. ⏱️ <b>扫描周期</b>：是否为空？（若多选框显示为 <code>Choose options</code>，请勾选如“周线 (W1)”或“日线 (D1)”）<br>
+                2. 📌 <b>形态阶段状态</b>：是否为空？（若多选框显示为 <code>Choose options</code>，请勾选如“5点蓄势中”或“刚突破”）<br>
+                3. 🏃 <b>跑势进度上限</b>：当前是否拉到了最左侧 <b>0%</b>？（建议保持默认 20%~100%）<br>
+                4. 🏷️ <b>形态子类</b>：当前选为「<b>{st_patt}</b>」，可切回「<b>全部形态</b>」或「<b>全部 1~2个月周线 W 底</b>」查看。
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            if st.button("🔄 一键恢复默认筛选条件 (立即展示全部形态)", key="tp_reset_empty_btn", type="primary"):
+                st.session_state["tp_filter_direction"] = "全部方向"
+                st.session_state["tp_filter_pattern"] = "全部形态"
+                st.session_state["tp_filter_period"] = list(_ALL_PERIODS)
+                st.session_state["tp_filter_status"] = list(_DEFAULT_STATS)
+                st.session_state["tp_progress_slider"] = 20
+                st.session_state["tp_filter_time"] = _TIME_OPTIONS[0]
+                st.session_state["tp_filter_volume"] = _VOL_OPTIONS[0]
+                st.session_state["tp_search_query"] = ""
+                st.rerun()
+        return
 
     all_clicks_data = storage.get_all_link_clicks()
     wl = storage.load_watchlist()
